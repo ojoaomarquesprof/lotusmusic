@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '../../lib/supabase'
 
 export default function Login() {
@@ -9,9 +10,11 @@ export default function Login() {
   const [senha, setSenha] = useState('')
   const [loading, setLoading] = useState(false)
   const [config, setConfig] = useState<any>(null)
+  
+  // 👇 Estado para controlar se a imagem da logo quebrou no carregamento
+  const [erroLogo, setErroLogo] = useState(false) 
   const router = useRouter()
 
-  // Busca os dados da escola assim que a tela abre
   useEffect(() => {
     async function loadConfig() {
       const { data } = await supabase.from('configuracoes').select('nome_escola, logo_url').eq('id', 1).single()
@@ -36,10 +39,7 @@ export default function Login() {
     }
 
     if (authData.user) {
-      // Verifica qual é o "Cargo" (Role) da pessoa logada
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', authData.user.id).single()
-      
-      // Redirecionamento Inteligente
       if (profile?.role === 'ALUNO') {
         router.push('/portal')
       } else {
@@ -49,16 +49,19 @@ export default function Login() {
   }
 
   return (
-    // Fundo sempre claro (bg-slate-50)
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
       
-      {/* Cartão Branco de Login */}
-      <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-2xl w-full max-w-sm animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-2xl w-full max-w-sm animate-in fade-in slide-in-from-bottom-4 duration-700">
         
-        {/* CABEÇALHO (LOGO OU NOME) */}
-        <div className="flex flex-col items-center justify-center mb-8 text-center min-h-[100px]">
-          {config?.logo_url ? (
-            <img src={config.logo_url} alt="Logo da Escola" className="h-24 w-full max-w-[200px] object-contain drop-shadow-sm" />
+        {/* CABEÇALHO COM PROTEÇÃO CONTRA IMAGEM QUEBRADA */}
+        <div className="flex flex-col items-center justify-center mb-8 text-center min-h-[120px]">
+          {config?.logo_url && !erroLogo ? (
+            <img 
+              src={config.logo_url} 
+              alt="Logo da Escola" 
+              onError={() => setErroLogo(true)} // 👈 Se a imagem der erro, ele exibe o fallback
+              className="h-28 w-full max-w-[220px] object-contain drop-shadow-sm mb-2" 
+            />
           ) : (
             <>
               <span className="text-5xl block mb-2 text-indigo-500">🎵</span>
@@ -67,12 +70,11 @@ export default function Login() {
               </h1>
             </>
           )}
-          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-4 bg-slate-100 px-3 py-1 rounded-full">
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-3 bg-slate-100 px-4 py-1.5 rounded-full inline-block">
             Área Restrita
           </p>
         </div>
         
-        {/* FORMULÁRIO */}
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">E-mail</label>
@@ -84,6 +86,7 @@ export default function Login() {
               className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-bold focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 mt-1 transition-all outline-none" 
             />
           </div>
+          
           <div>
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Senha</label>
             <input 
@@ -94,12 +97,16 @@ export default function Login() {
               className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-bold focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 mt-1 transition-all outline-none" 
             />
           </div>
-          {/* Adicione isso embaixo do campo de senha no seu login/page.tsx */}
-            <div className="flex justify-end mt-2">
-              <a href="/esqueci-senha" className="text-[10px] font-black uppercase text-indigo-500 hover:text-indigo-700 transition-colors tracking-widest">
-                Esqueceu a senha?
-              </a>
-            </div>
+
+          <div className="flex justify-end mt-2">
+            {/* 👇 USANDO O COMPONENTE LINK OFICIAL DO NEXT.JS */}
+            <Link 
+              href="/esqueci-senha"
+              className="text-[10px] font-black uppercase text-indigo-500 hover:text-indigo-700 transition-colors tracking-widest"
+            >
+              Esqueceu a senha?
+            </Link>
+          </div>
           
           <button 
             type="submit" 

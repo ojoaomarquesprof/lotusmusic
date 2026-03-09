@@ -6,13 +6,16 @@ import { supabase } from '../lib/supabase'
 import { useStyles } from '../lib/useStyles'
 
 export default function Sidebar({ children }: { children: React.ReactNode }) {
-  const { s } = useStyles() // 👈 toggleTheme removido daqui
+  const { s } = useStyles() 
   const router = useRouter()
   const pathname = usePathname() 
   
   const [perfil, setPerfil] = useState<any>(null)
   const [configEscola, setConfigEscola] = useState<any>(null)
   const [menuAberto, setMenuAberto] = useState(false)
+
+  // 👇 LISTA DE PÁGINAS QUE NÃO EXIGEM LOGIN
+  const rotasPublicas = ['/login', '/esqueci-senha', '/redefinir-senha']
 
   useEffect(() => {
     setMenuAberto(false)
@@ -26,19 +29,29 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         const { data: p } = await supabase.from('profiles').select('nome_completo, role').eq('id', session.user.id).single()
         setPerfil(p)
 
-        if (p?.role === 'ALUNO' && !pathname.startsWith('/portal') && pathname !== '/login') {
+        if (pathname === '/login') {
+          if (p?.role === 'ALUNO') {
+            router.push('/portal')
+          } else {
+            router.push('/')
+          }
+          return
+        }
+
+        if (p?.role === 'ALUNO' && !pathname.startsWith('/portal') && !rotasPublicas.includes(pathname)) {
           router.push('/portal')
           return
         }
         
-        if (p?.role !== 'ALUNO' && pathname.startsWith('/portal') && pathname !== '/login') {
+        if (p?.role !== 'ALUNO' && pathname.startsWith('/portal') && !rotasPublicas.includes(pathname)) {
           router.push('/')
           return
         }
 
       } else {
         setPerfil(null)
-        if (pathname !== '/login') {
+        // 👇 SE NÃO ESTIVER LOGADO E NÃO FOR UMA ROTA PÚBLICA, VOLTA PRO LOGIN
+        if (!rotasPublicas.includes(pathname)) {
           router.push('/login')
           return
         }
@@ -52,17 +65,10 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (configEscola) {
-      if (configEscola.nome_escola) {
-        document.title = `${configEscola.nome_escola} | Gestão`
-      }
-      
+      if (configEscola.nome_escola) { document.title = `${configEscola.nome_escola} | Gestão` }
       if (configEscola.favicon_url) {
         let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
-        if (!link) {
-          link = document.createElement('link');
-          link.rel = 'icon';
-          document.head.appendChild(link);
-        }
+        if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
         link.href = configEscola.favicon_url;
       }
     }
@@ -70,10 +76,11 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
-    router.push('/login')
+    window.location.href = '/login'
   }
 
-  if (pathname === '/login' || pathname?.startsWith('/portal')) {
+  // 👇 AQUI A SIDEBAR TAMBÉM SE ESCONDE NAS ROTAS DE RECUPERAÇÃO DE SENHA
+  if (rotasPublicas.includes(pathname) || pathname?.startsWith('/portal')) {
     return (
       <main className="flex-1 flex flex-col w-full relative min-h-screen">
         {children}
@@ -94,77 +101,26 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={`min-h-screen w-full ${s.bg} ${s.text} font-sans transition-colors duration-500 flex flex-col xl:flex-row relative`}>
-      
-      {menuAberto && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 xl:hidden transition-opacity"
-          onClick={() => setMenuAberto(false)}
-        />
-      )}
-
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 w-[280px] h-screen border-r ${s.card} p-6 flex flex-col justify-between shadow-2xl transition-transform duration-300 ease-in-out
-        xl:relative xl:translate-x-0 
-        ${menuAberto ? 'translate-x-0' : '-translate-x-full'}
-      `}>
+      {menuAberto && (<div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 xl:hidden transition-opacity" onClick={() => setMenuAberto(false)} />)}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[280px] h-screen border-r ${s.card} p-6 flex flex-col justify-between shadow-2xl transition-transform duration-300 ease-in-out xl:relative xl:translate-x-0 ${menuAberto ? 'translate-x-0' : '-translate-x-full'}`}>
         <div>
           <div className="mb-10 flex justify-center px-2 relative">
-            <button 
-              className="xl:hidden absolute -right-2 top-0 p-2 text-slate-400 hover:text-rose-500 text-lg"
-              onClick={() => setMenuAberto(false)}
-            >
-              ✕
-            </button>
-
-            {configEscola?.logo_url ? (
-              <img src={configEscola.logo_url} alt="Logo" className="h-24 w-full max-w-[200px] object-contain drop-shadow-sm" />
-            ) : (
-              <h1 className="text-center text-2xl font-black uppercase tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500 leading-none mt-2">
-                {configEscola?.nome_escola || 'Lótus'}
-              </h1>
-            )}
+            <button className="xl:hidden absolute -right-2 top-0 p-2 text-slate-400 hover:text-rose-500 text-lg" onClick={() => setMenuAberto(false)}>✕</button>
+            {configEscola?.logo_url ? (<img src={configEscola.logo_url} alt="Logo" className="h-24 w-full max-w-[200px] object-contain drop-shadow-sm" />) : (<h1 className="text-center text-2xl font-black uppercase tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500 leading-none mt-2">{configEscola?.nome_escola || 'Lótus'}</h1>)}
           </div>
           <NavLinks />
         </div>
-
-        {/* 🚨 BOTÃO DE TEMA REMOVIDO DAQUI 👇 */}
         <div className={`p-4 ${s.cardInterno} rounded-2xl flex items-center justify-between border mt-4`}>
-            <div className="overflow-hidden pr-2">
-              <p className="font-black text-xs uppercase truncate">{perfil?.nome_completo || 'Carregando...'}</p>
-              <p className={`${s.textMuted} text-[9px] uppercase font-bold`}>{perfil?.role}</p>
-            </div>
+            <div className="overflow-hidden pr-2"><p className="font-black text-xs uppercase truncate">{perfil?.nome_completo || 'Carregando...'}</p><p className={`${s.textMuted} text-[9px] uppercase font-bold`}>{perfil?.role}</p></div>
         </div>
       </aside>
-
       <main className="flex-1 w-full p-4 md:p-8 overflow-x-hidden flex flex-col relative z-0">
-        
         <header className={`xl:hidden flex items-center justify-between mb-6 backdrop-blur-md p-4 rounded-[2rem] border ${s.card} shadow-lg relative z-10`}>
-            
-            <button 
-              onClick={() => setMenuAberto(true)} 
-              className={`p-2 rounded-xl ${s.cardInterno} border hover:border-indigo-500/50 transition-colors flex flex-col gap-1.5 justify-center items-center w-10 h-10`}
-            >
-              <div className={`w-5 h-0.5 rounded-full ${s.text} bg-current`}></div>
-              <div className={`w-5 h-0.5 rounded-full ${s.text} bg-current`}></div>
-              <div className={`w-5 h-0.5 rounded-full ${s.text} bg-current`}></div>
-            </button>
-
-            <div className="flex-1 flex justify-center px-4">
-              {configEscola?.logo_url ? (
-                <img src={configEscola.logo_url} alt="Logo" className="h-8 max-w-[140px] object-contain" />
-              ) : (
-                <h1 className="text-base font-black uppercase italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500 truncate max-w-[150px]">
-                  {configEscola?.nome_escola || 'Lótus'}
-                </h1>
-              )}
-            </div>
-
-            {/* 🚨 BOTÃO DE TEMA REMOVIDO DAQUI DO CABEÇALHO MOBILE TAMBÉM 👇 */}
-            <div className="w-10"></div> {/* Espaçador para manter a logo centralizada */}
+            <button onClick={() => setMenuAberto(true)} className={`p-2 rounded-xl ${s.cardInterno} border hover:border-indigo-500/50 transition-colors flex flex-col gap-1.5 justify-center items-center w-10 h-10`}><div className={`w-5 h-0.5 rounded-full ${s.text} bg-current`}></div><div className={`w-5 h-0.5 rounded-full ${s.text} bg-current`}></div><div className={`w-5 h-0.5 rounded-full ${s.text} bg-current`}></div></button>
+            <div className="flex-1 flex justify-center px-4">{configEscola?.logo_url ? (<img src={configEscola.logo_url} alt="Logo" className="h-8 max-w-[140px] object-contain" />) : (<h1 className="text-base font-black uppercase italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500 truncate max-w-[150px]">{configEscola?.nome_escola || 'Lótus'}</h1>)}</div>
+            <div className="w-10"></div>
         </header>
-
         {children}
-
       </main>
     </div>
   )
