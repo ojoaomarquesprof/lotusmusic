@@ -12,6 +12,11 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   
   const [perfil, setPerfil] = useState<any>(null)
   const [configEscola, setConfigEscola] = useState<any>(null)
+  const [menuAberto, setMenuAberto] = useState(false)
+
+  useEffect(() => {
+    setMenuAberto(false)
+  }, [pathname])
 
   useEffect(() => {
     async function load() {
@@ -21,14 +26,11 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         const { data: p } = await supabase.from('profiles').select('nome_completo, role').eq('id', session.user.id).single()
         setPerfil(p)
 
-        // 🚨 BLINDAGEM DE SEGURANÇA GLOBAL 🚨
-        // 1. Se for ALUNO e tentar acessar qualquer coisa fora do /portal ou /login, é expulso de volta pro Portal.
         if (p?.role === 'ALUNO' && !pathname.startsWith('/portal') && pathname !== '/login') {
           router.push('/portal')
           return
         }
         
-        // 2. Se for CHEFE/PROFESSOR e tentar acessar o portal do aluno, é redirecionado pro Painel Central.
         if (p?.role !== 'ALUNO' && pathname.startsWith('/portal') && pathname !== '/login') {
           router.push('/')
           return
@@ -36,7 +38,6 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
       } else {
         setPerfil(null)
-        // Se não tiver ninguém logado e não estiver na tela de login, manda pro login.
         if (pathname !== '/login') {
           router.push('/login')
           return
@@ -72,8 +73,13 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     router.push('/login')
   }
 
+  // 👇 CORREÇÃO: Envolvemos o Login e Portal em uma estrutura que segura o CSS
   if (pathname === '/login' || pathname?.startsWith('/portal')) {
-    return <>{children}</>
+    return (
+      <main className="flex-1 flex flex-col w-full relative min-h-screen">
+        {children}
+      </main>
+    )
   }
 
   const NavLinks = () => (
@@ -88,22 +94,41 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className={`min-h-screen ${s.bg} ${s.text} font-sans transition-colors duration-500 flex flex-col xl:flex-row`}>
-      <aside className={`hidden xl:flex flex-col w-[280px] h-screen sticky top-0 border-r ${s.card} p-6 justify-between shadow-2xl z-20`}>
+    <div className={`min-h-screen w-full ${s.bg} ${s.text} font-sans transition-colors duration-500 flex flex-col xl:flex-row relative`}>
+      
+      {menuAberto && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 xl:hidden transition-opacity"
+          onClick={() => setMenuAberto(false)}
+        />
+      )}
+
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-[280px] h-screen border-r ${s.card} p-6 flex flex-col justify-between shadow-2xl transition-transform duration-300 ease-in-out
+        xl:relative xl:translate-x-0 
+        ${menuAberto ? 'translate-x-0' : '-translate-x-full'}
+      `}>
         <div>
-          <div className="mb-10 flex justify-center px-2">
+          <div className="mb-10 flex justify-center px-2 relative">
+            <button 
+              className="xl:hidden absolute -right-2 top-0 p-2 text-slate-400 hover:text-rose-500 text-lg"
+              onClick={() => setMenuAberto(false)}
+            >
+              ✕
+            </button>
+
             {configEscola?.logo_url ? (
               <img src={configEscola.logo_url} alt="Logo" className="h-24 w-full max-w-[200px] object-contain drop-shadow-sm" />
             ) : (
-              <h1 className="text-center text-2xl font-black uppercase tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500 leading-none">
-                {configEscola?.nome_escola || 'Sua Escola'}
+              <h1 className="text-center text-2xl font-black uppercase tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500 leading-none mt-2">
+                {configEscola?.nome_escola || 'Lótus'}
               </h1>
             )}
           </div>
           <NavLinks />
         </div>
 
-        <div className={`p-4 ${s.cardInterno} rounded-2xl flex items-center justify-between border`}>
+        <div className={`p-4 ${s.cardInterno} rounded-2xl flex items-center justify-between border mt-4`}>
             <div className="overflow-hidden pr-2">
               <p className="font-black text-xs uppercase truncate">{perfil?.nome_completo || 'Carregando...'}</p>
               <p className={`${s.textMuted} text-[9px] uppercase font-bold`}>{perfil?.role}</p>
@@ -112,19 +137,30 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 w-full p-4 md:p-8 overflow-x-hidden flex flex-col">
-        <header className={`xl:hidden flex flex-col items-center mb-6 backdrop-blur-md p-4 rounded-[2rem] border ${s.card} shadow-xl gap-4`}>
-            <div className="flex justify-between w-full items-center">
-              {configEscola?.logo_url ? <img src={configEscola.logo_url} alt="Logo" className="h-10 max-w-[150px] object-contain" /> : <h1 className="text-lg font-black uppercase italic text-indigo-500">{configEscola?.nome_escola || 'Sua Escola'}</h1>}
-              <button onClick={toggleTheme} className={`h-8 w-14 rounded-full ${s.chaveBg} relative shadow-inner flex-shrink-0`}><span className={`h-6 w-6 flex items-center justify-center rounded-full transition-all text-[10px] ${s.chaveBola}`}>{s.icone}</span></button>
+      <main className="flex-1 w-full p-4 md:p-8 overflow-x-hidden flex flex-col relative z-0">
+        
+        <header className={`xl:hidden flex items-center justify-between mb-6 backdrop-blur-md p-4 rounded-[2rem] border ${s.card} shadow-lg relative z-10`}>
+            
+            <button 
+              onClick={() => setMenuAberto(true)} 
+              className={`p-2 rounded-xl ${s.cardInterno} border hover:border-indigo-500/50 transition-colors flex flex-col gap-1.5 justify-center items-center w-10 h-10`}
+            >
+              <div className={`w-5 h-0.5 rounded-full ${s.text} bg-current`}></div>
+              <div className={`w-5 h-0.5 rounded-full ${s.text} bg-current`}></div>
+              <div className={`w-5 h-0.5 rounded-full ${s.text} bg-current`}></div>
+            </button>
+
+            <div className="flex-1 flex justify-center px-4">
+              {configEscola?.logo_url ? (
+                <img src={configEscola.logo_url} alt="Logo" className="h-8 max-w-[140px] object-contain" />
+              ) : (
+                <h1 className="text-base font-black uppercase italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500 truncate max-w-[150px]">
+                  {configEscola?.nome_escola || 'Lótus'}
+                </h1>
+              )}
             </div>
-            <div className="flex flex-wrap justify-center gap-2 w-full mt-2">
-              <button onClick={() => router.push('/')} className={`px-3 py-2.5 rounded-xl font-black uppercase text-[10px] ${pathname === '/' ? 'bg-indigo-600 text-white' : `${s.cardInterno} border`}`}>🏠 Painel</button>
-              <button onClick={() => router.push('/alunos')} className={`px-3 py-2.5 rounded-xl font-black uppercase text-[10px] ${pathname.includes('/alunos') ? 'bg-indigo-600 text-white' : `${s.cardInterno} border`}`}>👥 Alunos</button>
-              <button onClick={() => router.push('/financeiro')} className={`px-3 py-2.5 rounded-xl font-black uppercase text-[10px] ${pathname.includes('/financeiro') ? 'bg-emerald-600 text-white' : `${s.cardInterno} border`}`}>📊 Finance</button>
-              <button onClick={() => router.push('/calendario')} className={`px-3 py-2.5 rounded-xl font-black uppercase text-[10px] ${pathname.includes('/calendario') ? 'bg-amber-500 text-slate-900' : `${s.cardInterno} border`}`}>📅 Calendário</button>
-              <button onClick={() => router.push('/gerencia')} className={`px-3 py-2.5 rounded-xl font-black uppercase text-[10px] ${pathname.includes('/gerencia') ? 'bg-indigo-600 text-white' : `${s.cardInterno} border`}`}>⚙️ Menu</button>
-            </div>
+
+            <button onClick={toggleTheme} className={`h-8 w-14 rounded-full ${s.chaveBg} relative shadow-inner flex-shrink-0`}><span className={`h-6 w-6 flex items-center justify-center rounded-full transition-all text-[10px] mt-1 ${s.chaveBola}`}>{s.icone}</span></button>
         </header>
 
         {children}
