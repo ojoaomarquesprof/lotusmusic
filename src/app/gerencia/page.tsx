@@ -4,8 +4,14 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
+import Cropper from 'react-easy-crop'
 
+// --- FUNÇÕES DE MÁSCARA E CROPPER ---
+const formatPhone = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/g, '($1) $2').replace(/(\d)(\d{4})$/, '$1-$2').slice(0, 15)
+const formatCPF = (v: string) => v.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2').slice(0, 14)
 const formatCEP = (v: string) => v.replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2').slice(0, 9)
+const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
+const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<File | null> => { const image = await createImage(imageSrc); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); if (!ctx) return null; canvas.width = 256; canvas.height = 256; ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, 256, 256); return new Promise(resolve => canvas.toBlob(blob => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.9)) }
 
 export default function Gerencia() {
   const { s } = useStyles()
@@ -16,17 +22,23 @@ export default function Gerencia() {
   const [activeTab, setActiveTab] = useState('Escola')
   const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
-  // ESTADOS GERAIS DA ESCOLA
+  // --- ESTADOS: ESCOLA ---
   const [config, setConfig] = useState<any>({ 
     nome_escola: '', chave_pix: '', logo_url: '', cnpj: '', telefone: '', favicon_url: '',
     cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', estado: ''
   })
-  
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [faviconFile, setFaviconFile] = useState<File | null>(null)
+  const [faviconPreview, setFaviconPreview] = useState<string | null>(null)
+
+  // --- ESTADOS: ESTRUTURA ---
   const [salas, setSalas] = useState<any[]>([])
   const [modalidades, setModalidades] = useState<any[]>([])
-  const [professores, setProfessores] = useState<any[]>([])
-  
-  // ESTADOS DE DISPONIBILIDADE
+  const [novaSala, setNovaSala] = useState('')
+  const [novaModalidade, setNovaModalidade] = useState('')
+
+  // --- ESTADOS: MOTOR DE HORÁRIOS ---
   const [selectedProfId, setSelectedProfId] = useState('')
   const [disponibilidades, setDisponibilidades] = useState<any[]>([])
   const [dispDia, setDispDia] = useState('Segunda')
@@ -36,15 +48,22 @@ export default function Gerencia() {
   const [almocoInicio, setAlmocoInicio] = useState('12:00')
   const [almocoFim, setAlmocoFim] = useState('14:00')
 
-  // ESTADOS PARA CADASTRO
-  const [novaSala, setNovaSala] = useState('')
-  const [novaModalidade, setNovaModalidade] = useState('')
-  
-  // IMAGENS
-  const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [logoPreview, setLogoPreview] = useState<string | null>(null)
-  const [faviconFile, setFaviconFile] = useState<File | null>(null)
-  const [faviconPreview, setFaviconPreview] = useState<string | null>(null)
+  // --- ESTADOS: EQUIPE E PROFS ---
+  const [professores, setProfessores] = useState<any[]>([])
+  const [showModalProf, setShowModalProf] = useState(false)
+  const [profForm, setProfForm] = useState({ 
+    id: '', nome_completo: '', email: '', senha: '', role: 'PROFESSOR', 
+    telefone: '', cpf: '', data_nascimento: '', cep: '', endereco: '', 
+    numero: '', complemento: '', bairro: '', cidade: '', estado: '', avatar_url: '',
+    modalidades: [] as string[] // 👇 NOVO ESTADO AQUI
+  })
+  const [showCropModalProf, setShowCropModalProf] = useState(false)
+  const [imageToCropProf, setImageToCropProf] = useState<string | null>(null)
+  const [cropProf, setCropProf] = useState({ x: 0, y: 0 })
+  const [zoomProf, setZoomProf] = useState(1)
+  const [croppedAreaPixelsProf, setCroppedAreaPixelsProf] = useState<any>(null)
+  const [editFotoArquivoProf, setEditFotoArquivoProf] = useState<File | null>(null)
+  const [fotoPreviewProf, setFotoPreviewProf] = useState<string | null>(null)
 
   useEffect(() => { carregarTudo() }, [])
   useEffect(() => { if (selectedProfId) carregarDisponibilidadeProf(selectedProfId) }, [selectedProfId])
@@ -56,21 +75,11 @@ export default function Gerencia() {
 
     const { data: conf } = await supabase.from('configuracoes').select('*').eq('id', 1).single()
     if (conf) { 
-      // Garante que null vire string vazia para o React não reclamar
       setConfig({
-        nome_escola: conf.nome_escola || '',
-        chave_pix: conf.chave_pix || '',
-        logo_url: conf.logo_url || '',
-        cnpj: conf.cnpj || '',
-        telefone: conf.telefone || '',
-        favicon_url: conf.favicon_url || '',
-        cep: conf.cep || '',
-        endereco: conf.endereco || '',
-        numero: conf.numero || '',
-        complemento: conf.complemento || '',
-        bairro: conf.bairro || '',
-        cidade: conf.cidade || '',
-        estado: conf.estado || ''
+        nome_escola: conf.nome_escola || '', chave_pix: conf.chave_pix || '', logo_url: conf.logo_url || '',
+        cnpj: conf.cnpj || '', telefone: conf.telefone || '', favicon_url: conf.favicon_url || '',
+        cep: conf.cep || '', endereco: conf.endereco || '', numero: conf.numero || '',
+        complemento: conf.complemento || '', bairro: conf.bairro || '', cidade: conf.cidade || '', estado: conf.estado || ''
       })
       setLogoPreview(conf.logo_url)
       setFaviconPreview(conf.favicon_url)
@@ -78,7 +87,7 @@ export default function Gerencia() {
 
     const { data: sls } = await supabase.from('salas').select('*').order('nome')
     const { data: mods } = await supabase.from('modalidades').select('*').order('nome')
-    const { data: profs } = await supabase.from('profiles').select('id, nome_completo, role').in('role', ['PROFESSOR', 'ADMIN']).order('nome_completo')
+    const { data: profs } = await supabase.from('profiles').select('*').in('role', ['PROFESSOR', 'ADMIN']).order('nome_completo')
     
     setSalas(sls || [])
     setModalidades(mods || [])
@@ -86,16 +95,7 @@ export default function Gerencia() {
     setLoading(false)
   }
 
-  async function carregarDisponibilidadeProf(id: string) {
-    const { data } = await supabase.from('disponibilidade_professor').select('*').eq('professor_id', id)
-    const ordemDias: Record<string, number> = { 'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6 }
-    const ordenado = (data || []).sort((a: any, b: any) => {
-      if (ordemDias[a.dia_semana] !== ordemDias[b.dia_semana]) return ordemDias[a.dia_semana] - ordemDias[b.dia_semana]
-      return a.hora_inicio.localeCompare(b.hora_inicio)
-    })
-    setDisponibilidades(ordenado)
-  }
-
+  // --- FUNÇÕES DA ESCOLA ---
   const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newCep = formatCEP(e.target.value); 
     setConfig({ ...config, cep: newCep });
@@ -105,13 +105,7 @@ export default function Gerencia() {
         const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`); 
         const data = await res.json();
         if (!data.erro) {
-          setConfig((prev: any) => ({ 
-            ...prev, 
-            endereco: data.logradouro || '', 
-            bairro: data.bairro || '', 
-            cidade: data.localidade || '', 
-            estado: data.uf || '' 
-          }))
+          setConfig((prev: any) => ({ ...prev, endereco: data.logradouro || '', bairro: data.bairro || '', cidade: data.localidade || '', estado: data.uf || '' }))
           document.getElementById('escola-numero')?.focus()
         }
       } catch (error) { console.error("Erro no CEP") }
@@ -138,6 +132,23 @@ export default function Gerencia() {
       cep: config.cep, endereco: config.endereco, numero: config.numero, complemento: config.complemento, bairro: config.bairro, cidade: config.cidade, estado: config.estado
     }])
     alert("✅ Configurações da Escola salvas com sucesso!"); carregarTudo(); setIsSubmitting(false)
+  }
+
+  // --- FUNÇÕES DE ESTRUTURA (SALAS E MODALIDADES) ---
+  const handleAddSala = async (e: React.FormEvent) => { e.preventDefault(); if (!novaSala) return; await supabase.from('salas').insert([{ nome: novaSala }]); setNovaSala(''); carregarTudo() }
+  const handleDelSala = async (id: string) => { if (!confirm("Deletar esta sala?")) return; await supabase.from('salas').delete().eq('id', id); carregarTudo() }
+  const handleAddModalidade = async (e: React.FormEvent) => { e.preventDefault(); if (!novaModalidade) return; await supabase.from('modalidades').insert([{ nome: novaModalidade }]); setNovaModalidade(''); carregarTudo() }
+  const handleDelModalidade = async (id: string) => { if (!confirm("Deletar esta modalidade?")) return; await supabase.from('modalidades').delete().eq('id', id); carregarTudo() }
+
+  // --- FUNÇÕES DO MOTOR DE HORÁRIOS ---
+  async function carregarDisponibilidadeProf(id: string) {
+    const { data } = await supabase.from('disponibilidade_professor').select('*').eq('professor_id', id)
+    const ordemDias: Record<string, number> = { 'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6 }
+    const ordenado = (data || []).sort((a: any, b: any) => {
+      if (ordemDias[a.dia_semana] !== ordemDias[b.dia_semana]) return ordemDias[a.dia_semana] - ordemDias[b.dia_semana]
+      return a.hora_inicio.localeCompare(b.hora_inicio)
+    })
+    setDisponibilidades(ordenado)
   }
 
   const handleGerarDisponibilidade = async () => {
@@ -177,50 +188,107 @@ export default function Gerencia() {
     setIsSubmitting(false)
   }
 
-  const handleDelDisponibilidade = async (id: string) => {
-    if (!confirm("Excluir este horário?")) return
-    await supabase.from('disponibilidade_professor').delete().eq('id', id)
-    carregarDisponibilidadeProf(selectedProfId)
+  const handleDelDisponibilidade = async (id: string) => { if (!confirm("Excluir este horário?")) return; await supabase.from('disponibilidade_professor').delete().eq('id', id); carregarDisponibilidadeProf(selectedProfId) }
+  const handleLimparDia = async (dia: string) => { if (!confirm(`🚨 Apagar TODOS os horários livres de ${dia}?`)) return; setIsSubmitting(true); await supabase.from('disponibilidade_professor').delete().eq('professor_id', selectedProfId).eq('dia_semana', dia); carregarDisponibilidadeProf(selectedProfId); setIsSubmitting(false) }
+
+  // --- FUNÇÕES DA EQUIPE ---
+  const handleProfCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newCep = formatCEP(e.target.value); 
+    setProfForm({ ...profForm, cep: newCep });
+    const cleanCep = newCep.replace(/\D/g, '');
+    if (cleanCep.length === 8) {
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`); 
+        const data = await res.json();
+        if (!data.erro) {
+          setProfForm((prev: any) => ({ ...prev, endereco: data.logradouro || '', bairro: data.bairro || '', cidade: data.localidade || '', estado: data.uf || '' }))
+          document.getElementById('prof-numero')?.focus()
+        }
+      } catch (error) { console.error("Erro CEP") }
+    }
   }
 
-  const handleLimparDia = async (dia: string) => {
-    if (!confirm(`🚨 Apagar TODOS os horários livres de ${dia}?`)) return
-    setIsSubmitting(true)
-    await supabase.from('disponibilidade_professor').delete().eq('professor_id', selectedProfId).eq('dia_semana', dia)
-    carregarDisponibilidadeProf(selectedProfId)
+  const handleProfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) { const reader = new FileReader(); reader.onload = () => { setImageToCropProf(reader.result as string); setShowCropModalProf(true) }; reader.readAsDataURL(e.target.files[0]) } }
+  const handleConfirmCropProf = async () => { if (imageToCropProf && croppedAreaPixelsProf) { const croppedFile = await getCroppedImg(imageToCropProf, croppedAreaPixelsProf); if (croppedFile) { setEditFotoArquivoProf(croppedFile); setFotoPreviewProf(URL.createObjectURL(croppedFile)) } }; setShowCropModalProf(false); setImageToCropProf(null); setCropProf({ x: 0, y: 0 }); setZoomProf(1) }
+
+  // 👇 FUNÇÃO DE TOGGLE PARA AS MODALIDADES DO PROFESSOR
+  const toggleModalidadeProf = (nomeModalidade: string) => {
+    setProfForm(prev => {
+      if (prev.modalidades.includes(nomeModalidade)) {
+        return { ...prev, modalidades: prev.modalidades.filter(m => m !== nomeModalidade) }
+      } else {
+        return { ...prev, modalidades: [...prev.modalidades, nomeModalidade] }
+      }
+    })
+  }
+
+  const handleSalvarProfessor = async (e: React.FormEvent) => {
+    e.preventDefault(); setIsSubmitting(true)
+
+    let finalAvatarUrl = profForm.avatar_url; 
+    if (editFotoArquivoProf) { 
+      const fileName = `equipe/${Date.now()}-${crypto.randomUUID()}.jpg`; 
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, editFotoArquivoProf); 
+      if (!uploadError) finalAvatarUrl = supabase.storage.from('avatars').getPublicUrl(fileName).data.publicUrl 
+    }
+
+    if (profForm.id) {
+      const { error } = await supabase.from('profiles').update({ 
+        nome_completo: profForm.nome_completo, role: profForm.role, telefone: profForm.telefone, 
+        cpf: profForm.cpf, data_nascimento: profForm.data_nascimento || null, cep: profForm.cep, 
+        endereco: profForm.endereco, numero: profForm.numero, complemento: profForm.complemento, 
+        bairro: profForm.bairro, cidade: profForm.cidade, estado: profForm.estado, avatar_url: finalAvatarUrl,
+        modalidades: profForm.modalidades // 👇 SALVANDO MODALIDADES
+      }).eq('id', profForm.id)
+      if (error) alert("Erro ao atualizar: " + error.message)
+      else { alert("✅ Ficha do membro atualizada!"); setShowModalProf(false); carregarTudo() }
+    } else {
+      if (!profForm.email || !profForm.senha) return alert("Preencha e-mail e senha para criar o acesso!")
+      try {
+        const dadosParaEnviar = { ...profForm, avatar_url: finalAvatarUrl }
+        const res = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dadosParaEnviar) })
+        const data = await res.json()
+        if (res.ok) { alert("✅ Novo membro cadastrado com sucesso!"); setShowModalProf(false); carregarTudo() } 
+        else { alert("❌ Erro: " + (data.error || 'Falha ao criar.')) }
+      } catch (err) { alert("Erro de comunicação com o servidor.") }
+    }
     setIsSubmitting(false)
   }
 
-  const handleAddSala = async (e: React.FormEvent) => { 
-    e.preventDefault(); 
-    if (!novaSala) return; 
-    await supabase.from('salas').insert([{ nome: novaSala }]); 
-    setNovaSala(''); carregarTudo() 
-  }
-  
-  const handleDelSala = async (id: string) => { 
-    if (!confirm("Deletar esta sala?")) return; 
-    await supabase.from('salas').delete().eq('id', id); 
-    carregarTudo() 
+  const abrirModalEquipe = (prof: any = null) => {
+    if (prof) {
+      setProfForm({ 
+        id: prof.id, nome_completo: prof.nome_completo || '', email: prof.email || '***', senha: '***', role: prof.role || 'PROFESSOR',
+        telefone: prof.telefone || '', cpf: prof.cpf || '', data_nascimento: prof.data_nascimento || '', cep: prof.cep || '', 
+        endereco: prof.endereco || '', numero: prof.numero || '', complemento: prof.complemento || '', 
+        bairro: prof.bairro || '', cidade: prof.cidade || '', estado: prof.estado || '', avatar_url: prof.avatar_url || '',
+        modalidades: prof.modalidades || [] // 👇 CARREGANDO MODALIDADES
+      })
+      setFotoPreviewProf(prof.avatar_url || null)
+    } else {
+      setProfForm({ 
+        id: '', nome_completo: '', email: '', senha: '', role: 'PROFESSOR', telefone: '', cpf: '', data_nascimento: '', 
+        cep: '', endereco: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '', avatar_url: '',
+        modalidades: [] // 👇 INICIANDO VAZIO
+      })
+      setFotoPreviewProf(null)
+    }
+    setEditFotoArquivoProf(null)
+    setShowModalProf(true)
   }
 
-  const handleAddModalidade = async (e: React.FormEvent) => { 
-    e.preventDefault(); 
-    if (!novaModalidade) return; 
-    await supabase.from('modalidades').insert([{ nome: novaModalidade }]); 
-    setNovaModalidade(''); carregarTudo() 
-  }
-  
-  const handleDelModalidade = async (id: string) => { 
-    if (!confirm("Deletar esta modalidade?")) return; 
-    await supabase.from('modalidades').delete().eq('id', id); 
-    carregarTudo() 
+  const handleExcluirMembro = async (id: string) => {
+    if(!confirm("Tem certeza que deseja APAGAR este membro definitivamente? Isso deletará acessos e registros.")) return;
+    await supabase.from('profiles').delete().eq('id', id);
+    alert("Membro excluído!");
+    carregarTudo();
+    setShowModalProf(false);
   }
 
   if (loading) return <div className="flex justify-center items-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
 
   return (
-    <div className="animate-in fade-in duration-500 pb-12 w-full">
+    <div className="animate-in fade-in duration-500 pb-12 w-full relative">
       
       <div className="mb-8">
         <h2 className="text-3xl font-black uppercase italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500">Gerência e Setup</h2>
@@ -234,6 +302,9 @@ export default function Gerencia() {
         <button onClick={() => setActiveTab('Estrutura')} className={`pb-4 text-sm font-black uppercase tracking-widest transition-all border-b-4 whitespace-nowrap ${activeTab === 'Estrutura' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-700'}`}>
           📍 Salas & Cursos
         </button>
+        <button onClick={() => setActiveTab('Equipe')} className={`pb-4 text-sm font-black uppercase tracking-widest transition-all border-b-4 whitespace-nowrap ${activeTab === 'Equipe' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-700'}`}>
+          🧑‍🏫 Equipe & Profs
+        </button>
         <button onClick={() => setActiveTab('Horarios')} className={`pb-4 text-sm font-black uppercase tracking-widest transition-all border-b-4 whitespace-nowrap ${activeTab === 'Horarios' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-700'}`}>
           ⏰ Motor de Horários
         </button>
@@ -241,6 +312,7 @@ export default function Gerencia() {
 
       <div>
         
+        {/* ABA ESCOLA */}
         {activeTab === 'Escola' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <form onSubmit={handleSalvarConfig} className={`${s.card} p-8 md:p-10 rounded-[2.5rem] border shadow-xl`}>
@@ -297,6 +369,7 @@ export default function Gerencia() {
           </div>
         )}
 
+        {/* ABA ESTRUTURA */}
         {activeTab === 'Estrutura' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className={`${s.card} p-8 md:p-10 rounded-[2.5rem] border shadow-xl`}>
@@ -331,6 +404,58 @@ export default function Gerencia() {
           </div>
         )}
 
+        {/* ABA EQUIPE E PROFS */}
+        {activeTab === 'Equipe' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className={`${s.card} p-8 md:p-10 rounded-[2.5rem] border shadow-xl`}>
+              
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-500/10 pb-6">
+                <div>
+                  <h3 className="text-3xl font-black uppercase flex items-center gap-3"><span className="text-indigo-500">🧑‍🏫</span> Equipe Lótus</h3>
+                  <p className={`${s.textMuted} text-sm font-bold mt-1`}>Gerencie os dados, fotos e acessos de Professores e Administradores.</p>
+                </div>
+                <button onClick={() => abrirModalEquipe()} className="bg-indigo-600 text-white px-6 py-4 rounded-xl font-black text-xs uppercase shadow-xl hover:scale-105 transition-all whitespace-nowrap">
+                  + Adicionar Novo Membro
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {professores.map(p => (
+                  <div key={p.id} className={`${s.cardInterno} p-6 rounded-[2rem] border shadow-sm flex flex-col justify-between group hover:border-indigo-500/30 transition-all`}>
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 flex items-center justify-center text-xl font-black text-white shadow-md border-2 border-white/10 overflow-hidden flex-shrink-0">
+                        {p.avatar_url ? <img src={p.avatar_url} alt="Foto" className="w-full h-full object-cover" /> : p.nome_completo?.charAt(0)}
+                      </div>
+                      <div className="overflow-hidden">
+                        <p className="font-black text-sm uppercase text-slate-800 line-clamp-1">{p.nome_completo}</p>
+                        <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md tracking-widest mt-1 inline-block ${p.role === 'ADMIN' ? 'bg-rose-100 text-rose-600' : 'bg-indigo-100 text-indigo-600'}`}>{p.role}</span>
+                      </div>
+                    </div>
+                    {/* 👇 Exibindo as modalidades no card do professor */}
+                    {p.modalidades && p.modalidades.length > 0 && (
+                      <div className="mb-4">
+                        <p className="text-[9px] font-black uppercase text-indigo-500 mb-1">Cursos:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {p.modalidades.map((m: string) => (
+                            <span key={m} className="text-[8px] bg-slate-500/10 text-slate-600 px-2 py-1 rounded font-bold uppercase">{m}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex gap-2 border-t border-slate-500/10 pt-4 mt-auto">
+                      <button onClick={() => abrirModalEquipe(p)} className="flex-1 py-3 rounded-xl bg-slate-500/5 border border-slate-500/10 text-[10px] font-black uppercase hover:bg-indigo-500 hover:text-white hover:border-indigo-500 transition-all">
+                        ⚙️ Editar Ficha
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* ABA HORÁRIOS */}
         {activeTab === 'Horarios' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className={`${s.card} p-8 md:p-10 rounded-[2.5rem] border border-t-8 border-t-amber-500 shadow-xl flex flex-col`}>
@@ -442,6 +567,137 @@ export default function Gerencia() {
         )}
 
       </div>
+
+      {/* MODAL GIGANTE DE EQUIPE (EDIÇÃO E CRIAÇÃO) */}
+      {showModalProf && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className={`${s.card} border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-4xl shadow-2xl relative overflow-y-auto max-h-[90vh] custom-scrollbar`}>
+            
+            <div className="flex justify-between items-center mb-8">
+              <h2 className={`text-3xl font-black ${s.text} uppercase italic flex items-center gap-3`}>
+                <span className="text-indigo-500">✍️</span> {profForm.id ? 'Editar Ficha do Membro' : 'Novo Membro da Equipe'}
+              </h2>
+              {profForm.id && (
+                 <button onClick={() => handleExcluirMembro(profForm.id)} className="px-4 py-2 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white font-black text-[10px] uppercase transition-all">🗑️ Excluir Membro</button>
+              )}
+            </div>
+
+            <form onSubmit={handleSalvarProfessor} className="space-y-8">
+              
+              {/* FOTO */}
+              <div className="flex justify-center mb-6">
+                <label htmlFor="prof-foto-upload" className="cursor-pointer group flex flex-col items-center gap-2">
+                  <div className={`relative w-28 h-28 rounded-full border-4 border-indigo-500/20 shadow-lg overflow-hidden flex items-center justify-center transition-all group-hover:border-indigo-500 ${s.cardInterno}`}>
+                    {fotoPreviewProf ? <img src={fotoPreviewProf} alt="Preview" className="w-full h-full object-cover" /> : <span className="text-4xl opacity-30">📷</span>}
+                    <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><span className="text-white text-[9px] font-black uppercase tracking-widest text-center px-2">Alterar<br/>Foto</span></div>
+                  </div>
+                  <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest group-hover:underline">Adicionar Foto</span>
+                  <input id="prof-foto-upload" type="file" accept="image/*" className="hidden" onChange={handleProfFileChange} />
+                </label>
+              </div>
+
+              {/* DADOS DE ACESSO */}
+              <div className="space-y-4">
+                <p className="text-[10px] font-black uppercase tracking-widest border-b text-indigo-500 border-indigo-500/20 pb-2">Sistema / Permissões</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-1">
+                    <label className="text-[9px] font-bold opacity-50 ml-1 block mb-1 uppercase">Cargo / Permissão</label>
+                    <select required value={profForm.role} onChange={e => setProfForm({...profForm, role: e.target.value})} className={`w-full p-3.5 rounded-xl border font-black text-sm outline-none ${profForm.role === 'ADMIN' ? 'text-rose-600 bg-rose-50 border-rose-200' : 'text-indigo-600 bg-indigo-50 border-indigo-200'}`}>
+                      <option value="PROFESSOR">👨‍🏫 PROFESSOR</option>
+                      <option value="ADMIN">👑 DIRETOR / ADMIN</option>
+                    </select>
+                  </div>
+                  {!profForm.id && (
+                    <>
+                      <div><label className="text-[9px] font-bold opacity-50 ml-1 block mb-1 uppercase">E-mail de Login</label><input required type="email" value={profForm.email} onChange={e => setProfForm({...profForm, email: e.target.value})} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} /></div>
+                      <div><label className="text-[9px] font-bold opacity-50 ml-1 block mb-1 uppercase">Senha de Login</label><input required minLength={6} type="password" value={profForm.senha} onChange={e => setProfForm({...profForm, senha: e.target.value})} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} /></div>
+                    </>
+                  )}
+                  {profForm.id && (
+                     <div className="md:col-span-2 flex items-center text-[10px] font-bold text-rose-500/60 uppercase">
+                       Atenção: E-mail de login e senha não podem ser alterados por aqui após a criação. O membro deve usar "Esqueci minha senha" no portal.
+                     </div>
+                  )}
+                </div>
+              </div>
+
+              {/* DADOS PESSOAIS */}
+              <div className="space-y-4">
+                <p className="text-[10px] font-black uppercase tracking-widest border-b text-indigo-500 border-indigo-500/20 pb-2">Dados Pessoais</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <input placeholder="Nome Completo" required value={profForm.nome_completo} onChange={e => setProfForm({...profForm, nome_completo: e.target.value})} className={`w-full p-3.5 rounded-xl border font-bold text-sm md:col-span-2 ${s.input}`} />
+                  <div><label className="text-[9px] font-bold opacity-50 ml-1 block mb-1">Data Nasc.</label><input type="date" value={profForm.data_nascimento} onChange={e => setProfForm({...profForm, data_nascimento: e.target.value})} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} /></div>
+                  <input placeholder="CPF" value={profForm.cpf} onChange={e => setProfForm({...profForm, cpf: formatCPF(e.target.value)})} maxLength={14} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} />
+                  <input placeholder="WhatsApp / Telefone" value={profForm.telefone} onChange={e => setProfForm({...profForm, telefone: formatPhone(e.target.value)})} maxLength={15} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} />
+                </div>
+              </div>
+
+              {/* ENDEREÇO */}
+              <div className="space-y-4">
+                <p className="text-[10px] font-black uppercase tracking-widest border-b text-indigo-500 border-indigo-500/20 pb-2">Endereço</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <input placeholder="CEP" value={profForm.cep} onChange={handleProfCepChange} maxLength={9} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input}`} />
+                  <input placeholder="Endereço / Rua" value={profForm.endereco} onChange={e => setProfForm({...profForm, endereco: e.target.value})} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-2 ${s.input}`} />
+                  <input id="prof-numero" placeholder="Número" value={profForm.numero} onChange={e => setProfForm({...profForm, numero: e.target.value})} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input}`} />
+                  <input placeholder="Complemento" value={profForm.complemento} onChange={e => setProfForm({...profForm, complemento: e.target.value})} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input}`} />
+                  <input placeholder="Bairro" value={profForm.bairro} onChange={e => setProfForm({...profForm, bairro: e.target.value})} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input}`} />
+                  <input placeholder="Cidade" value={profForm.cidade} onChange={e => setProfForm({...profForm, cidade: e.target.value})} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input}`} />
+                  <input placeholder="UF" value={profForm.estado} onChange={e => setProfForm({...profForm, estado: e.target.value})} maxLength={2} className={`w-full p-3.5 rounded-xl border font-bold text-sm uppercase col-span-2 md:col-span-1 ${s.input}`} />
+                </div>
+              </div>
+
+              {/* 👇 NOVO: MODALIDADES DO PROFESSOR 👇 */}
+              {profForm.role === 'PROFESSOR' && (
+                <div className="space-y-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest border-b text-indigo-500 border-indigo-500/20 pb-2">Cursos que Leciona (Modalidades)</p>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {modalidades.map(m => (
+                      <button 
+                        key={m.id} 
+                        type="button" 
+                        onClick={() => toggleModalidadeProf(m.nome)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border transition-all ${profForm.modalidades.includes(m.nome) ? 'bg-indigo-600 text-white border-transparent shadow-lg scale-105' : `${s.cardInterno} opacity-70 hover:opacity-100 border-slate-500/20`}`}
+                      >
+                        {profForm.modalidades.includes(m.nome) && <span className="mr-2">✓</span>} {m.nome}
+                      </button>
+                    ))}
+                    {modalidades.length === 0 && <p className="text-xs italic opacity-50">Nenhuma modalidade cadastrada na escola.</p>}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-slate-500/10">
+                <button type="button" onClick={() => setShowModalProf(false)} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-black uppercase text-xs ${s.text} hover:bg-slate-500/10`}>Cancelar</button>
+                <button type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase text-xs shadow-lg hover:scale-105 transition-all">
+                  {isSubmitting ? 'Salvando...' : '💾 Salvar Ficha Completa'}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CROPPER DO PROFESSOR */}
+      {showCropModalProf && imageToCropProf && (
+        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 z-[60] animate-in fade-in">
+          <div className={`${s.card} border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col items-center`}>
+            <h3 className="text-xl font-black uppercase italic mb-6">Ajustar Foto da Equipe</h3>
+            <div className="relative w-full h-64 bg-slate-800 rounded-2xl overflow-hidden mb-6 shadow-inner">
+              <Cropper image={imageToCropProf} crop={cropProf} zoom={zoomProf} aspect={1} cropShape="round" showGrid={false} onCropChange={setCropProf} onCropComplete={(cA, cAP) => setCroppedAreaPixelsProf(cAP)} onZoomChange={setZoomProf} />
+            </div>
+            <div className="w-full mb-8">
+              <label className="text-[10px] font-black uppercase opacity-50 block mb-2 text-center">Zoom da Imagem</label>
+              <input type="range" min={1} max={3} step={0.1} value={zoomProf} onChange={(e) => setZoomProf(Number(e.target.value))} className="w-full accent-indigo-500" />
+            </div>
+            <div className="flex gap-3 w-full">
+              <button onClick={() => setShowCropModalProf(false)} className={`flex-1 py-4 rounded-2xl font-black uppercase text-xs border border-slate-500/20 hover:bg-slate-500/10`}>Cancelar</button>
+              <button onClick={handleConfirmCropProf} className="flex-1 py-4 rounded-2xl font-black uppercase text-xs bg-indigo-600 text-white shadow-lg hover:scale-105 transition-all">Cortar & Salvar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

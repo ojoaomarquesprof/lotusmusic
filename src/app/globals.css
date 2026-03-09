@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc; /* Força cor clara (slate-50) globalmente */
+  --foreground: #0f172a; /* Força texto escuro (slate-900) globalmente */
 }
 
 @theme inline {
@@ -12,12 +12,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* 🚨 REMOVIDO O BLOCO @media (prefers-color-scheme: dark) PARA IMPEDIR MODO ESCURO FORÇADO PELO CELULAR */
 
 body {
   background: var(--background);

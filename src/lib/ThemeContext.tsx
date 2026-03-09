@@ -1,28 +1,16 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext } from 'react'
 
 const ThemeContext = createContext({
-  isDark: true,
+  isDark: false,
   toggleTheme: () => {},
 })
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [isDark, setIsDark] = useState(true)
-
-  useEffect(() => {
-    const saved = localStorage.getItem('diretoaocanto_tema')
-    if (saved === 'light') setIsDark(false)
-  }, [])
-
-  const toggleTheme = () => {
-    const newVal = !isDark
-    setIsDark(newVal)
-    localStorage.setItem('diretoaocanto_tema', newVal ? 'dark' : 'light')
-  }
-
+  // Portal do aluno travado no modo claro permanentemente
   return (
-    <ThemeContext.Provider value={{ isDark, toggleTheme }}>
+    <ThemeContext.Provider value={{ isDark: false, toggleTheme: () => {} }}>
       {children}
     </ThemeContext.Provider>
   )

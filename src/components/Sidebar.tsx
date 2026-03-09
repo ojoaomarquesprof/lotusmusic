@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 import { useStyles } from '../lib/useStyles'
 
 export default function Sidebar({ children }: { children: React.ReactNode }) {
-  const { s, toggleTheme } = useStyles()
+  const { s } = useStyles() // 👈 toggleTheme removido daqui
   const router = useRouter()
   const pathname = usePathname() 
   
@@ -73,7 +73,6 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     router.push('/login')
   }
 
-  // 👇 CORREÇÃO: Envolvemos o Login e Portal em uma estrutura que segura o CSS
   if (pathname === '/login' || pathname?.startsWith('/portal')) {
     return (
       <main className="flex-1 flex flex-col w-full relative min-h-screen">
@@ -128,12 +127,12 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
           <NavLinks />
         </div>
 
+        {/* 🚨 BOTÃO DE TEMA REMOVIDO DAQUI 👇 */}
         <div className={`p-4 ${s.cardInterno} rounded-2xl flex items-center justify-between border mt-4`}>
             <div className="overflow-hidden pr-2">
               <p className="font-black text-xs uppercase truncate">{perfil?.nome_completo || 'Carregando...'}</p>
               <p className={`${s.textMuted} text-[9px] uppercase font-bold`}>{perfil?.role}</p>
             </div>
-            <button onClick={toggleTheme} className={`h-6 w-10 rounded-full ${s.chaveBg} relative shadow-inner flex-shrink-0`}><span className={`h-4 w-4 flex items-center justify-center rounded-full transition-all text-[8px] mt-1 ${s.chaveBola}`}>{s.icone}</span></button>
         </div>
       </aside>
 
@@ -160,7 +159,8 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
               )}
             </div>
 
-            <button onClick={toggleTheme} className={`h-8 w-14 rounded-full ${s.chaveBg} relative shadow-inner flex-shrink-0`}><span className={`h-6 w-6 flex items-center justify-center rounded-full transition-all text-[10px] mt-1 ${s.chaveBola}`}>{s.icone}</span></button>
+            {/* 🚨 BOTÃO DE TEMA REMOVIDO DAQUI DO CABEÇALHO MOBILE TAMBÉM 👇 */}
+            <div className="w-10"></div> {/* Espaçador para manter a logo centralizada */}
         </header>
 
         {children}
