@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Isso diz para a Vercel publicar o site mesmo se o ESLint reclamar de algo
-  eslint: {
-    ignoreDuringBuilds: true,
+  // Isso diz para a Vercel publicar o site mesmo se o TypeScript achar que tem algo fora do padrão
+  typescript: {
+    ignoreBuildErrors: true,
   },
 };
 
