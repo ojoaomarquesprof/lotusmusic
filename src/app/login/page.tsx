@@ -1,27 +1,18 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image' // 👈 Importando o componente otimizado do Next.js
 import { supabase } from '../../lib/supabase'
+import { motion } from 'framer-motion'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [loading, setLoading] = useState(false)
-  const [config, setConfig] = useState<any>(null)
   
-  // 👇 Estado para controlar se a imagem da logo quebrou no carregamento
-  const [erroLogo, setErroLogo] = useState(false) 
   const router = useRouter()
-
-  useEffect(() => {
-    async function loadConfig() {
-      const { data } = await supabase.from('configuracoes').select('nome_escola, logo_url').eq('id', 1).single()
-      setConfig(data)
-    }
-    loadConfig()
-  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,28 +40,42 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
+    <div className="min-h-screen flex items-center justify-center p-4 font-sans relative overflow-hidden z-0">
       
-      <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-2xl w-full max-w-sm animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* BOLHAS ANIMADAS DE FUNDO */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10 bg-slate-50">
+          <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] max-w-[600px] max-h-[600px] rounded-full bg-indigo-300/40 blur-[120px] animate-pulse" style={{ animationDuration: '8s' }} />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] max-w-[600px] max-h-[600px] rounded-full bg-cyan-300/40 blur-[120px] animate-pulse" style={{ animationDuration: '12s' }} />
+      </div>
+
+      {/* CONTAINER PRINCIPAL COM VIDRO FOSCO */}
+      <motion.div 
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, type: "spring", bounce: 0.4 }}
+        className="bg-white/40 backdrop-blur-2xl p-8 md:p-10 rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.05)] w-full max-w-sm relative"
+      >
         
-        {/* CABEÇALHO COM PROTEÇÃO CONTRA IMAGEM QUEBRADA */}
+        {/* CABEÇALHO COM A LOGO FIXA */}
         <div className="flex flex-col items-center justify-center mb-8 text-center min-h-[120px]">
-          {config?.logo_url && !erroLogo ? (
-            <img 
-              src={config.logo_url} 
-              alt="Logo da Escola" 
-              onError={() => setErroLogo(true)} // 👈 Se a imagem der erro, ele exibe o fallback
-              className="h-28 w-full max-w-[220px] object-contain drop-shadow-sm mb-2" 
+          
+          {/* 👇 Aqui a logo é chamada direto da pasta public (ex: public/logo.png) */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.2 }}
+            className="relative w-full max-w-[200px] h-24 mb-2"
+          >
+            <Image 
+              src="/logo.png" // ⚠️ Coloque o arquivo da sua logo na pasta "public" com este nome!
+              alt="Logo do Sistema" 
+              fill
+              className="object-contain drop-shadow-md"
+              priority // Carrega a imagem mais rápido por ser a tela de login
             />
-          ) : (
-            <>
-              <span className="text-5xl block mb-2 text-indigo-500">🎵</span>
-              <h1 className="text-2xl font-black text-slate-900 uppercase italic leading-tight">
-                {config?.nome_escola || 'Acesso ao Sistema'}
-              </h1>
-            </>
-          )}
-          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-3 bg-slate-100 px-4 py-1.5 rounded-full inline-block">
+          </motion.div>
+
+          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-3 bg-white/50 border border-white/60 backdrop-blur-sm px-4 py-1.5 rounded-full inline-block shadow-sm">
             Área Restrita
           </p>
         </div>
@@ -83,7 +88,7 @@ export default function Login() {
               required 
               value={email} 
               onChange={(e) => setEmail(e.target.value)} 
-              className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-bold focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 mt-1 transition-all outline-none" 
+              className="w-full p-4 rounded-xl bg-white/50 border border-white/50 text-slate-900 font-bold focus:border-indigo-500/50 focus:bg-white/80 focus:ring-4 focus:ring-indigo-500/10 mt-1 transition-all outline-none shadow-inner" 
             />
           </div>
           
@@ -94,30 +99,31 @@ export default function Login() {
               required 
               value={senha} 
               onChange={(e) => setSenha(e.target.value)} 
-              className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-bold focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 mt-1 transition-all outline-none" 
+              className="w-full p-4 rounded-xl bg-white/50 border border-white/50 text-slate-900 font-bold focus:border-indigo-500/50 focus:bg-white/80 focus:ring-4 focus:ring-indigo-500/10 mt-1 transition-all outline-none shadow-inner" 
             />
           </div>
 
           <div className="flex justify-end mt-2">
-            {/* 👇 USANDO O COMPONENTE LINK OFICIAL DO NEXT.JS */}
             <Link 
               href="/esqueci-senha"
-              className="text-[10px] font-black uppercase text-indigo-500 hover:text-indigo-700 transition-colors tracking-widest"
+              className="text-[10px] font-black uppercase text-indigo-600 hover:text-indigo-800 transition-colors tracking-widest"
             >
               Esqueceu a senha?
             </Link>
           </div>
           
-          <button 
+          <motion.button 
+            whileHover={{ scale: 1.02, y: -2 }}
+            whileTap={{ scale: 0.98 }}
             type="submit" 
             disabled={loading} 
-            className="w-full py-4 mt-4 bg-indigo-600 text-white font-black uppercase text-xs rounded-2xl shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100"
+            className="w-full py-4 mt-4 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white font-black uppercase text-xs rounded-2xl shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all disabled:opacity-50 disabled:hover:scale-100 disabled:hover:y-0"
           >
             {loading ? 'Validando Acesso...' : 'Entrar no Sistema'}
-          </button>
+          </motion.button>
         </form>
 
-      </div>
+      </motion.div>
     </div>
   )
 }

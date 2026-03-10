@@ -23,9 +23,15 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
       
-      {/* Devolvemos as classes de segurança para não quebrar o layout base */}
-      <body className={`${inter.className} min-h-screen w-full bg-slate-50 text-slate-900 flex flex-col overflow-x-hidden`}>
+      <body className={`${inter.className} min-h-screen w-full text-slate-900 flex flex-col overflow-x-hidden relative selection:bg-indigo-500/30`}>
         
+        {/* 👇 O SEGREDO DO GLASSMORPHISM: Fundo com formas coloridas suaves e muito desfoque */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10 bg-slate-50">
+          <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] max-w-[600px] max-h-[600px] rounded-full bg-indigo-300/30 blur-[120px] animate-pulse" style={{ animationDuration: '8s' }} />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] max-w-[600px] max-h-[600px] rounded-full bg-cyan-300/30 blur-[120px] animate-pulse" style={{ animationDuration: '12s' }} />
+          <div className="absolute top-[20%] right-[10%] w-[30vw] h-[30vw] max-w-[400px] max-h-[400px] rounded-full bg-purple-300/20 blur-[100px] animate-pulse" style={{ animationDuration: '10s' }} />
+        </div>
+
         <Sidebar>
           {children}
         </Sidebar>

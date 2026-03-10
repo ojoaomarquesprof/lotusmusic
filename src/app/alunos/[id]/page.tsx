@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { useStyles } from '../../../lib/useStyles'
 import Cropper from 'react-easy-crop'
+import { motion, AnimatePresence } from 'framer-motion'
 
 const formatPhone = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/g, '($1) $2').replace(/(\d)(\d{4})$/, '$1-$2').slice(0, 15)
 const formatCPF = (v: string) => v.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2').slice(0, 14)
@@ -12,8 +13,14 @@ const formatCEP = (v: string) => v.replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$
 const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<File | null> => { const image = await createImage(imageSrc); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); if (!ctx) return null; canvas.width = 256; canvas.height = 256; ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, 256, 256); return new Promise(resolve => canvas.toBlob(blob => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.9)) }
 
+const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
+const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }
+
 export default function PerfilAluno() {
   const { s } = useStyles(); const { id } = useParams(); const router = useRouter()
+  
+  const [isMounted, setIsMounted] = useState(false)
+  
   const [aluno, setAluno] = useState<any>(null); const [aulasFixas, setAulasFixas] = useState<any[]>([]); const [pagamentos, setPagamentos] = useState<any[]>([]); const [historicoAulas, setHistoricoAulas] = useState<any[]>([])
   const [materiais, setMateriais] = useState<any[]>([])
   const [loading, setLoading] = useState(true); const [isSubmitting, setIsSubmitting] = useState(false); const [imgError, setImgError] = useState(false)
@@ -41,12 +48,12 @@ export default function PerfilAluno() {
 
   const [isEditPayModalOpen, setIsEditPayModalOpen] = useState(false); const [editPayId, setEditPayId] = useState(''); const [editPayData, setEditPayData] = useState(''); const [editPayMetodo, setEditPayMetodo] = useState('PIX'); const [editPayValor, setEditPayValor] = useState('');
 
-  // ESTADOS DO NOVO AVISO
   const [isMsgModalOpen, setIsMsgModalOpen] = useState(false)
   const [msgTitulo, setMsgTitulo] = useState('Aviso da Secretaria')
   const [msgTexto, setMsgTexto] = useState('')
 
-  useEffect(() => { carregarDados() }, [id])
+  useEffect(() => { setIsMounted(true) }, [])
+  useEffect(() => { if (isMounted) carregarDados() }, [id, isMounted])
   useEffect(() => { if (horaInicioAula) { const [h, m] = horaInicioAula.split(':').map(Number); const d = new Date(); d.setHours(h + 1, m); setHoraFimAula(d.toTimeString().slice(0, 5)) } }, [horaInicioAula])
   useEffect(() => { if (editHoraInicio) { const [h, m] = editHoraInicio.split(':').map(Number); const d = new Date(); d.setHours(h + 1, m); setEditHoraFim(d.toTimeString().slice(0, 5)) } }, [editHoraInicio])
 
@@ -99,7 +106,6 @@ export default function PerfilAluno() {
   const handleUploadMaterial = async (e: React.ChangeEvent<HTMLInputElement>) => { if (!e.target.files || e.target.files.length === 0) return; const file = e.target.files[0]; setIsSubmitting(true); const fileExt = file.name.split('.').pop(); const fileName = `${id}/${crypto.randomUUID()}.${fileExt}`; const { error: uploadError } = await supabase.storage.from('materiais').upload(fileName, file); if (uploadError) { alert("Erro ao enviar arquivo: " + uploadError.message); setIsSubmitting(false); return; } const { data: publicUrlData } = supabase.storage.from('materiais').getPublicUrl(fileName); await supabase.from('materiais_aluno').insert([{ aluno_id: id, nome_arquivo: file.name, url_arquivo: publicUrlData.publicUrl, tipo_arquivo: file.type || 'Desconhecido' }]); carregarDados(); setIsSubmitting(false); alert("✅ Material enviado com sucesso!"); }
   const excluirMaterial = async (matId: string) => { if (!window.confirm("Apagar este material? O aluno não poderá mais acessar.")) return; await supabase.from('materiais_aluno').delete().eq('id', matId); carregarDados(); }
 
-  // FUNÇÃO QUE DISPARA A MENSAGEM
   const handleEnviarMensagem = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -114,48 +120,114 @@ export default function PerfilAluno() {
     setIsSubmitting(false);
   }
 
+  // Classes Globais de Inputs para os Modais
+  const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
+
+  if (!isMounted) return null;
   if (loading) return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
 
   return (
-    <div className="animate-in fade-in duration-500">
+    <motion.div variants={containerVariants} initial="hidden" animate="show">
       
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-500/10 pb-4">
+      {/* CABEÇALHO LIMPO */}
+      <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-200/50 pb-4">
         <div className="flex items-center gap-4">
-          <button onClick={() => router.push('/alunos')} className={`${s.cardInterno} p-3 rounded-2xl border hover:scale-105 transition-all font-black text-indigo-500`}>← Voltar</button>
-          <div><h2 className="text-3xl font-black uppercase italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500">Dossiê do Aluno</h2></div>
-        </div>
-        <div className="flex flex-wrap justify-center gap-3">
-          <button onClick={handleExcluirAluno} className="px-4 py-2.5 rounded-xl border border-rose-500/50 text-rose-500 font-black uppercase text-xs hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2"><span>🗑️</span> Excluir</button>
-          <button onClick={() => setIsMsgModalOpen(true)} className={`px-4 py-2.5 rounded-xl bg-amber-500 text-slate-900 font-black uppercase text-xs shadow-lg hover:scale-105 transition-all flex items-center gap-2`}><span>🔔</span> Enviar Aviso</button>
-          <button onClick={abrirModalEdicao} className={`px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-black uppercase text-xs shadow-lg hover:scale-105 transition-all flex items-center gap-2`}><span>⚙️</span> Editar Aluno</button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="space-y-6">
-          <div className={`${s.card} p-8 rounded-[2.5rem] border-t-8 border-t-indigo-500 shadow-2xl text-center h-fit relative`}>
-            <div className={`w-32 h-32 mx-auto mb-4 rounded-full border-4 shadow-xl overflow-hidden flex items-center justify-center relative ${isAlunoInativo ? 'border-rose-500/50 bg-rose-500/10' : 'border-white/10 bg-gradient-to-br from-indigo-500 to-cyan-400'}`}>
-              {aluno?.avatar_url && !imgError ? <img src={aluno.avatar_url} alt="Foto" className={`w-full h-full object-cover ${isAlunoInativo ? 'grayscale opacity-70' : ''}`} onError={() => setImgError(true)} /> : <span className={`text-5xl font-black uppercase ${isAlunoInativo ? 'text-rose-500/50' : 'text-white'}`}>{aluno?.nome_completo?.charAt(0)}</span>}
-            </div>
-            <h2 className="text-xl font-black uppercase tracking-tight mb-1">{aluno?.nome_completo}</h2>
-            <div className="h-6 mb-6">{isAlunoInativo && <span className="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest inline-block">Matrícula Inativa</span>}</div>
-            <div className="space-y-2 mb-6 text-left"><div className={`p-3 rounded-xl ${s.cardInterno} border flex items-center gap-3`}><span className="text-xl">✉️</span><div className="overflow-hidden"><p className={`${s.textMuted} text-[9px] font-black uppercase`}>E-mail</p><p className="text-xs font-bold truncate">{aluno?.email}</p></div></div><div className={`p-3 rounded-xl ${s.cardInterno} border flex items-center gap-3`}><span className="text-xl">📱</span><div><p className={`${s.textMuted} text-[9px] font-black uppercase`}>WhatsApp</p><p className="text-xs font-bold">{aluno?.telefone}</p></div></div></div>
-            <div className={`p-5 rounded-2xl ${s.cardInterno} border text-left space-y-3 mb-6`}><p className="text-[10px] font-black uppercase text-indigo-500 tracking-widest border-b border-indigo-500/20 pb-1">Ficha Cadastral</p>{aluno?.cpf && <div><p className={`${s.textMuted} text-[9px] font-black uppercase`}>CPF</p><p className="text-xs font-bold">{aluno.cpf}</p></div>}{aluno?.data_nascimento && <div><p className={`${s.textMuted} text-[9px] font-black uppercase`}>Nascimento</p><p className="text-xs font-bold">{new Date(aluno.data_nascimento).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p></div>}{aluno?.cep && (<div><p className={`${s.textMuted} text-[9px] font-black uppercase`}>Endereço</p><p className="text-xs font-bold leading-tight">{aluno.endereco}, {aluno.numero} {aluno.complemento ? `(${aluno.complemento})` : ''} <br/>{aluno.bairro} - {aluno.cidade}/{aluno.estado} <br/><span className="opacity-60 font-normal text-[10px]">CEP: {aluno.cep}</span></p></div>)}{infoMatricula?.como_conheceu && (<div className="pt-2 border-t border-slate-500/10"><p className={`${s.textMuted} text-[9px] font-black uppercase mb-1`}>Chegou via</p><span className="bg-indigo-500/10 text-indigo-500 px-2 py-1 rounded text-[9px] font-black uppercase">{infoMatricula.como_conheceu} {infoMatricula.indicacao_nome ? `(${infoMatricula.indicacao_nome})` : ''}</span></div>)}</div>
-            <div className={`p-5 rounded-2xl ${s.cardInterno} border shadow-inner mb-6`}><div className="flex justify-between items-center mb-1"><p className={`${s.textMuted} text-[9px] font-black uppercase`}>Mensalidade</p><p className={`${s.textMuted} text-[9px] font-black uppercase`}>Venc. dia {infoMatricula?.data_vencimento || '--'}</p></div><p className="text-3xl font-black text-emerald-500 text-left">R$ {infoMatricula?.valor_mensalidade || '0,00'}</p></div>
-            <button onClick={abrirModalPagamento} disabled={isAlunoInativo} className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase tracking-widest text-xs shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50"> {isAlunoInativo ? 'Aluno Inativo' : 'Registrar Pagamento'} </button>
+          <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => router.push('/alunos')} className={`bg-white/40 backdrop-blur-md border border-white/60 p-3 rounded-2xl shadow-sm font-bold text-sm text-indigo-600 hover:bg-white/60 transition-all`}>← Voltar</motion.button>
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight text-slate-800">Dossiê do Aluno</h2>
+            <p className="text-slate-500 text-sm mt-1">Visão completa e histórico</p>
           </div>
         </div>
+        <div className="flex flex-wrap justify-center gap-3">
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={handleExcluirAluno} className="px-4 py-2.5 rounded-xl border border-rose-300 bg-white/40 backdrop-blur-md text-rose-600 font-bold text-xs hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2 shadow-sm"><span>🗑️</span> Excluir</motion.button>
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={() => setIsMsgModalOpen(true)} className={`px-4 py-2.5 rounded-xl bg-amber-400 text-amber-950 font-bold text-xs shadow-md transition-all flex items-center gap-2`}><span>🔔</span> Enviar Aviso</motion.button>
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={abrirModalEdicao} className={`px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2`}><span>⚙️</span> Editar Aluno</motion.button>
+        </div>
+      </motion.div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* COLUNA ESQUERDA: PERFIL */}
+        <div className="space-y-6">
+          <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] border-t-8 border-t-indigo-500 shadow-[0_8px_32px_rgba(0,0,0,0.04)] text-center h-fit relative`}>
+            <div className={`w-32 h-32 mx-auto mb-4 rounded-full shadow-lg overflow-hidden flex items-center justify-center relative bg-white/50 border-4 ${isAlunoInativo ? 'border-rose-300' : 'border-indigo-100'}`}>
+              {aluno?.avatar_url && !imgError ? <img src={aluno.avatar_url} alt="Foto" className={`w-full h-full object-cover ${isAlunoInativo ? 'grayscale opacity-70' : ''}`} onError={() => setImgError(true)} /> : <span className={`text-5xl font-bold uppercase ${isAlunoInativo ? 'text-rose-400' : 'text-indigo-400'}`}>{aluno?.nome_completo?.charAt(0)}</span>}
+            </div>
+            <h2 className="text-xl font-bold tracking-tight text-slate-800 mb-1">{aluno?.nome_completo}</h2>
+            <div className="h-6 mb-6">{isAlunoInativo && <span className="bg-rose-100 text-rose-600 border border-rose-200 px-3 py-1 rounded-lg text-xs font-semibold tracking-wide inline-block">Matrícula Inativa</span>}</div>
+            
+            <div className="space-y-2 mb-6 text-left">
+              <div className={`p-3 rounded-xl bg-white/60 backdrop-blur-md border border-white/80 shadow-sm flex items-center gap-3`}><span className="text-xl">✉️</span><div className="overflow-hidden"><p className={`text-slate-500 text-[10px] font-semibold uppercase`}>E-mail</p><p className="text-xs font-bold text-slate-800 truncate">{aluno?.email}</p></div></div>
+              <div className={`p-3 rounded-xl bg-white/60 backdrop-blur-md border border-white/80 shadow-sm flex items-center gap-3`}><span className="text-xl">📱</span><div><p className={`text-slate-500 text-[10px] font-semibold uppercase`}>WhatsApp</p><p className="text-xs font-bold text-slate-800">{aluno?.telefone}</p></div></div>
+            </div>
+            
+            <div className={`p-5 rounded-2xl bg-white/60 backdrop-blur-md border border-white/80 shadow-sm text-left space-y-3 mb-6`}>
+              <p className="text-[11px] font-semibold uppercase text-indigo-600 tracking-wider border-b border-indigo-500/10 pb-1">Ficha Cadastral</p>
+              {aluno?.cpf && <div><p className={`text-slate-500 text-[10px] font-semibold uppercase`}>CPF</p><p className="text-xs font-bold text-slate-800">{aluno.cpf}</p></div>}
+              {aluno?.data_nascimento && <div><p className={`text-slate-500 text-[10px] font-semibold uppercase`}>Nascimento</p><p className="text-xs font-bold text-slate-800">{new Date(aluno.data_nascimento).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p></div>}
+              {aluno?.cep && (<div><p className={`text-slate-500 text-[10px] font-semibold uppercase`}>Endereço</p><p className="text-xs font-bold text-slate-800 leading-tight">{aluno.endereco}, {aluno.numero} {aluno.complemento ? `(${aluno.complemento})` : ''} <br/>{aluno.bairro} - {aluno.cidade}/{aluno.estado} <br/><span className="opacity-60 font-medium text-[10px]">CEP: {aluno.cep}</span></p></div>)}
+              {infoMatricula?.como_conheceu && (<div className="pt-2 border-t border-slate-200/50"><p className={`text-slate-500 text-[10px] font-semibold uppercase mb-1`}>Chegou via</p><span className="bg-indigo-50 text-indigo-600 border border-indigo-100 px-2 py-1 rounded text-[10px] font-bold shadow-sm inline-block">{infoMatricula.como_conheceu} {infoMatricula.indicacao_nome ? `(${infoMatricula.indicacao_nome})` : ''}</span></div>)}
+            </div>
+            
+            <div className={`p-5 rounded-2xl bg-white/40 border border-white/80 shadow-inner mb-6`}>
+              <div className="flex justify-between items-center mb-1">
+                <p className={`text-slate-500 text-[10px] font-semibold uppercase`}>Mensalidade</p>
+                <p className={`text-slate-500 text-[10px] font-semibold uppercase`}>Venc. dia {infoMatricula?.data_vencimento || '--'}</p>
+              </div>
+              <p className="text-3xl font-bold tracking-tight text-emerald-600 text-left">R$ {infoMatricula?.valor_mensalidade || '0,00'}</p>
+            </div>
+            
+            <motion.button whileTap={{ scale: 0.95 }} onClick={abrirModalPagamento} disabled={isAlunoInativo} className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm shadow-md hover:bg-emerald-500 transition-all disabled:opacity-50"> {isAlunoInativo ? 'Aluno Inativo' : 'Registrar Pagamento'} </motion.button>
+          </motion.div>
+        </div>
+
+        {/* COLUNA DIREITA: INFORMAÇÕES EXTRAS */}
         <div className="lg:col-span-2 space-y-6">
           
-          <div className={`${s.card} p-8 rounded-[2.5rem] border shadow-xl`}><h3 className="text-lg font-black uppercase mb-6 flex items-center gap-3"><span className="text-indigo-500">📌</span> Horário Fixo</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{aulasFixas.map(aula => { const nomeProf = Array.isArray(aula.professor) ? aula.professor[0]?.nome_completo : aula.professor?.nome_completo; const nomeSala = Array.isArray(aula.sala) ? aula.sala[0]?.nome : aula.sala?.nome; return (<div key={aula.id} className={`${s.cardInterno} p-5 rounded-2xl border border-l-4 border-l-indigo-500 flex flex-col gap-2`}><div className="flex justify-between items-center"><p className="font-black text-lg uppercase text-indigo-500">{aula.dia}</p><span className="bg-indigo-500/10 text-indigo-500 px-3 py-1 rounded-lg text-[10px] font-black uppercase">{aula.instrumento_aula}</span></div><p className="font-black text-sm">{aula.horario_inicio.slice(0, 5)} - {aula.horario_fim.slice(0, 5)}</p><p className={`${s.textMuted} text-[10px] font-black uppercase mt-2 pt-2 border-t border-slate-500/10`}>📍 {nomeSala || 'S/ Sala'} • 👤 Prof. {nomeProf}</p></div>) })}{aulasFixas.length === 0 && <p className={`${s.textMuted} col-span-2 text-center py-4 italic text-sm`}>Nenhum horário fixo.</p>}</div></div>
+          <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+            <h3 className="text-xl font-bold tracking-tight mb-6 flex items-center gap-3 text-slate-800"><span className="text-indigo-500 drop-shadow-sm">📌</span> Horário Fixo</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {aulasFixas.map(aula => { 
+                const nomeProf = Array.isArray(aula.professor) ? aula.professor[0]?.nome_completo : aula.professor?.nome_completo; 
+                const nomeSala = Array.isArray(aula.sala) ? aula.sala[0]?.nome : aula.sala?.nome; 
+                return (
+                  <motion.div whileHover={{ scale: 1.02 }} key={aula.id} className={`bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/80 border-l-4 border-l-indigo-500 shadow-sm flex flex-col gap-2`}>
+                    <div className="flex justify-between items-center">
+                      <p className="font-bold text-lg text-indigo-600">{aula.dia}</p>
+                      <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm">{aula.instrumento_aula}</span>
+                    </div>
+                    <p className="font-bold text-sm text-slate-800">{aula.horario_inicio.slice(0, 5)} - {aula.horario_fim.slice(0, 5)}</p>
+                    <p className={`text-slate-500 text-[10px] font-semibold mt-2 pt-2 border-t border-slate-200/50`}>📍 {nomeSala || 'S/ Sala'} • 👤 Prof. {nomeProf}</p>
+                  </motion.div>
+                ) 
+              })}
+              {aulasFixas.length === 0 && <p className={`text-slate-500 col-span-2 text-center py-4 italic text-sm`}>Nenhum horário fixo.</p>}
+            </div>
+          </motion.div>
           
-          <div className={`${s.card} p-8 rounded-[2.5rem] border shadow-xl`}><div className="flex justify-between items-center mb-6"><h3 className="text-lg font-black uppercase flex items-center gap-3"><span className="text-amber-500">📖</span> Diário</h3><button onClick={() => setIsClassModalOpen(true)} disabled={isAlunoInativo} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-all disabled:opacity-50">+ Lançar Aula</button></div><div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">{historicoAulas.map(hist => (<div key={hist.id} className={`${s.cardInterno} p-5 rounded-2xl border flex flex-col gap-2`}><div className="flex justify-between items-center"><p className="font-black text-sm">{new Date(hist.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})} {hist.horario_inicio && <span className={`${s.textMuted} font-bold text-[10px] ml-3 uppercase`}>⏰ {hist.horario_inicio.slice(0, 5)} - {hist.horario_fim?.slice(0, 5)}</span>}</p><span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase border ${hist.status === 'Realizada' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : hist.status === 'Falta' ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>{hist.status}</span></div>{hist.observacoes && <p className={`${s.textMuted} text-xs italic bg-slate-500/5 p-3 rounded-xl border border-slate-500/10 mt-1`}>"{hist.observacoes}"</p>}</div>))}{historicoAulas.length === 0 && <p className={`${s.textMuted} text-center py-8 italic text-sm border border-dashed rounded-2xl`}>Nenhuma aula registrada.</p>}</div></div>
-          
-          <div className={`${s.card} p-8 rounded-[2.5rem] border shadow-xl`}>
+          <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-black uppercase flex items-center gap-3"><span className="text-cyan-500">📂</span> Repositório (Arquivos)</h3>
-              <label className={`px-4 py-2 bg-cyan-600 text-white rounded-xl text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-all cursor-pointer ${isSubmitting ? 'opacity-50 pointer-events-none' : ''}`}>
+              <h3 className="text-xl font-bold tracking-tight flex items-center gap-3 text-slate-800"><span className="text-amber-500 drop-shadow-sm">📖</span> Diário</h3>
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setIsClassModalOpen(true)} disabled={isAlunoInativo} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[11px] font-bold shadow-sm transition-all disabled:opacity-50">+ Lançar Aula</motion.button>
+            </div>
+            <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+              {historicoAulas.map(hist => (
+                <div key={hist.id} className={`bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/80 shadow-sm flex flex-col gap-2`}>
+                  <div className="flex justify-between items-center">
+                    <p className="font-bold text-sm text-slate-800">{new Date(hist.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})} {hist.horario_inicio && <span className={`text-slate-500 font-medium text-[11px] ml-3`}>⏰ {hist.horario_inicio.slice(0, 5)} - {hist.horario_fim?.slice(0, 5)}</span>}</p>
+                    <span className={`px-3 py-1 rounded-lg text-[10px] font-bold border shadow-sm ${hist.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : hist.status === 'Falta' ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>{hist.status}</span>
+                  </div>
+                  {hist.observacoes && <p className={`text-slate-600 text-xs bg-white/50 p-3 rounded-xl border border-white/60 mt-1 shadow-inner`}>"{hist.observacoes}"</p>}
+                </div>
+              ))}
+              {historicoAulas.length === 0 && <p className={`text-slate-500 text-center py-8 italic text-sm border border-dashed border-slate-300 rounded-2xl bg-white/30`}>Nenhuma aula registrada.</p>}
+            </div>
+          </motion.div>
+          
+          <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold tracking-tight flex items-center gap-3 text-slate-800"><span className="text-cyan-500 drop-shadow-sm">📂</span> Repositório (Arquivos)</h3>
+              <label className={`px-4 py-2 bg-cyan-600 text-white rounded-xl text-[11px] font-bold shadow-sm hover:bg-cyan-500 transition-all cursor-pointer ${isSubmitting ? 'opacity-50 pointer-events-none' : ''}`}>
                 {isSubmitting ? 'Enviando...' : '+ Enviar Arquivo'}
                 <input type="file" className="hidden" onChange={handleUploadMaterial} disabled={isSubmitting} />
               </label>
@@ -163,61 +235,333 @@ export default function PerfilAluno() {
             
             <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
               {materiais.map(mat => (
-                <div key={mat.id} className={`${s.cardInterno} p-4 rounded-2xl border flex justify-between items-center group hover:border-cyan-500/30 transition-all`}>
+                <motion.div whileHover={{ scale: 1.01 }} key={mat.id} className={`bg-white/60 backdrop-blur-md p-4 rounded-2xl border border-white/80 shadow-sm flex justify-between items-center group hover:shadow-md transition-all`}>
                   <div className="flex items-center gap-3 overflow-hidden">
-                    <span className="text-2xl opacity-50">{mat.tipo_arquivo.includes('pdf') ? '📄' : mat.tipo_arquivo.includes('audio') ? '🎵' : '📁'}</span>
+                    <span className="text-2xl opacity-60">{mat.tipo_arquivo.includes('pdf') ? '📄' : mat.tipo_arquivo.includes('audio') ? '🎵' : '📁'}</span>
                     <div className="overflow-hidden">
-                      <p className="font-black text-xs uppercase truncate" title={mat.nome_arquivo}>{mat.nome_arquivo}</p>
-                      <p className={`${s.textMuted} text-[9px] font-bold uppercase mt-1`}>{new Date(mat.data_envio).toLocaleDateString('pt-BR')}</p>
+                      <p className="font-bold text-sm text-slate-800 truncate" title={mat.nome_arquivo}>{mat.nome_arquivo}</p>
+                      <p className={`text-slate-500 text-[10px] font-medium mt-1`}>{new Date(mat.data_envio).toLocaleDateString('pt-BR')}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <a href={mat.url_arquivo} target="_blank" rel="noopener noreferrer" className="h-8 w-8 rounded-xl bg-cyan-500/10 text-cyan-500 hover:bg-cyan-500 hover:text-white flex items-center justify-center transition-all" title="Ver / Baixar">⬇️</a>
-                    <button onClick={() => excluirMaterial(mat.id)} className="h-8 w-8 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center transition-all opacity-0 group-hover:opacity-100" title="Apagar Arquivo">🗑️</button>
+                    <a href={mat.url_arquivo} target="_blank" rel="noopener noreferrer" className="h-8 w-8 rounded-xl bg-cyan-50 text-cyan-600 border border-cyan-100 hover:bg-cyan-500 hover:text-white flex items-center justify-center transition-all shadow-sm" title="Ver / Baixar">⬇️</a>
+                    <button onClick={() => excluirMaterial(mat.id)} className="h-8 w-8 rounded-xl bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-500 hover:text-white flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 shadow-sm" title="Apagar Arquivo">🗑️</button>
                   </div>
-                </div>
+                </motion.div>
               ))}
-              {materiais.length === 0 && <p className={`${s.textMuted} text-center py-6 italic text-sm border border-dashed rounded-2xl`}>O aluno ainda não possui materiais.</p>}
+              {materiais.length === 0 && <p className={`text-slate-500 text-center py-6 italic text-sm border border-dashed border-slate-300 rounded-2xl bg-white/30`}>O aluno ainda não possui materiais.</p>}
             </div>
-          </div>
+          </motion.div>
 
-          <div className={`${s.card} p-8 rounded-[2.5rem] border shadow-xl`}><h3 className="text-lg font-black uppercase mb-6 flex items-center gap-3"><span className="text-emerald-500">💳</span> Extrato de Pagamentos</h3><div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">{pagamentos.map(pg => (<div key={pg.id} className={`${s.cardInterno} p-5 rounded-2xl border flex justify-between items-center hover:border-emerald-500/30 transition-all group`}><div><p className="font-black text-sm mb-1">{new Date(pg.data_pagamento).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p><p className={`${s.textMuted} text-[10px] font-bold uppercase`}>Forma: <span className="text-indigo-500">{pg.metodo_pagamento || 'N/A'}</span></p></div><div className="flex items-center gap-4"><div className="text-right"><p className="font-black text-emerald-500 text-xl">R$ {pg.valor}</p><p className="text-[9px] font-black uppercase opacity-50 bg-emerald-500/10 text-emerald-500 inline-block px-2 py-1 rounded mt-1">Pago</p></div><button onClick={() => abrirModalEdicaoPagamento(pg)} className="opacity-0 group-hover:opacity-100 h-10 w-10 flex items-center justify-center bg-slate-500/10 rounded-xl hover:bg-indigo-500 hover:text-white transition-all text-sm" title="Editar Registro">✏️</button></div></div>))}{pagamentos.length === 0 && <p className={`${s.textMuted} text-center py-6 italic text-sm`}>Sem histórico financeiro.</p>}</div></div>
+          <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+            <h3 className="text-xl font-bold tracking-tight mb-6 flex items-center gap-3 text-slate-800"><span className="text-emerald-500 drop-shadow-sm">💳</span> Extrato de Pagamentos</h3>
+            <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+              {pagamentos.map(pg => (
+                <motion.div whileHover={{ scale: 1.01 }} key={pg.id} className={`bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/80 shadow-sm flex justify-between items-center hover:shadow-md transition-all group`}>
+                  <div>
+                    <p className="font-bold text-sm text-slate-800 mb-1">{new Date(pg.data_pagamento).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
+                    <p className={`text-slate-500 text-[11px] font-medium`}>Forma: <span className="text-indigo-600 font-bold">{pg.metodo_pagamento || 'N/A'}</span></p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="font-bold text-emerald-600 text-xl tracking-tight">R$ {pg.valor}</p>
+                      <p className="text-[9px] font-bold uppercase text-emerald-700 bg-emerald-100 inline-block px-2 py-1 rounded mt-1 shadow-sm border border-emerald-200">Pago</p>
+                    </div>
+                    <motion.button whileTap={{ scale: 0.9 }} onClick={() => abrirModalEdicaoPagamento(pg)} className="opacity-0 group-hover:opacity-100 h-10 w-10 flex items-center justify-center bg-white border border-slate-200 shadow-sm rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-all text-sm" title="Editar Registro">✏️</motion.button>
+                  </div>
+                </motion.div>
+              ))}
+              {pagamentos.length === 0 && <p className={`text-slate-500 text-center py-6 italic text-sm bg-white/30 border border-dashed border-slate-300 rounded-2xl`}>Sem histórico financeiro.</p>}
+            </div>
+          </motion.div>
         </div>
       </div>
 
-      {/* --- MODAL DE ENVIAR AVISO --- */}
-      {isMsgModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in duration-300">
-          <div className={`${s.card} border-t-8 border-t-amber-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className={`text-2xl font-black ${s.text} uppercase italic text-amber-500`}>Enviar Aviso</h2>
-              <button onClick={() => setIsMsgModalOpen(false)} className="opacity-50 hover:opacity-100 font-black">✖</button>
-            </div>
-            <p className="text-xs font-bold opacity-70 mb-6 leading-tight">Essa mensagem aparecerá instantaneamente no "sininho" do aplicativo do aluno.</p>
-            
-            <form onSubmit={handleEnviarMensagem} className="space-y-5">
-              <div>
-                <label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Título (Assunto)</label>
-                <input required value={msgTitulo} onChange={e => setMsgTitulo(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} />
+      {/* --- MODAIS COM VIDRO (GLASSMORPHISM) --- */}
+      <AnimatePresence>
+        {isMsgModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-amber-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className={`text-2xl font-bold tracking-tight text-slate-800 drop-shadow-sm`}>Enviar Aviso</h2>
+                <button onClick={() => setIsMsgModalOpen(false)} className="text-slate-400 hover:text-slate-700 font-bold">✖</button>
               </div>
-              <div>
-                <label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Sua Mensagem</label>
-                <textarea required value={msgTexto} onChange={e => setMsgTexto(e.target.value)} placeholder="Digite o aviso aqui..." className={`w-full p-3.5 rounded-xl border font-bold text-sm h-32 resize-none ${s.input}`} />
-              </div>
-              <button type="submit" disabled={isSubmitting} className="w-full py-4 rounded-2xl bg-amber-500 text-slate-900 font-black uppercase text-xs shadow-xl hover:scale-105 transition-all">
-                {isSubmitting ? 'Enviando...' : '🔔 Disparar Notificação'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+              <p className="text-sm font-medium text-slate-500 mb-6 leading-tight">Essa mensagem aparecerá instantaneamente no aplicativo do aluno.</p>
+              
+              <form onSubmit={handleEnviarMensagem} className="space-y-5">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 ml-1">Título (Assunto)</label>
+                  <input required value={msgTitulo} onChange={e => setMsgTitulo(e.target.value)} className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 ml-1">Sua Mensagem</label>
+                  <textarea required value={msgTexto} onChange={e => setMsgTexto(e.target.value)} placeholder="Digite o aviso aqui..." className={`${inputClass} h-32 resize-none`} />
+                </div>
+                <div className="pt-4">
+                  <motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="w-full py-4 rounded-2xl bg-amber-400 text-amber-950 font-bold text-sm shadow-md hover:bg-amber-500 transition-all disabled:opacity-50">
+                    {isSubmitting ? 'Enviando...' : '🔔 Disparar Notificação'}
+                  </motion.button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* DEMAIS MODAIS OMITIDOS POR BREVIDADE (PAGAMENTO, FOTO, EDITAR, AULA - SEGUEM IGUAIS AO CÓDIGO ANTERIOR) */}
-      {showCropModal && imageToCrop && (<div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 z-[60] animate-in fade-in duration-300"><div className={`${s.card} border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col items-center`}><h3 className="text-xl font-black uppercase italic mb-6">Ajustar Foto</h3><div className="relative w-full h-64 bg-slate-800 rounded-2xl overflow-hidden mb-6 shadow-inner"><Cropper image={imageToCrop} crop={crop} zoom={zoom} aspect={1} cropShape="round" showGrid={false} onCropChange={setCrop} onCropComplete={(cA, cAP) => setCroppedAreaPixels(cAP)} onZoomChange={setZoom} /></div><div className="w-full mb-8"><label className="text-[10px] font-black uppercase opacity-50 block mb-2 text-center">Zoom da Imagem</label><input type="range" min={1} max={3} step={0.1} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="w-full accent-indigo-500" /></div><div className="flex gap-3 w-full"><button onClick={() => setShowCropModal(false)} className={`flex-1 py-4 rounded-2xl font-black uppercase text-xs border border-slate-500/20 hover:bg-slate-500/10`}>Cancelar</button><button onClick={handleConfirmCrop} className="flex-1 py-4 rounded-2xl font-black uppercase text-xs bg-indigo-600 text-white shadow-lg hover:scale-105 transition-all">Cortar & Salvar</button></div></div></div>)}
-      {isPayModalOpen && (<div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in"><div className={`${s.card} border-t-8 border-t-emerald-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}><h2 className={`text-2xl font-black mb-6 ${s.text} uppercase italic`}>Novo Pagamento</h2><form onSubmit={handleSalvarPagamento} className="space-y-5"><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Valor</label><input type="number" step="0.01" required value={payValor} onChange={e => setPayValor(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-xl text-emerald-500 ${s.input}`} /></div><div className="grid grid-cols-2 gap-4"><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Data</label><input type="date" required value={payData} onChange={e => setPayData(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} /></div><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Forma</label><select required value={payMetodo} onChange={e => setPayMetodo(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`}><option value="PIX">PIX</option><option value="Cartão">Cartão</option><option value="Dinheiro">Dinheiro</option><option value="Transferência">Transferência</option></select></div></div><div className="flex justify-end gap-3 mt-8 pt-6 border-t border-slate-500/10"><button type="button" onClick={() => setIsPayModalOpen(false)} className={`px-6 py-3 rounded-xl font-black uppercase text-xs ${s.text} hover:bg-slate-500/10`}>Cancelar</button><button type="submit" className="px-10 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-xs shadow-xl hover:scale-105 transition-all">Confirmar Pagamento</button></div></form></div></div>)}
-      {isEditPayModalOpen && (<div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-[60] animate-in fade-in duration-300"><div className={`${s.card} border-t-8 border-t-emerald-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}><div className="flex justify-between items-center mb-6"><h2 className={`text-2xl font-black ${s.text} uppercase italic`}>Editar Recibo</h2><button onClick={() => handleExcluirPagamento(editPayId)} className="h-10 w-10 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all" title="Apagar Registro Definitivamente">🗑️</button></div><form onSubmit={handleSalvarEdicaoPagamento} className="space-y-5"><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Valor Pago</label><input type="number" step="0.01" required value={editPayValor} onChange={e => setEditPayValor(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-xl text-emerald-500 ${s.input}`} /></div><div className="grid grid-cols-2 gap-4"><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Data</label><input type="date" required value={editPayData} onChange={e => setEditPayData(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} /></div><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Forma</label><select required value={editPayMetodo} onChange={e => setEditPayMetodo(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`}><option value="PIX">PIX</option><option value="Cartão">Cartão</option><option value="Dinheiro">Dinheiro</option><option value="Transferência">Transferência</option></select></div></div><div className="flex justify-end gap-3 mt-8 pt-6 border-t border-slate-500/10"><button type="button" onClick={() => setIsEditPayModalOpen(false)} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-black uppercase text-xs ${s.text} hover:bg-slate-500/10`}>Cancelar</button><button type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-xs shadow-xl hover:scale-105 transition-all">{isSubmitting ? 'Salvando...' : 'Salvar Alterações'}</button></div></form></div></div>)}
-      {isClassModalOpen && (<div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in"><div className={`${s.card} border-t-8 border-t-amber-500 p-8 rounded-[2.5rem] w-full max-w-xl shadow-2xl relative`}><h2 className={`text-2xl font-black mb-6 ${s.text} uppercase italic`}>Lançamento de Aula</h2><form onSubmit={handleRegistrarAula} className="space-y-6"><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Data</label><input type="date" required value={dataAula} onChange={e => setDataAula(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} /></div><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Início</label><input type="time" required value={horaInicioAula} onChange={e => setHoraInicioAula(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} /></div><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Fim</label><input type="time" required value={horaFimAula} onChange={e => setHoraFimAula(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`} /></div></div><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Status</label><select required value={statusAula} onChange={e => setStatusAula(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input}`}><option value="Realizada">Realizada ✅</option><option value="Falta">Falta ❌</option><option value="Desmarcada">Desmarcada 🔄</option><option value="Reposição">Reposição 🌟</option></select></div><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Observações</label><textarea value={obsAula} onChange={e => setObsAula(e.target.value)} className={`w-full p-4 rounded-xl border font-bold text-sm ${s.input} h-32 resize-none`} /></div><div className="flex justify-end gap-3 mt-8 pt-6 border-t border-slate-500/10"><button type="button" onClick={() => setIsClassModalOpen(false)} className={`px-6 py-3 rounded-xl font-black uppercase text-xs ${s.text} hover:bg-slate-500/10`}>Cancelar</button><button type="submit" className="px-10 py-4 rounded-2xl bg-amber-500 text-slate-900 font-black uppercase text-xs shadow-xl hover:scale-105 transition-all">Lançar no Diário</button></div></form></div></div>)}
-      {isEditModalOpen && (<div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in"><div className={`${s.card} border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-4xl shadow-2xl relative overflow-y-auto max-h-[90vh] custom-scrollbar`}><h2 className={`text-3xl font-black mb-8 ${s.text} uppercase italic`}>Editar Ficha do Aluno</h2><form onSubmit={handleSalvarEdicao} className="space-y-8"><div className={`flex justify-center mb-6 ${isEditingInativo ? 'opacity-50 pointer-events-none' : ''}`}><label htmlFor="edit-foto-upload" className="cursor-pointer group flex flex-col items-center gap-2"><div className={`relative w-28 h-28 rounded-full border-4 border-indigo-500/20 shadow-lg overflow-hidden flex items-center justify-center transition-all group-hover:border-indigo-500 ${s.cardInterno}`}>{fotoPreview ? <img src={fotoPreview} alt="Preview" className="w-full h-full object-cover" /> : <span className="text-4xl opacity-30">📷</span>}<div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><span className="text-white text-[9px] font-black uppercase tracking-widest text-center px-2">Alterar<br/>Foto</span></div></div><span className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest group-hover:underline">Adicionar Nova Foto</span><input id="edit-foto-upload" type="file" accept="image/*" disabled={isEditingInativo} className="hidden" onChange={handleFileChange} /></label></div><div className="space-y-4"><label className="text-[10px] font-black uppercase tracking-widest border-b border-indigo-500/20 pb-2 block">Situação do Aluno</label><select required value={editStatus} onChange={e => setEditStatus(e.target.value)} className={`w-full p-3.5 rounded-xl border font-black text-sm transition-all focus:ring-2 ${editStatus === 'Inativo' ? 'text-rose-500 border-rose-500 focus:ring-rose-500/50 bg-rose-500/5' : 'text-emerald-500 border-emerald-500 focus:ring-emerald-500/50 bg-emerald-500/5'} ${s.cardInterno}`}><option value="Ativo" className="text-emerald-500 font-bold">🟢 Matrícula Ativa</option><option value="Inativo" className="text-rose-500 font-bold">🔴 Matrícula Inativa</option></select>{isEditingInativo && <p className="text-[10px] text-rose-500 font-bold italic mt-1 ml-2">⚠️ O aluno ficará oculto do Dashboard a partir de hoje, mas seu histórico continuará salvo.</p>}</div><div className="space-y-4"><p className={`text-[10px] font-black uppercase tracking-widest border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/20' : 'text-indigo-500 border-indigo-500/20'}`}>Dados Pessoais</p><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><input placeholder="Nome" required={!isEditingInativo} disabled={isEditingInativo} value={editNome} onChange={e => setEditNome(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm md:col-span-2 ${s.input} disabled:opacity-50`} /><div><label className="text-[9px] font-bold opacity-50 ml-1 block mb-1">Data Nasc.</label><input type="date" required={!isEditingInativo} disabled={isEditingInativo} value={editDataNascimento} onChange={e => setEditDataNascimento(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`} /></div><input placeholder="CPF" required={!isEditingInativo} disabled={isEditingInativo} value={editCpf} onChange={e => setEditCpf(formatCPF(e.target.value))} maxLength={14} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`} /><input placeholder="E-mail" type="email" required={!isEditingInativo} disabled={isEditingInativo} value={editEmail} onChange={e => setEditEmail(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`} /><input placeholder="WhatsApp" required={!isEditingInativo} disabled={isEditingInativo} value={editTel} onChange={e => setEditTel(formatPhone(e.target.value))} maxLength={15} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`} /></div></div><div className="space-y-4"><p className={`text-[10px] font-black uppercase tracking-widest border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/20' : 'text-indigo-500 border-indigo-500/20'}`}>Endereço</p><div className="grid grid-cols-2 md:grid-cols-4 gap-4"><input placeholder="CEP" required={!isEditingInativo} disabled={isEditingInativo} value={editCep} onChange={handleEditCepChange} maxLength={9} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input} disabled:opacity-50`} /><input placeholder="Endereço / Rua" required={!isEditingInativo} disabled={isEditingInativo} value={editEndereco} onChange={e => setEditEndereco(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-2 ${s.input} disabled:opacity-50`} /><input id="edit-input-numero" placeholder="Número" required={!isEditingInativo} disabled={isEditingInativo} value={editNumero} onChange={e => setEditNumero(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input} disabled:opacity-50`} /><input placeholder="Complemento" disabled={isEditingInativo} value={editComplemento} onChange={e => setEditComplemento(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input} disabled:opacity-50`} /><input placeholder="Bairro" required={!isEditingInativo} disabled={isEditingInativo} value={editBairro} onChange={e => setEditBairro(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input} disabled:opacity-50`} /><input placeholder="Cidade" required={!isEditingInativo} disabled={isEditingInativo} value={editCidade} onChange={e => setEditCidade(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm col-span-2 md:col-span-1 ${s.input} disabled:opacity-50`} /><input placeholder="UF" required={!isEditingInativo} disabled={isEditingInativo} value={editEstado} onChange={e => setEditEstado(e.target.value)} maxLength={2} className={`w-full p-3.5 rounded-xl border font-bold text-sm uppercase col-span-2 md:col-span-1 ${s.input} disabled:opacity-50`} /></div></div><div className="space-y-4"><p className={`text-[10px] font-black uppercase tracking-widest border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/20' : 'text-indigo-500 border-indigo-500/20'}`}>Agendamento (Horário Fixo)</p><div className="grid grid-cols-2 md:grid-cols-4 gap-3"><div><label className="text-[9px] font-bold opacity-50 ml-1">Dia</label><select required={!isEditingInativo} disabled={isEditingInativo} value={editDiaSemana} onChange={e => setEditDiaSemana(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`}>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select></div><div><label className="text-[9px] font-bold opacity-50 ml-1">Horário</label><input type="time" required={!isEditingInativo} disabled={isEditingInativo} value={editHoraInicio} onChange={e => setEditHoraInicio(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`} /></div><div><label className="text-[9px] font-bold opacity-50 ml-1">Professor</label><select required={!isEditingInativo} disabled={isEditingInativo} value={editProfId} onChange={e => setEditProfId(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`}><option value="">Selecione...</option>{professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}</select></div><div><label className="text-[9px] font-bold opacity-50 ml-1">Sala</label><select required={!isEditingInativo} disabled={isEditingInativo} value={editSalaId} onChange={e => setEditSalaId(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`}><option value="">Selecione...</option>{salasList.map(sl => <option key={sl.id} value={sl.id}>{sl.nome}</option>)}</select></div></div><div className="pt-2"><label className="text-[10px] font-black uppercase mb-3 block opacity-50 tracking-widest">Modalidade</label><div className="flex flex-wrap gap-2">{modalidadesLista.map(m => (<button key={m.nome} type="button" disabled={isEditingInativo} onClick={() => setEditModalidade(m.nome)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all disabled:opacity-50 ${editModalidade === m.nome ? 'bg-indigo-600 text-white border-transparent shadow-lg scale-105' : `${s.cardInterno} opacity-70 hover:opacity-100`}`}>{editModalidade === m.nome && <span className="mr-2">✓</span>} {m.nome}</button>))}</div></div></div><div className="grid grid-cols-1 md:grid-cols-2 gap-8"><div className="space-y-4"><p className={`text-[10px] font-black uppercase tracking-widest border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/20' : 'text-amber-500 border-amber-500/20'}`}>Marketing</p><div className="flex flex-col gap-3"><div><label className="text-[9px] font-bold opacity-50 ml-1">Como conheceu?</label><select required={!isEditingInativo} disabled={isEditingInativo} value={editComoConheceu} onChange={e => setEditComoConheceu(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`}><option value="">Selecione...</option><option value="Instagram">Instagram</option><option value="Google">Google</option><option value="Indicação">Indicação</option><option value="Outros">Outros</option></select></div>{editComoConheceu === 'Indicação' && (<div className="animate-in slide-in-from-top-2"><label className="text-[9px] font-bold opacity-50 ml-1">Quem indicou?</label><input required={!isEditingInativo} disabled={isEditingInativo} value={editIndicacaoNome} onChange={e => setEditIndicacaoNome(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm border-amber-500/50 ${s.input} disabled:opacity-50`} /></div>)}</div></div><div className="space-y-4"><p className={`text-[10px] font-black uppercase tracking-widest border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/20' : 'text-emerald-500 border-emerald-500/20'}`}>Financeiro</p><div className="grid grid-cols-2 gap-3 mt-4"><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Mensalidade (R$)</label><input type="number" required={!isEditingInativo} disabled={isEditingInativo} value={editValor} onChange={e => setEditValor(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`} /></div><div><label className="text-[9px] font-bold opacity-50 ml-1 uppercase">Dia Vencimento</label><input type="number" min="1" max="31" required={!isEditingInativo} disabled={isEditingInativo} value={editVencimento} onChange={e => setEditVencimento(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm ${s.input} disabled:opacity-50`} /></div></div></div></div><div className="flex justify-end gap-3 mt-8 pt-6 border-t border-slate-500/10"><button type="button" onClick={() => setIsEditModalOpen(false)} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-black uppercase text-xs ${s.text} hover:bg-slate-500/10 disabled:opacity-50`}>Cancelar</button><button type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase text-xs shadow-lg hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100">{isSubmitting ? 'Salvando...' : 'Salvar Alterações'}</button></div></form></div></div>)}
-    </div>
+      <AnimatePresence>
+        {showCropModal && imageToCrop && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[60]">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col items-center`}>
+              <h3 className="text-xl font-bold tracking-tight mb-6 text-slate-800">Ajustar Foto</h3>
+              <div className="relative w-full h-64 bg-slate-900/5 backdrop-blur-inner rounded-2xl overflow-hidden mb-6 shadow-inner"><Cropper image={imageToCrop} crop={crop} zoom={zoom} aspect={1} cropShape="round" showGrid={false} onCropChange={setCrop} onCropComplete={(cA, cAP) => setCroppedAreaPixels(cAP)} onZoomChange={setZoom} /></div>
+              <div className="w-full mb-8"><label className="text-xs font-semibold text-slate-500 block mb-2 text-center">Zoom da Imagem</label><input type="range" min={1} max={3} step={0.1} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="w-full accent-indigo-500" /></div>
+              <div className="flex gap-3 w-full">
+                <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowCropModal(false)} className={`flex-1 py-4 rounded-2xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white`}>Cancelar</motion.button>
+                <motion.button whileTap={{ scale: 0.95 }} onClick={handleConfirmCrop} className="flex-1 py-4 rounded-2xl font-bold text-sm bg-indigo-600 text-white shadow-md hover:bg-indigo-500 transition-all">Cortar & Salvar</motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isPayModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-md flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-emerald-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
+              <h2 className={`text-2xl font-bold tracking-tight mb-6 text-slate-800 drop-shadow-sm`}>Novo Pagamento</h2>
+              <form onSubmit={handleSalvarPagamento} className="space-y-5">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 ml-1">Valor</label>
+                  <input type="number" step="0.01" required value={payValor} onChange={e => setPayValor(e.target.value)} className={`w-full p-3.5 rounded-xl bg-white/50 border border-white/60 font-bold text-xl text-emerald-600 focus:bg-white/80 focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none shadow-inner mt-1`} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 ml-1">Data</label>
+                    <input type="date" required value={payData} onChange={e => setPayData(e.target.value)} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 ml-1">Forma</label>
+                    <select required value={payMetodo} onChange={e => setPayMetodo(e.target.value)} className={inputClass}>
+                      <option value="PIX">PIX</option><option value="Cartão">Cartão</option><option value="Dinheiro">Dinheiro</option><option value="Transferência">Transferência</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40">
+                  <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setIsPayModalOpen(false)} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white`}>Cancelar</motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} type="submit" className="px-10 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm shadow-md hover:bg-emerald-500 transition-all">Confirmar Pagamento</motion.button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isEditPayModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-emerald-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className={`text-2xl font-bold tracking-tight text-slate-800 drop-shadow-sm`}>Editar Recibo</h2>
+                <button onClick={() => handleExcluirPagamento(editPayId)} className="h-10 w-10 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all shadow-sm" title="Apagar Registro Definitivamente">🗑️</button>
+              </div>
+              <form onSubmit={handleSalvarEdicaoPagamento} className="space-y-5">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 ml-1">Valor Pago</label>
+                  <input type="number" step="0.01" required value={editPayValor} onChange={e => setEditPayValor(e.target.value)} className={`w-full p-3.5 rounded-xl bg-white/50 border border-white/60 font-bold text-xl text-emerald-600 focus:bg-white/80 focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none shadow-inner mt-1`} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 ml-1">Data</label>
+                    <input type="date" required value={editPayData} onChange={e => setEditPayData(e.target.value)} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 ml-1">Forma</label>
+                    <select required value={editPayMetodo} onChange={e => setEditPayMetodo(e.target.value)} className={inputClass}>
+                      <option value="PIX">PIX</option><option value="Cartão">Cartão</option><option value="Dinheiro">Dinheiro</option><option value="Transferência">Transferência</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40">
+                  <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setIsEditPayModalOpen(false)} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white disabled:opacity-50`}>Cancelar</motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm shadow-md hover:bg-emerald-500 transition-all disabled:opacity-50">{isSubmitting ? 'Salvando...' : 'Salvar Alterações'}</motion.button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isClassModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-amber-500 p-8 rounded-[2.5rem] w-full max-w-xl shadow-2xl relative`}>
+              <h2 className={`text-2xl font-bold tracking-tight mb-6 text-slate-800 drop-shadow-sm`}>Lançamento de Aula</h2>
+              <form onSubmit={handleRegistrarAula} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 ml-1">Data</label>
+                    <input type="date" required value={dataAula} onChange={e => setDataAula(e.target.value)} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 ml-1">Início</label>
+                    <input type="time" required value={horaInicioAula} onChange={e => setHoraInicioAula(e.target.value)} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 ml-1">Fim</label>
+                    <input type="time" required value={horaFimAula} onChange={e => setHoraFimAula(e.target.value)} className={inputClass} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 ml-1">Status</label>
+                  <select required value={statusAula} onChange={e => setStatusAula(e.target.value)} className={inputClass}>
+                    <option value="Realizada">Realizada ✅</option><option value="Falta">Falta ❌</option><option value="Desmarcada">Desmarcada 🔄</option><option value="Reposição">Reposição 🌟</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 ml-1">Observações</label>
+                  <textarea value={obsAula} onChange={e => setObsAula(e.target.value)} className={`${inputClass} h-32 resize-none`} />
+                </div>
+                <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40">
+                  <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setIsClassModalOpen(false)} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white`}>Cancelar</motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} type="submit" className="px-10 py-4 rounded-2xl bg-amber-400 text-amber-950 font-bold text-sm shadow-md hover:bg-amber-500 transition-all">Lançar no Diário</motion.button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isEditModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-md flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-4xl shadow-2xl relative overflow-y-auto max-h-[90vh] custom-scrollbar`}>
+              <h2 className={`text-3xl font-bold tracking-tight mb-8 text-slate-800 drop-shadow-sm`}>Editar Ficha do Aluno</h2>
+              <form onSubmit={handleSalvarEdicao} className="space-y-8">
+                
+                <div className={`flex justify-center mb-6 ${isEditingInativo ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label htmlFor="edit-foto-upload" className="cursor-pointer group flex flex-col items-center gap-2">
+                    <div className={`relative w-28 h-28 rounded-full border-4 border-indigo-500/20 bg-white/60 shadow-md overflow-hidden flex items-center justify-center transition-all group-hover:border-indigo-500`}>
+                      {fotoPreview ? <img src={fotoPreview} alt="Preview" className="w-full h-full object-cover" /> : <span className="text-4xl opacity-50">📷</span>}
+                      <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-10">
+                        <span className="text-white text-[9px] font-black uppercase tracking-widest text-center px-2">Alterar<br/>Foto</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest group-hover:underline mt-1">Adicionar Nova Foto</span>
+                    <input id="edit-foto-upload" type="file" accept="image/*" disabled={isEditingInativo} className="hidden" onChange={handleFileChange} />
+                  </label>
+                </div>
+                
+                <div className="space-y-4">
+                  <label className="text-[11px] font-semibold uppercase text-indigo-600 tracking-wider border-b border-indigo-500/10 pb-2 block">Situação do Aluno</label>
+                  <select required value={editStatus} onChange={e => setEditStatus(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm transition-all focus:outline-none shadow-sm ${editStatus === 'Inativo' ? 'text-rose-600 bg-rose-50 border-rose-200 focus:border-rose-400' : 'text-emerald-600 bg-emerald-50 border-emerald-200 focus:border-emerald-400'}`}>
+                    <option value="Ativo" className="text-emerald-600 font-bold">🟢 Matrícula Ativa</option>
+                    <option value="Inativo" className="text-rose-600 font-bold">🔴 Matrícula Inativa</option>
+                  </select>
+                  {isEditingInativo && <p className="text-xs text-rose-500 font-medium mt-1 ml-2">⚠️ O aluno ficará oculto do Dashboard a partir de hoje, mas seu histórico continuará salvo.</p>}
+                </div>
+
+                <div className="space-y-4">
+                  <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-indigo-600 border-indigo-500/10'}`}>Dados Pessoais</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <input placeholder="Nome" required={!isEditingInativo} disabled={isEditingInativo} value={editNome} onChange={e => setEditNome(e.target.value)} className={`md:col-span-2 ${inputClass} disabled:opacity-50`} />
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 ml-1 block mb-1">Data Nasc.</label>
+                      <input type="date" required={!isEditingInativo} disabled={isEditingInativo} value={editDataNascimento} onChange={e => setEditDataNascimento(e.target.value)} className={`${inputClass} !mt-0 disabled:opacity-50`} />
+                    </div>
+                    <input placeholder="CPF" required={!isEditingInativo} disabled={isEditingInativo} value={editCpf} onChange={e => setEditCpf(formatCPF(e.target.value))} maxLength={14} className={`${inputClass} disabled:opacity-50`} />
+                    <input placeholder="E-mail" type="email" required={!isEditingInativo} disabled={isEditingInativo} value={editEmail} onChange={e => setEditEmail(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
+                    <input placeholder="WhatsApp" required={!isEditingInativo} disabled={isEditingInativo} value={editTel} onChange={e => setEditTel(formatPhone(e.target.value))} maxLength={15} className={`${inputClass} disabled:opacity-50`} />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-indigo-600 border-indigo-500/10'}`}>Endereço</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <input placeholder="CEP" required={!isEditingInativo} disabled={isEditingInativo} value={editCep} onChange={handleEditCepChange} maxLength={9} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
+                    <input placeholder="Endereço / Rua" required={!isEditingInativo} disabled={isEditingInativo} value={editEndereco} onChange={e => setEditEndereco(e.target.value)} className={`col-span-2 md:col-span-2 ${inputClass} disabled:opacity-50`} />
+                    <input id="edit-input-numero" placeholder="Número" required={!isEditingInativo} disabled={isEditingInativo} value={editNumero} onChange={e => setEditNumero(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
+                    <input placeholder="Complemento" disabled={isEditingInativo} value={editComplemento} onChange={e => setEditComplemento(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
+                    <input placeholder="Bairro" required={!isEditingInativo} disabled={isEditingInativo} value={editBairro} onChange={e => setEditBairro(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
+                    <input placeholder="Cidade" required={!isEditingInativo} disabled={isEditingInativo} value={editCidade} onChange={e => setEditCidade(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
+                    <input placeholder="UF" required={!isEditingInativo} disabled={isEditingInativo} value={editEstado} onChange={e => setEditEstado(e.target.value)} maxLength={2} className={`col-span-2 md:col-span-1 uppercase ${inputClass} disabled:opacity-50`} />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-indigo-600 border-indigo-500/10'}`}>Agendamento (Horário Fixo)</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 ml-1">Dia</label>
+                      <select required={!isEditingInativo} disabled={isEditingInativo} value={editDiaSemana} onChange={e => setEditDiaSemana(e.target.value)} className={`${inputClass} disabled:opacity-50`}>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 ml-1">Horário</label>
+                      <input type="time" required={!isEditingInativo} disabled={isEditingInativo} value={editHoraInicio} onChange={e => setEditHoraInicio(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 ml-1">Professor</label>
+                      <select required={!isEditingInativo} disabled={isEditingInativo} value={editProfId} onChange={e => setEditProfId(e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option>{professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}</select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 ml-1">Sala</label>
+                      <select required={!isEditingInativo} disabled={isEditingInativo} value={editSalaId} onChange={e => setEditSalaId(e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option>{salasList.map(sl => <option key={sl.id} value={sl.id}>{sl.nome}</option>)}</select>
+                    </div>
+                  </div>
+                  <div className="pt-2">
+                    <label className="text-xs font-semibold text-slate-500 ml-1 mb-2 block">Modalidade</label>
+                    <div className="flex flex-wrap gap-2">
+                      {modalidadesLista.map(m => (
+                        <motion.button whileTap={{ scale: 0.95 }} key={m.nome} type="button" disabled={isEditingInativo} onClick={() => setEditModalidade(m.nome)} className={`px-5 py-2.5 rounded-xl text-[11px] font-bold uppercase border transition-all disabled:opacity-50 ${editModalidade === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-md scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}>
+                          {editModalidade === m.nome && <span className="mr-2">✓</span>} {m.nome}
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                    <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-amber-600 border-amber-500/10'}`}>Marketing</p>
+                    <div className="flex flex-col gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 ml-1">Como conheceu?</label>
+                        <select required={!isEditingInativo} disabled={isEditingInativo} value={editComoConheceu} onChange={e => setEditComoConheceu(e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option><option value="Instagram">Instagram</option><option value="Google">Google</option><option value="Indicação">Indicação</option><option value="Outros">Outros</option></select>
+                      </div>
+                      <AnimatePresence>
+                        {editComoConheceu === 'Indicação' && (
+                          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+                            <label className="text-xs font-semibold text-slate-500 ml-1">Quem indicou?</label>
+                            <input required={!isEditingInativo} disabled={isEditingInativo} value={editIndicacaoNome} onChange={e => setEditIndicacaoNome(e.target.value)} className={`${inputClass} border-amber-300 focus:border-amber-500/50 disabled:opacity-50`} />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-emerald-600 border-emerald-500/10'}`}>Financeiro</p>
+                    <div className="grid grid-cols-2 gap-3 mt-4">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Mensalidade (R$)</label>
+                        <input type="number" required={!isEditingInativo} disabled={isEditingInativo} value={editValor} onChange={e => setEditValor(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Dia Vencimento</label>
+                        <input type="number" min="1" max="31" required={!isEditingInativo} disabled={isEditingInativo} value={editVencimento} onChange={e => setEditVencimento(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40">
+                  <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setIsEditModalOpen(false)} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white disabled:opacity-50`}>Cancelar</motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-sm shadow-md hover:bg-indigo-500 transition-all disabled:opacity-50">{isSubmitting ? 'Salvando...' : 'Salvar Alterações'}</motion.button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+    </motion.div>
   )
 }
