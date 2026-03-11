@@ -143,7 +143,7 @@ export default function Gerencia() {
     alert("✅ Configurações da Escola salvas com sucesso!"); carregarTudo(); setIsSubmitting(false)
   }
 
-  // --- FUNÇÕES DE ESTRUTURA (SALAS E MODALIDADES) ---
+  // --- FUNÇÕES DE ESTRUTURA ---
   const handleAddSala = async (e: React.FormEvent) => { e.preventDefault(); if (!novaSala) return; await supabase.from('salas').insert([{ nome: novaSala }]); setNovaSala(''); carregarTudo() }
   const handleDelSala = async (id: string) => { if (!confirm("Deletar esta sala?")) return; await supabase.from('salas').delete().eq('id', id); carregarTudo() }
   const handleAddModalidade = async (e: React.FormEvent) => { e.preventDefault(); if (!novaModalidade) return; await supabase.from('modalidades').insert([{ nome: novaModalidade }]); setNovaModalidade(''); carregarTudo() }
@@ -153,9 +153,9 @@ export default function Gerencia() {
   async function carregarDisponibilidadeProf(id: string) {
     const { data } = await supabase.from('disponibilidade_professor').select('*').eq('professor_id', id)
     
-    // 🔥 AGORA ESTAMOS BUSCANDO ONDE OS HORÁRIOS FIXOS ESTÃO REALMENTE SALVOS: NA AGENDA!
-    const { data: agendaMats, error } = await supabase.from('agenda').select('*').eq('professor_id', id)
-    if (error) console.log("🚨 Erro ao buscar agenda:", error.message)
+    // 🔥 TRAZEMOS TUDO DA AGENDA + O PERFIL DO ALUNO COM AS INFO DE INATIVIDADE
+    const { data: agendaMats, error } = await supabase.from('agenda').select('*, aluno:profiles!aluno_id(id, nome_completo, alunos_info(status, data_inativacao))').eq('professor_id', id)
+    if (error) console.error("Erro ao buscar agenda:", error.message)
 
     setMatriculasProf(agendaMats || []) 
 
@@ -167,19 +167,32 @@ export default function Gerencia() {
     setDisponibilidades(ordenado)
   }
 
-  // --- HELPER: O RASTREADOR IMPLACÁVEL DE HORÁRIOS OCUPADOS (USANDO A AGENDA) ---
-  const isSlotOcupado = (disp: any) => {
+  // 🔥 O RASTREADOR IMPLACÁVEL BLINDADO
+  const getOcupante = (disp: any) => {
+    const hojeStr = new Date().toISOString().split('T')[0];
+
     // Procura na tabela 'agenda' se existe um horário marcado EXATAMENTE igual
-    return matriculasProf.some(m => {
+    return matriculasProf.find(m => {
       const diaAgenda = String(m.dia || '').trim().toLowerCase()
       const diaGrade = String(disp.dia_semana || '').trim().toLowerCase()
       
       const horaAgenda = String(m.horario_inicio || '').slice(0, 5)
       const horaGrade = String(disp.hora_inicio || '').slice(0, 5)
 
-      // Se o professor, o dia e a hora forem os mesmos da agenda do aluno, está ocupado!
-      return (diaAgenda === diaGrade) && (horaAgenda === horaGrade)
-    })
+      if (diaAgenda === diaGrade && horaAgenda === horaGrade) {
+        const info = Array.isArray(m.aluno?.alunos_info) ? m.aluno?.alunos_info[0] : m.aluno?.alunos_info;
+        
+        if (!info) return true; // Se não tem informações, assume ocupado por segurança
+        
+        if (info.status === 'Inativo') {
+          if (!info.data_inativacao) return false; // Tá inativo e não tem data? Libera a vaga!
+          if (hojeStr > info.data_inativacao) return false; // A data de saída já passou? Libera a vaga!
+        }
+        
+        return true; // Tá ocupado!
+      }
+      return false;
+    });
   }
 
   const handleGerarDisponibilidade = async () => {
@@ -221,7 +234,7 @@ export default function Gerencia() {
 
   const handleDelDisponibilidade = async (id: string) => { 
     const disp = disponibilidades.find(d => d.id === id);
-    if (disp && isSlotOcupado(disp)) {
+    if (disp && getOcupante(disp)) {
       alert("⚠️ ATENÇÃO: Existe uma matrícula preenchendo este horário na Agenda! Você não pode excluir a vaga da grade sem antes alterar ou cancelar a matrícula do aluno.");
       return;
     }
@@ -331,7 +344,6 @@ export default function Gerencia() {
     setShowModalProf(false);
   }
 
-  // Classes Globais de Inputs para Glassmorphism
   const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
 
   if (!isMounted) return null;
@@ -379,6 +391,7 @@ export default function Gerencia() {
                       <label className="text-xs font-semibold text-slate-600 ml-1 block mb-2">Logo Principal</label>
                       <label className="cursor-pointer group flex flex-col items-center justify-center w-56 h-32 rounded-2xl border-2 border-dashed border-indigo-200 hover:border-indigo-400 transition-all bg-white/50 relative overflow-hidden shadow-inner">
                         {logoPreview ? <img src={logoPreview} className="h-full object-contain p-2" /> : <span className="text-xs font-bold text-indigo-400 uppercase">Logo PNG</span>}
+                        <div className="absolute inset-0 bg-slate-900/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[9px] font-black uppercase tracking-widest">Trocar</div>
                         <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setLogoFile(e.target.files[0]); setLogoPreview(URL.createObjectURL(e.target.files[0])) } }} />
                       </label>
                     </div>
@@ -386,6 +399,7 @@ export default function Gerencia() {
                       <label className="text-xs font-semibold text-slate-600 ml-1 block mb-2">Favicon (Ícone Menor)</label>
                       <label className="cursor-pointer group flex flex-col items-center justify-center w-24 h-24 rounded-2xl border-2 border-dashed border-indigo-200 hover:border-indigo-400 transition-all bg-white/50 relative overflow-hidden shadow-inner">
                         {faviconPreview ? <img src={faviconPreview} className="h-full object-contain p-2" /> : <span className="text-4xl opacity-40">🌐</span>}
+                        <div className="absolute inset-0 bg-slate-900/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[8px] font-black uppercase">Trocar</div>
                         <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setFaviconFile(e.target.files[0]); setFaviconPreview(URL.createObjectURL(e.target.files[0])) } }} />
                       </label>
                     </div>
@@ -602,11 +616,11 @@ export default function Gerencia() {
                         <div className="flex gap-3 w-full">
                           <div className="flex-1 bg-emerald-50/80 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
                             <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 mb-1">Livres</span>
-                            <span className="text-xl font-black">{disponibilidades.filter(d => !isSlotOcupado(d)).length}</span>
+                            <span className="text-xl font-black">{disponibilidades.filter(d => !getOcupante(d)).length}</span>
                           </div>
                           <div className="flex-1 bg-rose-50/80 border border-rose-200 text-rose-700 px-4 py-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
                             <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 mb-1">Preenchidos</span>
-                            <span className="text-xl font-black">{disponibilidades.filter(d => isSlotOcupado(d)).length}</span>
+                            <span className="text-xl font-black">{disponibilidades.filter(d => getOcupante(d)).length}</span>
                           </div>
                           <div className="flex-1 bg-slate-100/80 border border-slate-200 text-slate-700 px-4 py-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
                             <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 mb-1">Totais</span>
@@ -624,7 +638,9 @@ export default function Gerencia() {
                         ) : (
                           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                             {disponibilidades.map(disp => {
-                              const ocupado = isSlotOcupado(disp);
+                              const ocupante = getOcupante(disp);
+                              const ocupado = !!ocupante;
+                              const alunoNome = ocupante?.aluno?.nome_completo || 'Aluno';
                               
                               return (
                                 <motion.div whileHover={{ scale: 1.02 }} key={disp.id} className={`p-4 rounded-2xl border flex justify-between items-center group shadow-sm hover:shadow-md transition-all ${ocupado ? 'bg-rose-50/80 backdrop-blur-md border-rose-200 border-l-4 border-l-rose-500' : 'bg-emerald-50/50 backdrop-blur-md border-emerald-200 border-l-4 border-l-emerald-500'}`}>
@@ -638,10 +654,11 @@ export default function Gerencia() {
                                       )}
                                     </div>
                                     <p className="text-sm font-bold text-slate-800 tracking-tight">{disp.hora_inicio.slice(0,5)} <span className="opacity-60 text-[10px] font-medium">- {disp.hora_fim.slice(0,5)}</span></p>
+                                    {ocupado && <p className="text-[9px] font-bold text-rose-600 mt-1 truncate max-w-[120px]">{alunoNome.split(' ')[0]}</p>}
                                   </div>
-                                  <button onClick={() => handleDelDisponibilidade(disp.id)} className="h-8 w-8 bg-white border border-rose-100 text-rose-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition-all shadow-sm">
+                                  {!ocupado && <button onClick={() => handleDelDisponibilidade(disp.id)} className="h-8 w-8 bg-white border border-rose-100 text-rose-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition-all shadow-sm">
                                     ✖
-                                  </button>
+                                  </button>}
                                 </motion.div>
                               )
                             })}
