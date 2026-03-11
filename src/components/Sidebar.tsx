@@ -14,6 +14,12 @@ const formatCEP = (v: string) => v.replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$
 const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<File | null> => { const image = await createImage(imageSrc); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); if (!ctx) return null; canvas.width = 256; canvas.height = 256; ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, 256, 256); return new Promise(resolve => canvas.toBlob(blob => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.9)) }
 
+// Array de horários para o select (07:00 às 22:00)
+const HORARIOS_DISPONIVEIS = Array.from({ length: 16 }, (_, i) => {
+  const h = i + 7;
+  return `${h.toString().padStart(2, '0')}:00`;
+});
+
 export default function Sidebar({ children }: { children: React.ReactNode }) {
   const { s } = useStyles() 
   const router = useRouter()
@@ -41,10 +47,11 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [indicacaoNome, setIndicacaoNome] = useState(''); 
   const [valorMensalidade, setValorMensalidade] = useState('250'); 
   const [vencimento, setVencimento] = useState('10');
-  const [dataPrimeiroPagamento, setDataPrimeiroPagamento] = useState(new Date().toISOString().split('T')[0]); // 🆕 Data do 1º Pagamento
+  const [dataPrimeiroPagamento, setDataPrimeiroPagamento] = useState(new Date().toISOString().split('T')[0]);
   
   const [fotoArquivo, setFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null)
-  const [profId, setProfId] = useState(''); const [salaId, setSalaId] = useState(''); const [diaSemana, setDiaSemana] = useState('Segunda'); const [horaInicio, setHoraInicio] = useState('08:00'); const [horaFim, setHoraFim] = useState('09:00'); const [modalidade, setModalidade] = useState('')
+  const [profId, setProfId] = useState(''); const [salaId, setSalaId] = useState(''); const [diaSemana, setDiaSemana] = useState('Segunda'); 
+  const [horaInicio, setHoraInicio] = useState('08:00'); const [horaFim, setHoraFim] = useState('09:00'); const [modalidade, setModalidade] = useState('')
   
   const [showCropModal, setShowCropModal] = useState(false); const [imageToCrop, setImageToCrop] = useState<string | null>(null); const [crop, setCrop] = useState({ x: 0, y: 0 }); const [zoom, setZoom] = useState(1); const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
 
@@ -167,10 +174,8 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     await supabase.from('alunos_info').insert([{ id: alunoId, valor_mensalidade: parseFloat(valorMensalidade), data_vencimento: parseInt(vencimento), como_conheceu: comoConheceu, indicacao_nome: comoConheceu === 'Indicação' ? indicacaoNome : null, status: 'Ativo' }])
     await supabase.from('agenda').insert([{ professor_id: profId, aluno_id: alunoId, sala_id: parseInt(salaId), dia: diaSemana, horario_inicio: horaInicio, horario_fim: horaFim, instrumento_aula: modalidade }])
     
-    // 🔥 LÓGICA INTELIGENTE DO 1º PAGAMENTO
     const hojeStr = new Date().toISOString().split('T')[0];
     
-    // Se a data de pagamento for hoje ou no passado, já registra como PAGO!
     if (dataPrimeiroPagamento <= hojeStr) {
       const { error: errPg } = await supabase.from('pagamentos').insert([{
         aluno_id: alunoId,
@@ -180,7 +185,6 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       }]);
       if (errPg) console.error("Erro ao registrar pagamento inicial:", errPg);
     }
-    // Se for no futuro, não faz nada, e o seu painel financeiro vai ler ele como "Pendente / A Vencer" automaticamente.
 
     setIsSubmitting(false); fecharModalMatricula(); alert("🎉 Matrícula realizada!"); window.location.reload();
   }
@@ -335,7 +339,6 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                 <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Dados Pessoais</p><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><input placeholder="Nome Completo" required value={nomeAluno} onChange={e => setNomeAluno(e.target.value)} className={`md:col-span-2 ${inputClass}`} /><div><label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data Nasc.</label><input type="date" required value={dataNascimento} onChange={e => setDataNascimento(e.target.value)} className={inputClass} /></div><input placeholder="CPF" required value={cpf} onChange={e => setCpf(formatCPF(e.target.value))} maxLength={14} className={inputClass} /><input placeholder="WhatsApp" required value={telAluno} onChange={e => setTelAluno(formatPhone(e.target.value))} maxLength={15} className={inputClass} /></div></div>
                 <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Endereço</p><div className="grid grid-cols-2 md:grid-cols-4 gap-4"><input placeholder="CEP" required value={cep} onChange={handleCepChange} maxLength={9} className={`col-span-2 md:col-span-1 ${inputClass}`} /><input placeholder="Endereço / Rua" required value={endereco} onChange={e => setEndereco(e.target.value)} className={`col-span-2 md:col-span-2 ${inputClass}`} /><input id="input-numero" placeholder="Número" required value={numero} onChange={e => setNumero(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass}`} /></div></div>
                 
-                {/* 👇 NOVA SESSÃO: FINANCEIRO E MARKETING */}
                 <div className="space-y-4">
                   <p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest border-b border-emerald-500/20 pb-2">Financeiro & Marketing</p>
                   
@@ -375,9 +378,58 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
 
-                <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Agendamento</p><div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div><label className="text-[9px] font-bold text-slate-500 ml-1">Dia</label><select required value={diaSemana} onChange={e => setDiaSemana(e.target.value)} className={inputClass}>{dias.map((d: string) => <option key={d} value={d}>{d}</option>)}</select></div>
-                  <div><label className="text-[9px] font-bold text-slate-500 ml-1">Horário</label><input type="time" required value={horaInicio} onChange={e => setHoraInicio(e.target.value)} className={inputClass} /></div><div><label className="text-[9px] font-bold text-slate-500 ml-1">Professor</label><select required value={profId} onChange={e => setProfId(e.target.value)} className={inputClass}><option value="">Selecione...</option>{professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}</select></div><div><label className="text-[9px] font-bold text-slate-500 ml-1">Sala</label><select required value={salaId} onChange={e => setSalaId(e.target.value)} className={inputClass}><option value="">Selecione...</option>{salasList.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></div></div><div className="pt-4"><label className="text-[10px] font-black uppercase mb-3 block text-slate-500 tracking-widest">Modalidade</label><div className="flex flex-wrap gap-2">{modalidadesLista.map(m => (<motion.button whileTap={{ scale: 0.95 }} key={m.nome} type="button" onClick={() => setModalidade(m.nome)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${modalidade === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-lg scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}>{modalidade === m.nome && <span className="mr-2">✓</span>} {m.nome}</motion.button>))}</div></div></div>
+                {/* 👇 AGENDAMENTO COM SELECT SEGURO 👇 */}
+                <div className="space-y-4">
+                  <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Agendamento (Horário Fixo)</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 ml-1">Dia</label>
+                      <select required value={diaSemana} onChange={e => setDiaSemana(e.target.value)} className={inputClass}>
+                        {dias.map((d: string) => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 ml-1">Horário</label>
+                      {/* 🔥 Substituído input=time por select seguro */}
+                      <select required value={horaInicio} onChange={e => setHoraInicio(e.target.value)} className={inputClass}>
+                        {HORARIOS_DISPONIVEIS.map(h => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 ml-1">Professor</label>
+                      <select required value={profId} onChange={e => setProfId(e.target.value)} className={inputClass}>
+                        <option value="">Selecione...</option>
+                        {professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 ml-1">Sala</label>
+                      <select required value={salaId} onChange={e => setSalaId(e.target.value)} className={inputClass}>
+                        <option value="">Selecione...</option>
+                        {salasList.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="pt-4">
+                    <label className="text-[10px] font-black uppercase mb-3 block text-slate-500 tracking-widest">Modalidade</label>
+                    <div className="flex flex-wrap gap-2">
+                      {modalidadesLista.map(m => (
+                        <motion.button 
+                          whileTap={{ scale: 0.95 }} 
+                          key={m.nome} 
+                          type="button" 
+                          onClick={() => setModalidade(m.nome)} 
+                          className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${modalidade === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-lg scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}
+                        >
+                          {modalidade === m.nome && <span className="mr-2">✓</span>} {m.nome}
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40"><motion.button whileTap={{ scale: 0.95 }} type="button" onClick={fecharModalMatricula} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-black uppercase text-xs text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white disabled:opacity-50`}>Cancelar</motion.button><motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-black uppercase text-xs shadow-xl hover:shadow-emerald-500/30 transition-all disabled:opacity-50">{isSubmitting ? 'Gerando Acesso...' : 'Finalizar Matrícula'}</motion.button></div>
               </form>
             </motion.div>
