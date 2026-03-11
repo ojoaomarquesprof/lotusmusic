@@ -234,7 +234,7 @@ export default function Gerencia() {
 
     let finalAvatarUrl = profForm.avatar_url; 
     if (editFotoArquivoProf) { 
-      const fileName = `equipe/${Date.now()}-${crypto.randomUUID()}.jpg`; 
+      const fileName = `equipe/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`; 
       const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, editFotoArquivoProf); 
       if (!uploadError) finalAvatarUrl = supabase.storage.from('avatars').getPublicUrl(fileName).data.publicUrl 
     }
@@ -670,26 +670,24 @@ export default function Gerencia() {
                   </div>
                 </div>
 
-                {/* MODALIDADES DO PROFESSOR */}
-                {profForm.role === 'PROFESSOR' && (
-                  <div className="space-y-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider border-b text-indigo-600 border-indigo-500/10 pb-2">Cursos que Leciona (Modalidades)</p>
-                    <div className="flex flex-wrap gap-2 pt-2">
-                      {modalidades.map(m => (
-                        <motion.button 
-                          whileTap={{ scale: 0.95 }}
-                          key={m.id} 
-                          type="button" 
-                          onClick={() => toggleModalidadeProf(m.nome)}
-                          className={`px-4 py-2.5 rounded-xl text-[11px] font-bold uppercase border transition-all shadow-sm ${profForm.modalidades.includes(m.nome) ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-md scale-105' : `bg-white/60 border-white/80 text-slate-600 hover:bg-white`}`}
-                        >
-                          {profForm.modalidades.includes(m.nome) && <span className="mr-2">✓</span>} {m.nome}
-                        </motion.button>
-                      ))}
-                      {modalidades.length === 0 && <p className="text-xs font-medium italic text-slate-500">Nenhuma modalidade cadastrada na escola.</p>}
-                    </div>
+                {/* MODALIDADES DO PROFESSOR OU ADMIN */}
+                <div className="space-y-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider border-b text-indigo-600 border-indigo-500/10 pb-2">Cursos que Leciona (Modalidades)</p>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {modalidades.map(m => (
+                      <motion.button 
+                        whileTap={{ scale: 0.95 }}
+                        key={m.id} 
+                        type="button" 
+                        onClick={() => toggleModalidadeProf(m.nome)}
+                        className={`px-4 py-2.5 rounded-xl text-[11px] font-bold uppercase border transition-all shadow-sm ${profForm.modalidades.includes(m.nome) ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-md scale-105' : `bg-white/60 border-white/80 text-slate-600 hover:bg-white`}`}
+                      >
+                        {profForm.modalidades.includes(m.nome) && <span className="mr-2">✓</span>} {m.nome}
+                      </motion.button>
+                    ))}
+                    {modalidades.length === 0 && <p className="text-xs font-medium italic text-slate-500">Nenhuma modalidade cadastrada na escola.</p>}
                   </div>
-                )}
+                </div>
 
                 <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/60">
                   <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setShowModalProf(false)} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white disabled:opacity-50`}>Cancelar</motion.button>
