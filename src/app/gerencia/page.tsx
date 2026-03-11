@@ -541,20 +541,38 @@ export default function Gerencia() {
                     </div>
 
                     <div className="xl:col-span-2 flex flex-col h-full">
-                      <div className="flex justify-between items-center mb-6 border-b border-white/60 pb-4">
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                          3. Horários Disponíveis ({disponibilidades.length})
-                        </h4>
-                        <div className="flex flex-wrap gap-2 justify-end">
-                          {dias.map(d => {
-                            const hasSlots = disponibilidades.some(x => x.dia_semana === d);
-                            if (!hasSlots) return null;
-                            return (
-                              <motion.button whileTap={{ scale: 0.95 }} key={d} onClick={() => handleLimparDia(d)} className="text-[10px] font-bold bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg border border-rose-100 hover:bg-rose-500 hover:text-white transition-all shadow-sm" title={`Apagar todos de ${d}`}>
-                                Limpar {d}
-                              </motion.button>
-                            )
-                          })}
+                      <div className="flex flex-col mb-6 border-b border-white/60 pb-4 gap-4">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                            3. Horários na Grade
+                          </h4>
+                          <div className="flex flex-wrap gap-2 justify-end">
+                            {dias.map(d => {
+                              const hasSlots = disponibilidades.some(x => x.dia_semana === d);
+                              if (!hasSlots) return null;
+                              return (
+                                <motion.button whileTap={{ scale: 0.95 }} key={d} onClick={() => handleLimparDia(d)} className="text-[10px] font-bold bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg border border-rose-100 hover:bg-rose-500 hover:text-white transition-all shadow-sm" title={`Apagar todos de ${d}`}>
+                                  Limpar {d}
+                                </motion.button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                        
+                        {/* PAINEL DE CONTAGEM */}
+                        <div className="flex gap-3 w-full">
+                          <div className="flex-1 bg-emerald-50/80 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
+                            <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 mb-1">Livres</span>
+                            <span className="text-xl font-black">{disponibilidades.filter(d => !d.aluno_id && !d.ocupado).length}</span>
+                          </div>
+                          <div className="flex-1 bg-rose-50/80 border border-rose-200 text-rose-700 px-4 py-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
+                            <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 mb-1">Preenchidos</span>
+                            <span className="text-xl font-black">{disponibilidades.filter(d => d.aluno_id || d.ocupado).length}</span>
+                          </div>
+                          <div className="flex-1 bg-slate-100/80 border border-slate-200 text-slate-700 px-4 py-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
+                            <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 mb-1">Totais</span>
+                            <span className="text-xl font-black">{disponibilidades.length}</span>
+                          </div>
                         </div>
                       </div>
                       
