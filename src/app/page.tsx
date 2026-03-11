@@ -24,7 +24,12 @@ export default function Dashboard() {
   const [historicoSemana, setHistoricoSemana] = useState<any[]>([])
   const [aulas, setAulas] = useState<any[]>([])
   const [solicitacoes, setSolicitacoes] = useState<any[]>([])
+  const [aulasPendentesBaixa, setAulasPendentesBaixa] = useState<any[]>([]) 
+  
   const [selectedAula, setSelectedAula] = useState<any>(null)
+  const [aulaParaDarBaixa, setAulaParaDarBaixa] = useState<any>(null) 
+  const [obsBaixa, setObsBaixa] = useState('') 
+  const [isDiarioModalOpen, setIsDiarioModalOpen] = useState(false)
   
   const [saudacao, setSaudacao] = useState('Olá')
   const [primeiroNome, setPrimeiroNome] = useState('')
@@ -127,26 +132,86 @@ export default function Dashboard() {
         prof_nome: perfis?.find((p:any) => p.id === s.professor_id)?.nome_completo || 'Prof.'
       }))
     }
-    
+
+    const pendentesParaLancar: any[] = [];
+    const agora = new Date();
+
+    diasVisuais.forEach(diaVisual => {
+      const isFeriado = (ev || []).some(e => e.data_evento === diaVisual.dataStr && (e.tipo === 'Feriado' || e.tipo === 'Recesso'));
+      if (isFeriado) return;
+
+      const aulasDoDia = (agenda || []).filter(a => a.dia === diaVisual.nome);
+      const reposicoesDoDia = aulasReposicao.filter(r => r.data_selecionada === diaVisual.dataStr);
+      const todasAsAulasDoDia = [...aulasDoDia, ...reposicoesDoDia];
+
+      todasAsAulasDoDia.forEach(aula => {
+        const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info;
+        if (info?.status === 'Inativo' && info?.data_inativacao && diaVisual.dataStr > info.data_inativacao) return;
+
+        try {
+          const [ano, mes, dia] = diaVisual.dataStr.split('-').map(Number);
+          const [h, m] = aula.horario_fim.split(':').map(Number);
+          const endDateTime = new Date(ano, mes - 1, dia, h, m);
+
+          if (agora > endDateTime) {
+            const jaTemHistorico = (hist || []).some(hItem => String(hItem.aluno_id) === String(aula.aluno_id) && String(hItem.data_aula).startsWith(diaVisual.dataStr));
+            if (!jaTemHistorico) {
+              pendentesParaLancar.push({ ...aula, data_selecionada: diaVisual.dataStr });
+            }
+          }
+        } catch (e) {}
+      });
+    });
+
+    pendentesParaLancar.sort((a, b) => {
+      const dateA = new Date(`${a.data_selecionada}T${a.horario_inicio}:00`).getTime();
+      const dateB = new Date(`${b.data_selecionada}T${b.horario_inicio}:00`).getTime();
+      return dateA - dateB;
+    });
+
+    setAulasPendentesBaixa(pendentesParaLancar);
     setSolicitacoes(solMapeadas); setEventosSemana(ev || []); setHistoricoSemana(hist || []); 
     setAulas([...(agenda || []), ...aulasReposicao]);
     
     setLoading(false)
   }
 
+  const handleDarBaixa = async (status: 'Realizada' | 'Falta Justificada' | 'Falta Injustificada') => {
+    setIsSubmitting(true);
+    
+    setHistoricoSemana(prev => [...prev, { 
+      aluno_id: aulaParaDarBaixa.aluno_id, 
+      data_aula: aulaParaDarBaixa.data_selecionada, 
+      status: status 
+    }]);
+
+    let obsPadrao = 'Aula realizada sem observações.';
+    if (status === 'Falta Justificada') obsPadrao = 'Falta justificada pelo aluno.';
+    if (status === 'Falta Injustificada') obsPadrao = 'Falta sem aviso prévio.';
+
+    const { error } = await supabase.from('historico_aulas').insert([{
+      aluno_id: aulaParaDarBaixa.aluno_id,
+      data_aula: aulaParaDarBaixa.data_selecionada,
+      status: status,
+      observacoes: obsBaixa || obsPadrao
+    }]);
+
+    if (error) {
+      alert("🚨 Erro ao lançar aula: " + error.message);
+    } else {
+      setAulasPendentesBaixa(prev => prev.filter(a => !(a.id === aulaParaDarBaixa.id && a.data_selecionada === aulaParaDarBaixa.data_selecionada)));
+    }
+
+    setAulaParaDarBaixa(null);
+    setObsBaixa('');
+    setIsSubmitting(false);
+  }
+
   const handleAprovarSolicitacao = async (sol: any) => {
     if (!confirm(`Aprovar a reposição de ${sol.aluno_nome} para ${sol.novo_dia} às ${sol.novo_horario_inicio}?`)) return;
     setIsSubmitting(true)
-    
     await supabase.from('solicitacoes_reagendamento').update({ status: 'Aprovada' }).eq('id', sol.id)
-    
-    await supabase.from('notificacoes_aluno').insert([{
-      aluno_id: sol.aluno_id,
-      titulo: '✅ Reposição Aprovada!',
-      mensagem: `Sua reposição para o dia ${new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} às ${sol.novo_horario_inicio?.slice(0,5)} foi confirmada na agenda.`,
-      lida: false
-    }])
-
+    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '✅ Reposição Aprovada!', mensagem: `Sua reposição para o dia ${new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} às ${sol.novo_horario_inicio?.slice(0,5)} foi confirmada na agenda.`, lida: false }])
     alert("✅ Solicitação Aprovada com sucesso! A aula já está na sua grade.")
     setIsSubmitting(false); carregarDados()
   }
@@ -156,14 +221,7 @@ export default function Dashboard() {
     if (motivo === null) return 
     setIsSubmitting(true)
     await supabase.from('solicitacoes_reagendamento').update({ status: 'Negada', motivo_recusa: motivo || 'Horário indisponível no momento.' }).eq('id', sol.id)
-    
-    await supabase.from('notificacoes_aluno').insert([{
-      aluno_id: sol.aluno_id,
-      titulo: '❌ Reposição Recusada',
-      mensagem: `Seu pedido para o dia ${new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} foi recusado. Motivo: "${motivo || 'Indisponível no momento'}".`,
-      lida: false
-    }])
-
+    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '❌ Reposição Recusada', mensagem: `Seu pedido para o dia ${new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} foi recusado. Motivo: "${motivo || 'Indisponível no momento'}".`, lida: false }])
     alert("❌ Solicitação Negada.")
     setIsSubmitting(false); carregarDados()
   }
@@ -176,60 +234,35 @@ export default function Dashboard() {
     const dataParaDesmarcar = selectedAula.data_selecionada || hojeDataStr;
     
     setHistoricoSemana(prev => [...prev, { aluno_id: selectedAula.aluno.id, data_aula: dataParaDesmarcar, status: 'Desmarcada' }]);
-    
     await supabase.from('historico_aulas').delete().eq('aluno_id', selectedAula.aluno.id).eq('data_aula', dataParaDesmarcar);
-    
-    const { error: errInsert } = await supabase.from('historico_aulas').insert([{
-      aluno_id: selectedAula.aluno.id,
-      data_aula: dataParaDesmarcar,
-      status: 'Desmarcada',
-      observacoes: motivo
-    }]);
+    const { error: errInsert } = await supabase.from('historico_aulas').insert([{ aluno_id: selectedAula.aluno.id, data_aula: dataParaDesmarcar, status: 'Desmarcada', observacoes: motivo }]);
 
-    if (errInsert) {
-      alert("🚨 O banco de dados bloqueou o salvamento! Erro: " + errInsert.message);
-      carregarDados();
-      setIsSubmitting(false);
-      return;
-    }
+    if (errInsert) { alert("🚨 O banco de dados bloqueou o salvamento! Erro: " + errInsert.message); carregarDados(); setIsSubmitting(false); return; }
 
     const dataFormatada = new Date(dataParaDesmarcar).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-    await supabase.from('notificacoes_aluno').insert([{
-      aluno_id: selectedAula.aluno.id,
-      titulo: '⚠️ Aula Desmarcada pelo Professor',
-      mensagem: `Sua aula do dia ${dataFormatada} foi cancelada. Motivo: "${motivo || 'Não informado'}". A vaga ficou em aberto, acesse o portal para escolher uma nova data.`,
-      lida: false
-    }]);
+    await supabase.from('notificacoes_aluno').insert([{ aluno_id: selectedAula.aluno.id, titulo: '⚠️ Aula Desmarcada pelo Professor', mensagem: `Sua aula do dia ${dataFormatada} foi cancelada. Motivo: "${motivo || 'Não informado'}". A vaga ficou em aberto, acesse o portal para escolher uma nova data.`, lida: false }]);
 
     alert("✅ Aula cancelada com sucesso!");
-    setSelectedAula(null);
-    carregarDados();
-    setIsSubmitting(false);
+    setSelectedAula(null); carregarDados(); setIsSubmitting(false);
   }
 
   const handleRemoverDaGrade = async (id: string) => { if (!confirm("CUIDADO: Remover da grade APAGA O HORÁRIO FIXO do aluno permanentemente. Deseja continuar?")) return; await supabase.from('agenda').delete().eq('id', id); setSelectedAula(null); carregarDados() }
 
-  // 🔥 LÓGICA REFINADA: Somente apaga a aula se ela for HOJE ou no PASSADO
   const checkIfClassPast = (dateStr: string, endTimeStr: string) => {
     try {
       if (!dateStr || !endTimeStr) return false;
       const classDateObj = new Date(`${dateStr}T00:00:00`);
       const todayObj = new Date(`${hojeDataStr}T00:00:00`);
 
-      // Se a aula foi ontem ou antes, já passou com certeza
       if (classDateObj < todayObj) return true;
-      // Se a aula for amanhã ou depois, não passou
       if (classDateObj > todayObj) return false;
 
-      // Se a aula é HOJE, verifica a hora
       const [h, m] = endTimeStr.split(':').map(Number);
       const classEndDateTime = new Date();
       classEndDateTime.setHours(h, m, 0, 0);
       
       return currentTime > classEndDateTime;
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
   }
 
   if (!isMounted) return <div className="min-h-screen bg-transparent" />
@@ -248,6 +281,14 @@ export default function Dashboard() {
     return true;
   })
 
+  const getStatusColor = (status: string) => {
+    if (status === 'Realizada') return 'bg-emerald-50 text-emerald-600 border-emerald-200';
+    if (status === 'Falta Injustificada' || status === 'Falta') return 'bg-rose-50 text-rose-600 border-rose-200';
+    if (status === 'Falta Justificada') return 'bg-orange-50 text-orange-600 border-orange-200';
+    if (status === 'Reposição') return 'bg-indigo-50 text-indigo-600 border-indigo-200';
+    return 'bg-slate-100 text-slate-600 border-slate-200';
+  }
+
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full">
       <motion.div variants={itemVariants} className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-6">
@@ -257,6 +298,22 @@ export default function Dashboard() {
         </div>
 
         <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
+          
+          <motion.button 
+            whileHover={{ scale: 1.05 }} 
+            whileTap={{ scale: 0.95 }} 
+            onClick={() => setIsDiarioModalOpen(true)}
+            className={`relative flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-sm border transition-all font-black text-[10px] md:text-xs tracking-widest uppercase ${aulasPendentesBaixa.length > 0 ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200' : 'bg-white/60 border-white/80 text-slate-600 hover:bg-white'}`}
+          >
+            <span className="text-lg drop-shadow-sm">📖</span>
+            <span className="hidden md:inline">Diário de Aula</span>
+            {aulasPendentesBaixa.length > 0 && (
+              <span className="absolute -top-2 -right-2 h-6 w-6 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-bounce">
+                {aulasPendentesBaixa.length}
+              </span>
+            )}
+          </motion.button>
+
           <div className="flex bg-white/40 p-1.5 rounded-2xl shadow-sm border border-white/60 w-full md:w-auto">
             <button onClick={() => { setViewMode('dia'); semanaAtual(); }} className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${viewMode === 'dia' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>
               Aulas de Hoje
@@ -284,13 +341,13 @@ export default function Dashboard() {
       </motion.div>
 
       {solicitacoes.length > 0 && (
-        <motion.div variants={itemVariants} className={`mb-10 p-6 md:p-8 rounded-[2.5rem] border border-amber-400/50 bg-amber-500/10 backdrop-blur-xl shadow-[0_8px_32px_rgba(245,158,11,0.1)] relative overflow-hidden`}>
-          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-400/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
-          <h3 className="text-lg font-black uppercase text-amber-700 mb-6 flex items-center gap-3 relative z-10"><span className="text-2xl drop-shadow-sm">🛎️</span> Caixa de Entrada ({solicitacoes.length})</h3>
+        <motion.div variants={itemVariants} className={`mb-6 p-6 md:p-8 rounded-[2.5rem] border border-indigo-400/50 bg-indigo-500/10 backdrop-blur-xl shadow-[0_8px_32px_rgba(99,102,241,0.1)] relative overflow-hidden`}>
+          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-400/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+          <h3 className="text-lg font-black uppercase text-indigo-800 mb-6 flex items-center gap-3 relative z-10"><span className="text-2xl drop-shadow-sm">🛎️</span> Solicitações de Reposição ({solicitacoes.length})</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 relative z-10">
             {solicitacoes.map(sol => (
               <motion.div whileHover={{ y: -4 }} key={sol.id} className={`bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/80 shadow-sm relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-all`}>
-                <div className={`absolute top-0 right-0 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest rounded-bl-xl shadow-sm bg-indigo-500 text-white`}>Reposição</div>
+                <div className={`absolute top-0 right-0 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest rounded-bl-xl shadow-sm bg-indigo-500 text-white`}>Aprovar</div>
                 <div>
                   <p className="font-bold text-sm uppercase mb-1 pr-24 text-slate-800">{sol.aluno_nome.split(' ')[0]}</p>
                   <p className={`text-slate-600 text-[10px] font-medium leading-tight mb-4`}>
@@ -331,6 +388,7 @@ export default function Dashboard() {
             {aulasDeHoje.map((aula, index) => {
               const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(hojeDataStr))?.status;
               const isPast = checkIfClassPast(hojeDataStr, aula.horario_fim);
+              const isPendenteDeBaixa = isPast && !statusHistorico; 
 
               return (
                 <motion.div
@@ -338,22 +396,26 @@ export default function Dashboard() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05, duration: 0.3 }}
-                  className={`relative p-5 rounded-2xl bg-white/60 backdrop-blur-md border shadow-sm transition-all group overflow-hidden ${isPast ? 'opacity-40 grayscale' : 'hover:shadow-md border-white/80'}`}
+                  className={`relative p-5 rounded-2xl bg-white/60 backdrop-blur-md border shadow-sm transition-all group overflow-hidden ${isPendenteDeBaixa ? 'border-amber-300 bg-amber-50/50' : isPast ? 'opacity-40 grayscale' : 'hover:shadow-md border-white/80'}`}
                 >
-                  <div className={`absolute top-0 left-0 w-1.5 h-full ${statusHistorico === 'Falta' ? 'bg-rose-500' : aula.is_reposicao ? 'bg-amber-500' : 'bg-indigo-500'}`}></div>
+                  <div className={`absolute top-0 left-0 w-1.5 h-full ${statusHistorico?.includes('Falta') ? 'bg-rose-500' : isPendenteDeBaixa ? 'bg-amber-400 animate-pulse' : aula.is_reposicao ? 'bg-indigo-400' : 'bg-indigo-500'}`}></div>
                   
                   <div className="flex justify-between items-start mb-4 pl-3">
                     <div>
-                      <p className={`text-xl font-bold leading-none ${isPast ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{aula.horario_inicio.slice(0, 5)}</p>
+                      <p className={`text-xl font-bold leading-none ${isPast && !isPendenteDeBaixa ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{aula.horario_inicio.slice(0, 5)}</p>
                       <p className="text-[10px] font-semibold text-slate-400 mt-1">Até {aula.horario_fim.slice(0, 5)}</p>
                     </div>
                     
-                    {isPast ? (
+                    {isPendenteDeBaixa ? (
+                      <span className="px-2.5 py-1 rounded border text-[8px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 border-amber-200 shadow-sm animate-pulse">
+                        ⚠️ Lançar
+                      </span>
+                    ) : isPast && !statusHistorico ? (
                       <span className="px-2.5 py-1 rounded border text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 border-slate-200">
                         Encerrada
                       </span>
                     ) : statusHistorico ? (
-                      <span className={`px-2.5 py-1 rounded border text-[9px] font-bold uppercase tracking-wider ${statusHistorico === 'Realizada' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : statusHistorico === 'Falta' ? 'bg-rose-50 text-rose-600 border-rose-200' : statusHistorico === 'Reposição' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                      <span className={`px-2.5 py-1 rounded border text-[9px] font-bold uppercase tracking-wider ${getStatusColor(statusHistorico)}`}>
                         {statusHistorico}
                       </span>
                     ) : null}
@@ -364,21 +426,25 @@ export default function Dashboard() {
                       <div className="w-10 h-10 rounded-full bg-slate-200 border border-white shadow-inner overflow-hidden flex items-center justify-center shrink-0">
                         {aula.aluno?.avatar_url ? <img src={aula.aluno.avatar_url} className="w-full h-full object-cover" /> : <span className="font-bold text-slate-500 text-sm">{aula.aluno?.nome_completo?.charAt(0)}</span>}
                       </div>
-                      <h3 className={`text-sm font-bold uppercase line-clamp-2 leading-tight ${isPast ? 'text-slate-500' : 'text-slate-800'}`}>
+                      <h3 className={`text-sm font-bold uppercase line-clamp-2 leading-tight ${isPast && !isPendenteDeBaixa ? 'text-slate-500' : 'text-slate-800'}`}>
                         {aula.aluno?.nome_completo}
                       </h3>
                     </div>
 
                     <div className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-slate-200/60">
-                      <p className={`text-xs font-semibold flex items-center gap-2 ${aula.is_reposicao ? 'text-amber-600' : 'text-slate-600'}`}>
-                        <span className={aula.is_reposicao ? 'text-amber-500' : 'text-indigo-500'}>🎤</span> {aula.instrumento_aula}
+                      <p className={`text-xs font-semibold flex items-center gap-2 ${aula.is_reposicao ? 'text-indigo-600' : 'text-slate-600'}`}>
+                        <span className={aula.is_reposicao ? 'text-indigo-400' : 'text-indigo-500'}>🎤</span> {aula.instrumento_aula}
                       </p>
                       <p className="text-xs font-semibold text-slate-600 flex items-center gap-2"><span className="text-indigo-500">📍</span> {aula.sala?.nome}</p>
                     </div>
 
                     <div className="mt-4 flex gap-2">
-                      <button onClick={() => setSelectedAula({ ...aula, data_selecionada: hojeDataStr })} className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-bold uppercase hover:bg-white transition-colors shadow-sm">Opções</button>
-                      <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-bold uppercase shadow-sm hover:bg-indigo-50 transition-colors">Perfil</button>
+                      {isPendenteDeBaixa ? (
+                        <button onClick={() => setAulaParaDarBaixa({ ...aula, data_selecionada: hojeDataStr })} className="flex-1 py-2 rounded-xl bg-amber-400 text-amber-950 text-[10px] font-bold uppercase shadow-sm hover:bg-amber-500 hover:text-white transition-colors">Lançar Aula</button>
+                      ) : (
+                        <button onClick={() => setSelectedAula({ ...aula, data_selecionada: hojeDataStr })} className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-bold uppercase hover:bg-white transition-colors shadow-sm">Opções</button>
+                      )}
+                      <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-bold uppercase shadow-sm hover:bg-indigo-500 transition-colors">Perfil</button>
                     </div>
                   </div>
                 </motion.div>
@@ -429,27 +495,32 @@ export default function Dashboard() {
                     aulasDoDiaNaSemana.map((aula) => {
                       const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
                       const isPast = checkIfClassPast(dia.dataStr, aula.horario_fim);
+                      const isPendenteDeBaixa = isPast && !statusHistorico; 
 
                       return (
-                        <motion.div whileHover={{ scale: 1.02 }} key={aula.id} className={`bg-white/50 backdrop-blur-md p-4 rounded-2xl border border-white/80 shadow-sm transition-all relative group ${isPast ? 'opacity-40 grayscale' : 'hover:shadow-lg border-l-4 ' + (dia.isHoje ? 'border-l-emerald-500' : aula.is_reposicao ? 'border-l-amber-500' : 'border-l-indigo-500')}`}>
+                        <motion.div whileHover={{ scale: 1.02 }} key={aula.id} className={`bg-white/50 backdrop-blur-md p-4 rounded-2xl border shadow-sm transition-all relative group ${isPendenteDeBaixa ? 'border-amber-300 bg-amber-50/50' : isPast ? 'opacity-40 grayscale border-white/80' : 'hover:shadow-lg border-white/80 border-l-4 ' + (dia.isHoje ? 'border-l-emerald-500' : aula.is_reposicao ? 'border-l-indigo-400' : 'border-l-indigo-500')}`}>
                           <div className="flex justify-between items-start mb-1">
-                            <p className={`font-bold text-[9px] mb-1 ${isPast ? 'text-slate-500 line-through' : dia.isHoje ? 'text-emerald-600' : aula.is_reposicao ? 'text-amber-600' : 'text-indigo-700'}`}>
+                            <p className={`font-bold text-[9px] mb-1 ${isPast && !isPendenteDeBaixa ? 'text-slate-500 line-through' : dia.isHoje ? 'text-emerald-600' : aula.is_reposicao ? 'text-indigo-500' : 'text-indigo-700'}`}>
                               {aula.horario_inicio.slice(0, 5)} - {aula.horario_fim.slice(0, 5)}
                             </p>
-                            <button onClick={() => setSelectedAula({ ...aula, data_selecionada: dia.dataStr })} className={`opacity-0 group-hover:opacity-100 text-[9px] font-bold uppercase transition-opacity ${dia.isHoje ? 'text-emerald-600' : 'text-indigo-600'}`}>Editar</button>
+                            {isPendenteDeBaixa ? (
+                              <button onClick={() => setAulaParaDarBaixa({ ...aula, data_selecionada: dia.dataStr })} className={`text-[8px] font-bold uppercase transition-opacity text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded shadow-sm animate-pulse`}>Lançar</button>
+                            ) : (
+                              <button onClick={() => setSelectedAula({ ...aula, data_selecionada: dia.dataStr })} className={`opacity-0 group-hover:opacity-100 text-[9px] font-bold uppercase transition-opacity ${dia.isHoje ? 'text-emerald-600' : 'text-indigo-600'}`}>Editar</button>
+                            )}
                           </div>
-                          <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className={`font-bold text-sm uppercase transition-colors block w-full text-left truncate ${isPast ? 'text-slate-500' : 'text-slate-800 hover:text-indigo-600'}`}>
+                          <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className={`font-bold text-sm uppercase transition-colors block w-full text-left truncate ${isPast && !isPendenteDeBaixa ? 'text-slate-500' : 'text-slate-800 hover:text-indigo-600'}`}>
                             {aula.aluno?.nome_completo}
                           </button>
                           <p className={`text-slate-500 text-[9px] mt-2 font-semibold uppercase flex flex-col`}><span className="mb-1">🎤 {aula.instrumento_aula}</span><span>📍 {aula.sala?.nome}</span></p>
                           
                           {/* Tags da Semana */}
-                          {isPast ? (
+                          {isPast && !isPendenteDeBaixa && !statusHistorico ? (
                              <div className={`absolute -top-2 -right-2 px-2 py-1 rounded-lg text-[8px] font-bold uppercase shadow-sm border backdrop-blur-md bg-slate-100 text-slate-500 border-slate-200`}>
                                 Encerrada
                              </div>
                           ) : statusHistorico && (
-                            <div className={`absolute -top-2 -right-2 px-2 py-1 rounded-lg text-[8px] font-bold uppercase shadow-lg border backdrop-blur-md ${statusHistorico === 'Realizada' ? 'bg-emerald-500/90 text-white border-emerald-400' : statusHistorico === 'Falta' ? 'bg-rose-500/90 text-white border-rose-400' : statusHistorico === 'Reposição' ? 'bg-amber-400/90 text-slate-900 border-amber-300' : 'bg-slate-500/90 text-white border-slate-400'}`}>
+                            <div className={`absolute -top-2 -right-2 px-2 py-1 rounded-lg text-[8px] font-bold uppercase shadow-lg border backdrop-blur-md ${getStatusColor(statusHistorico)}`}>
                               {statusHistorico}
                             </div>
                           )}
@@ -464,6 +535,87 @@ export default function Dashboard() {
         </motion.div>
       )}
 
+      {/* 🔥 MODAL (LISTA) DA FILA DO DIÁRIO 🔥 */}
+      <AnimatePresence>
+        {isDiarioModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[60]">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>📖</span> Fila do Diário</h2>
+                <button onClick={() => setIsDiarioModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
+              </div>
+
+              <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
+                {aulasPendentesBaixa.length === 0 ? (
+                  <div className="text-center py-12 opacity-80">
+                    <span className="text-5xl block mb-3 drop-shadow-sm">✅</span>
+                    <p className="font-bold text-emerald-600 text-sm">Tudo em dia!</p>
+                    <p className="text-xs font-medium text-slate-500 mt-1">Nenhuma aula aguardando lançamento.</p>
+                  </div>
+                ) : aulasPendentesBaixa.map(aula => {
+                  const dataFormatada = new Date(aula.data_selecionada).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+                  return (
+                    <motion.div whileHover={{ y: -2 }} key={`${aula.id}-${aula.data_selecionada}`} className={`p-4 rounded-2xl border border-amber-200 bg-amber-50/80 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-l-4 border-l-amber-500`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <p className="font-bold text-sm uppercase text-slate-800">{aula.aluno?.nome_completo.split(' ')[0]}</p>
+                        <span className="text-[9px] font-bold text-amber-700 bg-amber-100/80 border border-amber-200 px-2 py-1 rounded shadow-sm">{dataFormatada}</span>
+                      </div>
+                      <p className={`text-slate-600 text-[10px] font-medium leading-tight mb-3`}>
+                        {aula.instrumento_aula} • {aula.horario_inicio.slice(0,5)} até {aula.horario_fim.slice(0,5)}
+                      </p>
+                      <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setIsDiarioModalOpen(false); setAulaParaDarBaixa(aula); }} className="w-full py-2.5 bg-amber-400 text-amber-950 font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-sm hover:bg-amber-500 hover:text-white transition-all">
+                        Lançar Diário
+                      </motion.button>
+                    </motion.div>
+                  )
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL DE LANÇAMENTO (ESCRITA) DO DIÁRIO */}
+      <AnimatePresence>
+        {aulaParaDarBaixa && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[80]">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className={`bg-white/90 backdrop-blur-2xl border border-white/60 border-t-8 border-t-amber-400 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
+              <h2 className={`text-xl font-bold mb-2 text-slate-800 tracking-tight`}>Lançar Diário de Aula</h2>
+              <p className="text-sm font-semibold text-slate-500 mb-6">Aluno: <span className="text-amber-600">{aulaParaDarBaixa.aluno?.nome_completo}</span></p>
+              
+              <div className="mb-6">
+                <label className="text-xs font-bold text-slate-600 ml-1 mb-2 block uppercase tracking-widest">Anotações da Aula / Motivo da Falta</label>
+                <textarea 
+                  value={obsBaixa} 
+                  onChange={e => setObsBaixa(e.target.value)} 
+                  placeholder="Escreva o que foi ensinado, ou o motivo da falta..." 
+                  className="w-full p-4 rounded-xl bg-white/50 border border-slate-200 text-slate-800 font-medium focus:bg-white focus:border-amber-400/50 focus:ring-4 focus:ring-amber-500/10 transition-all outline-none shadow-inner resize-none h-32"
+                />
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleDarBaixa('Realizada')} disabled={isSubmitting} className={`w-full py-4 rounded-2xl bg-emerald-500 text-white font-black uppercase text-xs tracking-widest shadow-lg hover:bg-emerald-600 transition-all disabled:opacity-50`}>
+                  ✅ Aula Realizada
+                </motion.button>
+                <div className="flex gap-3">
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleDarBaixa('Falta Justificada')} disabled={isSubmitting} className={`flex-1 py-3 rounded-2xl bg-amber-50 text-amber-700 font-bold uppercase text-[10px] tracking-widest border border-amber-200 hover:bg-amber-500 hover:text-white transition-all disabled:opacity-50 shadow-sm`}>
+                    ⚠️ Falta Justificada
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleDarBaixa('Falta Injustificada')} disabled={isSubmitting} className={`flex-1 py-3 rounded-2xl bg-rose-50 text-rose-600 font-bold uppercase text-[10px] tracking-widest border border-rose-200 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50 shadow-sm`}>
+                    ❌ Falta Injustificada
+                  </motion.button>
+                </div>
+              </div>
+
+              <button onClick={() => setAulaParaDarBaixa(null)} className="w-full mt-4 py-3 rounded-xl font-bold uppercase text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all text-[10px] tracking-widest">
+                Cancelar e Voltar
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL DE OPÇÕES DA AULA (Normal) */}
       <AnimatePresence>
         {selectedAula && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
