@@ -56,17 +56,22 @@ export default function PortalAluno() {
 
   useEffect(() => { if (s.bg && s.bg.includes('950')) toggleTheme() }, [s.bg, toggleTheme])
   
+  // 🟢 REALTIME (Portal do Aluno): Agora sincroniza notificações, respostas de reagendamento E desmarcações de aula na hora!
   useEffect(() => {
     if (!isMounted) return;
-    let channel1: any; let channel2: any;
+    let channel: any;
     const setupRealtime = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return;
-      channel1 = supabase.channel('notificacoes-reagendamento').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'solicitacoes_reagendamento', filter: `aluno_id=eq.${session.user.id}` }, () => carregarPortal()).subscribe();
-      channel2 = supabase.channel('notificacoes-diretas').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notificacoes_aluno', filter: `aluno_id=eq.${session.user.id}` }, () => carregarPortal()).subscribe();
+      
+      channel = supabase.channel('portal-aluno-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'solicitacoes_reagendamento', filter: `aluno_id=eq.${session.user.id}` }, () => { carregarPortal() })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notificacoes_aluno', filter: `aluno_id=eq.${session.user.id}` }, () => { carregarPortal() })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_aulas', filter: `aluno_id=eq.${session.user.id}` }, () => { carregarPortal() })
+        .subscribe();
     }
     setupRealtime();
-    return () => { if (channel1) supabase.removeChannel(channel1); if (channel2) supabase.removeChannel(channel2); }
+    return () => { if (channel) supabase.removeChannel(channel); }
   }, [isMounted])
 
   useEffect(() => { if (isMounted) carregarPortal() }, [isMounted])
@@ -215,8 +220,14 @@ export default function PortalAluno() {
     let diff = diaAlvo - hoje.getDay()
     if (diff < 0 || (diff === 0 && hoje.getHours() > parseInt(horaInicio.split(':')[0]))) diff += 7
     const d = new Date(); d.setDate(hoje.getDate() + diff)
-    const res = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' })
-    return res.charAt(0).toUpperCase() + res.slice(1)
+    
+    // Formata o retorno para enviar a dataStr completa para o Histórico também
+    const dataIsoString = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0]
+    
+    const displayStr = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' })
+    const formatada = displayStr.charAt(0).toUpperCase() + displayStr.slice(1)
+    
+    return { dataFormatada: formatada, dataBaseString: dataIsoString }
   }
 
   if (!isMounted) return null;
@@ -231,7 +242,6 @@ export default function PortalAluno() {
   return (
     <div className={`min-h-screen text-slate-800 font-sans pb-20 bg-slate-50 relative overflow-hidden z-0`}>
       
-      {/* 👇 EFEITO DE LUZ/BOLHAS NO FUNDO DO PORTAL PARA O VIDRO BRILHAR */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
           <div className="absolute top-[-10%] left-[-20%] w-[60vw] h-[60vw] max-w-[600px] max-h-[600px] rounded-full bg-indigo-300/30 blur-[100px] animate-pulse" style={{ animationDuration: '8s' }} />
           <div className="absolute top-[20%] right-[-10%] w-[50vw] h-[50vw] max-w-[500px] max-h-[500px] rounded-full bg-cyan-300/30 blur-[100px] animate-pulse" style={{ animationDuration: '12s' }} />
@@ -281,29 +291,46 @@ export default function PortalAluno() {
           {aulas.length === 0 ? (
             <div className="p-8 rounded-[2rem] border border-dashed border-slate-300 bg-white/40 backdrop-blur-md text-center shadow-sm"><p className="text-sm font-medium text-slate-500">Nenhuma aula agendada.</p></div>
           ) : (
-            aulas.map(aula => (
-              <motion.div whileHover={{ y: -4 }} key={aula.id} className="bg-white/50 backdrop-blur-xl p-6 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border border-white/60 relative overflow-hidden group mb-4 transition-all">
-                <div className="absolute -right-6 -top-6 w-32 h-32 bg-amber-300/20 rounded-full blur-2xl pointer-events-none"></div>
-                <div className="inline-block bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1 rounded-xl font-bold text-xs mb-4 shadow-sm">{calcularDataProximaAula(aula.dia, aula.horario_inicio)}</div>
-                
-                <div className="flex justify-between items-end mb-6 relative z-10">
-                  <div>
-                    <p className="font-bold text-3xl text-slate-800 tracking-tight leading-none mb-1">{aula.horario_inicio.slice(0,5)} <span className="text-slate-400 text-xl font-medium">- {aula.horario_fim.slice(0,5)}</span></p>
-                    <p className="text-slate-600 text-xs font-semibold flex items-center gap-1 mt-2"><span className="bg-white/80 shadow-sm p-1 rounded-md text-sm">🎤</span> {aula.instrumento_aula}</p>
+            aulas.map(aula => {
+              const dadosData = calcularDataProximaAula(aula.dia, aula.horario_inicio);
+              const statusAteProxima = historico.find(h => h.data_aula === dadosData.dataBaseString)?.status;
+              const isDesmarcada = statusAteProxima === 'Desmarcada';
+
+              return (
+                <motion.div whileHover={{ y: -4 }} key={aula.id} className={`bg-white/50 backdrop-blur-xl p-6 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border relative overflow-hidden group mb-4 transition-all ${isDesmarcada ? 'border-rose-400 opacity-90' : 'border-white/60'}`}>
+                  {isDesmarcada ? (
+                    <div className="absolute -right-6 -top-6 w-32 h-32 bg-rose-500/20 rounded-full blur-2xl pointer-events-none"></div>
+                  ) : (
+                    <div className="absolute -right-6 -top-6 w-32 h-32 bg-amber-300/20 rounded-full blur-2xl pointer-events-none"></div>
+                  )}
+                  
+                  <div className={`inline-block border px-3 py-1 rounded-xl font-bold text-xs mb-4 shadow-sm ${isDesmarcada ? 'bg-rose-100 text-rose-800 border-rose-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
+                    {dadosData.dataFormatada}
                   </div>
-                  <div className="text-right">
-                    <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Professor</p>
-                    <p className="font-bold text-sm text-indigo-700 bg-indigo-50/80 border border-indigo-100 px-2 py-1 rounded-lg mt-1 shadow-sm">{aula.professor_nome ? aula.professor_nome.split(' ')[0] : '--'}</p>
+                  
+                  <div className="flex justify-between items-end mb-6 relative z-10">
+                    <div>
+                      <p className={`font-bold text-3xl tracking-tight leading-none mb-1 ${isDesmarcada ? 'text-rose-800 line-through opacity-70' : 'text-slate-800'}`}>
+                        {aula.horario_inicio.slice(0,5)} <span className="text-slate-400 text-xl font-medium">- {aula.horario_fim.slice(0,5)}</span>
+                      </p>
+                      <p className={`text-xs font-semibold flex items-center gap-1 mt-2 ${isDesmarcada ? 'text-rose-600' : 'text-slate-600'}`}>
+                        <span className="bg-white/80 shadow-sm p-1 rounded-md text-sm">🎤</span> {aula.instrumento_aula}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Professor</p>
+                      <p className="font-bold text-sm text-indigo-700 bg-indigo-50/80 border border-indigo-100 px-2 py-1 rounded-lg mt-1 shadow-sm">{aula.professor_nome ? aula.professor_nome.split(' ')[0] : '--'}</p>
+                    </div>
                   </div>
-                </div>
-                
-                {!solicitacaoPendente && (
-                  <motion.button whileTap={{ scale: 0.98 }} onClick={() => abrirModalReagendamento('Reposição', aula)} className="w-full py-3.5 rounded-xl bg-white/60 border border-white/80 text-slate-700 font-bold text-sm hover:bg-white shadow-sm transition-all flex items-center justify-center gap-2">
-                    <span>📅</span> Escolher Data para Repor
-                  </motion.button>
-                )}
-              </motion.div>
-            ))
+                  
+                  {!solicitacaoPendente && (
+                    <motion.button whileTap={{ scale: 0.98 }} onClick={() => abrirModalReagendamento('Reposição', aula)} className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 ${isDesmarcada ? 'bg-rose-500 text-white border-rose-600 hover:bg-rose-600' : 'bg-white/60 border border-white/80 text-slate-700 hover:bg-white'}`}>
+                      <span>📅</span> {isDesmarcada ? 'Escolher Nova Data' : 'Escolher Data para Repor'}
+                    </motion.button>
+                  )}
+                </motion.div>
+              )
+            })
           )}
         </motion.section>
 
@@ -351,7 +378,9 @@ export default function PortalAluno() {
             {historico.length === 0 ? <p className="p-6 text-center text-sm font-medium text-slate-500">Nenhum registro.</p> : historico.map(h => (
               <div key={h.id} className="p-4 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all">
                 <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-full flex items-center justify-center text-lg shadow-inner ${h.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{h.status === 'Realizada' ? '✓' : '✕'}</div>
+                  <div className={`h-10 w-10 rounded-full flex items-center justify-center text-lg shadow-inner ${h.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600' : h.status === 'Desmarcada' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+                    {h.status === 'Realizada' ? '✓' : h.status === 'Desmarcada' ? '✖' : '📅'}
+                  </div>
                   <div>
                     <p className="font-bold text-sm text-slate-800">{new Date(h.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
                     <p className="text-[11px] font-semibold text-slate-500 mt-0.5">{h.status}</p>
@@ -389,7 +418,7 @@ export default function PortalAluno() {
         </motion.button>
       </footer>
 
-      {/* --- MODAIS COM EFEITO DE VIDRO E FRAMER MOTION --- */}
+      {/* --- MODAIS --- */}
       <AnimatePresence>
         {isNotificacaoModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[90]">

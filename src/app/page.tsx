@@ -29,22 +29,10 @@ export default function Dashboard() {
   const [saudacao, setSaudacao] = useState('Olá')
   const [primeiroNome, setPrimeiroNome] = useState('')
 
-  useEffect(() => { 
-    setIsMounted(true)
-    setDataReferencia(new Date())
-    
-    // Define a saudação dinamicamente e sem quebrar o servidor
-    const hora = new Date().getHours()
-    if (hora >= 0 && hora < 12) setSaudacao('Bom dia')
-    else if (hora >= 12 && hora < 18) setSaudacao('Boa tarde')
-    else setSaudacao('Boa noite')
-  }, [])
-
-  // Proteção: não roda os cálculos até o dataReferencia estar pronto
-  const baseDate = dataReferencia || new Date()
-  const diaDaSemana = baseDate.getDay() 
-  const diffParaSegunda = baseDate.getDate() - diaDaSemana + (diaDaSemana === 0 ? -6 : 1)
-  const segundaFeira = new Date(baseDate)
+  // Lógica de Semanas (Para a aba Semana Completa)
+  const diaDaSemana = dataReferencia?.getDay() || new Date().getDay()
+  const diffParaSegunda = (dataReferencia?.getDate() || new Date().getDate()) - diaDaSemana + (diaDaSemana === 0 ? -6 : 1)
+  const segundaFeira = new Date(dataReferencia || new Date())
   segundaFeira.setDate(diffParaSegunda)
 
   const diasVisuais = [0, 1, 2, 3, 4, 5].map(offset => {
@@ -56,6 +44,7 @@ export default function Dashboard() {
     return { nome: nomes[offset], dataStr: dataStr, isHoje: dataStr === dataHojeStr, display: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) }
   })
 
+  // Lógica do Dia de Hoje (Para a aba Aulas de Hoje)
   const hojeDate = new Date()
   const hojeDataStr = new Date(hojeDate.getTime() - (hojeDate.getTimezoneOffset() * 60000)).toISOString().split('T')[0]
   const nomesDias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
@@ -65,13 +54,25 @@ export default function Dashboard() {
   const proximaSemana = () => { if(dataReferencia) { const n = new Date(dataReferencia); n.setDate(n.getDate() + 7); setDataReferencia(n) } }
   const semanaAtual = () => { setDataReferencia(new Date()) }
 
+  useEffect(() => { 
+    setIsMounted(true)
+    setDataReferencia(new Date())
+    
+    // Define a saudação dinamicamente
+    const hora = new Date().getHours()
+    if (hora >= 0 && hora < 12) setSaudacao('Bom dia')
+    else if (hora >= 12 && hora < 18) setSaudacao('Boa tarde')
+    else setSaudacao('Boa noite')
+  }, [])
+  
   useEffect(() => { if (isMounted && dataReferencia) carregarDados() }, [dataReferencia, isMounted]) 
   
   useEffect(() => {
     if (!isMounted) return;
     const channel = supabase
-      .channel('notificacoes-inbox')
+      .channel('dashboard-sync-prof')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solicitacoes_reagendamento' }, () => { carregarDados(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_aulas' }, () => { carregarDados(); })
       .subscribe();
     return () => { supabase.removeChannel(channel); }
   }, [isMounted]);
@@ -116,6 +117,14 @@ export default function Dashboard() {
     setIsSubmitting(true)
     if (sol.tipo_mudanca === 'Fixa') { await supabase.from('agenda').update({ dia: sol.novo_dia, horario_inicio: sol.novo_horario_inicio, horario_fim: sol.novo_horario_fim }).eq('id', sol.agenda_original_id) }
     await supabase.from('solicitacoes_reagendamento').update({ status: 'Aprovada' }).eq('id', sol.id)
+    
+    await supabase.from('notificacoes_aluno').insert([{
+      aluno_id: sol.aluno_id,
+      titulo: '✅ Reposição Aprovada!',
+      mensagem: `O professor aprovou seu pedido para o dia ${new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} às ${sol.novo_horario_inicio?.slice(0,5)}.`,
+      lida: false
+    }])
+
     alert("✅ Solicitação Aprovada com sucesso!")
     setIsSubmitting(false); carregarDados()
   }
@@ -125,28 +134,83 @@ export default function Dashboard() {
     if (motivo === null) return 
     setIsSubmitting(true)
     await supabase.from('solicitacoes_reagendamento').update({ status: 'Negada', motivo_recusa: motivo || 'Horário indisponível no momento.' }).eq('id', sol.id)
+    
+    await supabase.from('notificacoes_aluno').insert([{
+      aluno_id: sol.aluno_id,
+      titulo: '❌ Reposição Recusada',
+      mensagem: `A sua solicitação para o dia ${new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} foi recusada. Motivo: "${motivo || 'Indisponível no momento'}".`,
+      lida: false
+    }])
+
     alert("❌ Solicitação Negada e devolvida ao aluno.")
     setIsSubmitting(false); carregarDados()
   }
 
-  const handleRemoverDaGrade = async (id: string) => { if (!confirm("Remover da grade? (Não exclui o aluno)")) return; await supabase.from('agenda').delete().eq('id', id); setSelectedAula(null); carregarDados() }
+  const handleDesmarcarAula = async () => {
+    const motivo = window.prompt("Qual o motivo da desmarcação? (O aluno receberá esta mensagem no portal e a vaga ficará aberta para reposição)");
+    if (motivo === null) return; 
+
+    setIsSubmitting(true);
+    
+    const dataParaDesmarcar = selectedAula.data_selecionada || hojeDataStr;
+    
+    // 🔥 ATUALIZAÇÃO OTIMISTA: Oculta o card da tela instantaneamente, antes mesmo de enviar pro banco!
+    setHistoricoSemana(prev => [...prev, { 
+      aluno_id: selectedAula.aluno.id, 
+      data_aula: dataParaDesmarcar, 
+      status: 'Desmarcada' 
+    }]);
+    
+    // Operações de Banco
+    await supabase.from('historico_aulas').delete().eq('aluno_id', selectedAula.aluno.id).eq('data_aula', dataParaDesmarcar);
+    await supabase.from('historico_aulas').insert([{
+      aluno_id: selectedAula.aluno.id,
+      professor_id: selectedAula.professor_id,
+      data_aula: dataParaDesmarcar,
+      status: 'Desmarcada',
+      observacoes: motivo
+    }]);
+
+    const dataFormatada = new Date(dataParaDesmarcar).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    await supabase.from('notificacoes_aluno').insert([{
+      aluno_id: selectedAula.aluno.id,
+      titulo: '⚠️ Aula Desmarcada pelo Professor',
+      mensagem: `Sua aula do dia ${dataFormatada} foi desmarcada. Motivo: "${motivo || 'Não informado'}". A vaga ficou em aberto para reposição, acesse a plataforma para escolher uma nova data.`,
+      lida: false
+    }]);
+
+    setSelectedAula(null);
+    setIsSubmitting(false);
+    // A tela vai recarregar por baixo dos panos graças ao Realtime
+  }
+
+  const handleRemoverDaGrade = async (id: string) => { if (!confirm("CUIDADO: Remover da grade APAGA O HORÁRIO FIXO do aluno permanentemente. Deseja continuar?")) return; await supabase.from('agenda').delete().eq('id', id); setSelectedAula(null); carregarDados() }
 
   if (!isMounted) return <div className="min-h-screen bg-transparent" />
 
   const eventosDeHoje = eventosSemana.filter(e => e.data_evento === hojeDataStr)
   const isFeriadoHoje = eventosDeHoje.some(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')
 
+  // 🔥 LÓGICA DE FILTRAGEM BLINDADA PARA A ABA DE HOJE
   const aulasDeHoje = aulas.filter(a => a.dia === nomeDiaHoje).filter(aula => {
+    // 1. O Aluno está Inativo hoje?
     const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info;
-    if (info?.status === 'Inativo' && info?.data_inativacao) { return hojeDataStr <= info.data_inativacao }
+    if (info?.status === 'Inativo' && info?.data_inativacao) { 
+      if (hojeDataStr > info.data_inativacao) return false; 
+    }
+    
+    // 2. A aula foi desmarcada? (Forçando conversão para string para garantir que a data bata)
+    const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(hojeDataStr))?.status;
+    if (statusHistorico === 'Desmarcada') return false; // SOME DA TELA!
+
     return true;
   })
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full">
       
-      {/* CABEÇALHO */}
-      <motion.div variants={itemVariants} className="flex flex-col xl:flex-row justify-between items-start xl:items-end mb-8 gap-6">
+      {/* CABEÇALHO PADRONIZADO E ELEGANTE */}
+      <motion.div variants={itemVariants} className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-6">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-slate-800">Painel Central</h2>
           <p className="text-slate-500 text-sm mt-1">Gestão de grade e controle em tempo real</p>
@@ -169,7 +233,7 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* SELETOR DE SEMANA */}
+          {/* SELETOR DE SEMANA (SÓ APARECE NA ABA SEMANA) */}
           <AnimatePresence>
             {viewMode === 'semana' && (
               <motion.div 
@@ -226,7 +290,7 @@ export default function Dashboard() {
       ) : viewMode === 'dia' ? (
         
         /* ----------------------------------------------------
-           🔴 VISÃO: AULAS DE HOJE (Design Moderno & Limpo)
+           🔴 VISÃO: AULAS DE HOJE
            ---------------------------------------------------- */
         <motion.div variants={itemVariants} className="mt-4">
           <div className="mb-10 px-2">
@@ -246,7 +310,7 @@ export default function Dashboard() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {aulasDeHoje.map((aula, index) => {
-              const statusHistorico = historicoSemana.find(h => h.aluno_id === aula.aluno.id && h.data_aula === hojeDataStr)?.status;
+              const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(hojeDataStr))?.status;
 
               return (
                 <motion.div
@@ -254,10 +318,9 @@ export default function Dashboard() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05, duration: 0.3 }}
-                  className={`relative p-5 rounded-2xl bg-white/60 backdrop-blur-md border shadow-sm hover:shadow-md transition-all group overflow-hidden ${statusHistorico === 'Desmarcada' || statusHistorico === 'Falta' ? 'opacity-60 border-slate-200' : 'border-white/80'}`}
+                  className={`relative p-5 rounded-2xl bg-white/60 backdrop-blur-md border shadow-sm hover:shadow-md transition-all group overflow-hidden ${statusHistorico === 'Falta' ? 'opacity-60 border-slate-200' : 'border-white/80'}`}
                 >
-                  {/* Faixa lateral colorida elegante */}
-                  <div className={`absolute top-0 left-0 w-1.5 h-full ${statusHistorico === 'Desmarcada' ? 'bg-slate-400' : statusHistorico === 'Falta' ? 'bg-rose-500' : 'bg-indigo-500'}`}></div>
+                  <div className={`absolute top-0 left-0 w-1.5 h-full ${statusHistorico === 'Falta' ? 'bg-rose-500' : 'bg-indigo-500'}`}></div>
                   
                   <div className="flex justify-between items-start mb-4 pl-3">
                     <div>
@@ -276,7 +339,7 @@ export default function Dashboard() {
                       <div className="w-10 h-10 rounded-full bg-slate-200 border border-white shadow-inner overflow-hidden flex items-center justify-center shrink-0">
                         {aula.aluno?.avatar_url ? <img src={aula.aluno.avatar_url} className="w-full h-full object-cover" /> : <span className="font-bold text-slate-500 text-sm">{aula.aluno?.nome_completo?.charAt(0)}</span>}
                       </div>
-                      <h3 className={`text-sm font-bold uppercase line-clamp-2 leading-tight ${statusHistorico === 'Desmarcada' ? 'line-through text-slate-500' : 'text-slate-800'}`}>
+                      <h3 className={`text-sm font-bold uppercase line-clamp-2 leading-tight ${statusHistorico === 'Falta' ? 'line-through text-slate-500' : 'text-slate-800'}`}>
                         {aula.aluno?.nome_completo}
                       </h3>
                     </div>
@@ -287,7 +350,7 @@ export default function Dashboard() {
                     </div>
 
                     <div className="mt-4 flex gap-2">
-                      <button onClick={() => setSelectedAula(aula)} className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-bold uppercase hover:bg-white transition-colors shadow-sm">Opções</button>
+                      <button onClick={() => setSelectedAula({ ...aula, data_selecionada: hojeDataStr })} className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-bold uppercase hover:bg-white transition-colors shadow-sm">Opções</button>
                       <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-bold uppercase shadow-sm hover:bg-indigo-500 transition-colors">Perfil</button>
                     </div>
                   </div>
@@ -307,6 +370,17 @@ export default function Dashboard() {
             const eventosDoDia = eventosSemana.filter(e => e.data_evento === dia.dataStr)
             const isFeriado = eventosDoDia.some(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')
 
+            // 🔥 FILTRA AS AULAS DO DIA DA SEMANA TAMBÉM (Oculta as Desmarcadas)
+            const aulasDoDiaNaSemana = aulas.filter(a => a.dia === dia.nome).filter(aula => {
+              const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info;
+              if (info?.status === 'Inativo' && info?.data_inativacao && dia.dataStr > info.data_inativacao) return false; 
+              
+              const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status;
+              if (statusHistorico === 'Desmarcada') return false; // SOME DA TELA
+
+              return true;
+            });
+
             return (
               <div key={dia.nome} className="flex flex-col">
                 <div className={`mb-3 p-3 rounded-2xl bg-white/40 backdrop-blur-md border text-center transition-all shadow-[0_4px_20px_rgba(0,0,0,0.03)] ${dia.isHoje ? 'border-t-4 border-t-emerald-500 border-white/60' : 'border-t-4 border-t-indigo-500 border-white/60'}`}>
@@ -314,29 +388,30 @@ export default function Dashboard() {
                   <p className={`text-xs font-semibold mt-1 ${dia.isHoje ? 'text-emerald-600' : 'text-slate-500'}`}>{dia.display}</p>
                 </div>
                 
-                <div className="space-y-3">
+                <div className="space-y-3 flex-1 flex flex-col">
                   {isFeriado ? (
                     <div className={`p-6 rounded-2xl border border-rose-400/50 bg-rose-500/10 backdrop-blur-md text-rose-600 text-center flex flex-col items-center justify-center min-h-[150px] shadow-sm`}>
                       <span className="text-4xl mb-3 opacity-90 drop-shadow-sm">🏖️</span>
                       <p className="font-bold uppercase text-[10px] text-balance leading-tight">{eventosDoDia.find(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')?.titulo}</p>
                       <p className="text-[9px] mt-2 opacity-80 font-bold uppercase tracking-widest bg-rose-500/20 px-2 py-1 rounded border border-rose-500/30">Sem Aulas</p>
                     </div>
+                  ) : aulasDoDiaNaSemana.length === 0 ? (
+                    <div className="flex-1 min-h-[120px] p-4 rounded-2xl border border-dashed border-slate-300 bg-white/30 flex items-center justify-center text-center shadow-sm">
+                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Horário Livre</p>
+                    </div>
                   ) : (
-                    aulas.filter(a => a.dia === dia.nome).map((aula) => {
-                      const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info;
-                      if (info?.status === 'Inativo' && info?.data_inativacao && dia.dataStr > info.data_inativacao) return null; 
-
-                      const statusHistorico = historicoSemana.find(h => h.aluno_id === aula.aluno.id && h.data_aula === dia.dataStr)?.status
+                    aulasDoDiaNaSemana.map((aula) => {
+                      const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
 
                       return (
-                        <motion.div whileHover={{ scale: 1.02 }} key={aula.id} className={`bg-white/50 backdrop-blur-md p-4 rounded-2xl border border-white/80 border-l-4 ${dia.isHoje ? 'border-l-emerald-500' : 'border-l-indigo-500'} shadow-sm hover:shadow-lg transition-all relative group ${statusHistorico === 'Desmarcada' || statusHistorico === 'Falta' ? 'opacity-60 hover:opacity-100' : ''}`}>
+                        <motion.div whileHover={{ scale: 1.02 }} key={aula.id} className={`bg-white/50 backdrop-blur-md p-4 rounded-2xl border border-white/80 border-l-4 ${dia.isHoje ? 'border-l-emerald-500' : 'border-l-indigo-500'} shadow-sm hover:shadow-lg transition-all relative group ${statusHistorico === 'Falta' ? 'opacity-60 hover:opacity-100' : ''}`}>
                           <div className="flex justify-between items-start mb-1">
                             <p className={`font-bold text-[9px] mb-1 ${dia.isHoje ? 'text-emerald-600' : 'text-indigo-700'}`}>
                               {aula.horario_inicio.slice(0, 5)} - {aula.horario_fim.slice(0, 5)}
                             </p>
-                            <button onClick={() => setSelectedAula(aula)} className={`opacity-0 group-hover:opacity-100 text-[9px] font-bold uppercase transition-opacity ${dia.isHoje ? 'text-emerald-600' : 'text-indigo-600'}`}>Editar</button>
+                            <button onClick={() => setSelectedAula({ ...aula, data_selecionada: dia.dataStr })} className={`opacity-0 group-hover:opacity-100 text-[9px] font-bold uppercase transition-opacity ${dia.isHoje ? 'text-emerald-600' : 'text-indigo-600'}`}>Editar</button>
                           </div>
-                          <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className={`font-bold text-sm uppercase text-slate-800 hover:text-indigo-600 transition-colors block w-full text-left truncate ${statusHistorico === 'Desmarcada' ? 'line-through opacity-70' : ''}`}>
+                          <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className={`font-bold text-sm uppercase text-slate-800 hover:text-indigo-600 transition-colors block w-full text-left truncate ${statusHistorico === 'Falta' ? 'line-through opacity-70' : ''}`}>
                             {aula.aluno?.nome_completo}
                           </button>
                           <p className={`text-slate-500 text-[9px] mt-2 font-semibold uppercase flex flex-col`}><span className="mb-1">🎤 {aula.instrumento_aula}</span><span>📍 {aula.sala?.nome}</span></p>
@@ -363,9 +438,22 @@ export default function Dashboard() {
             <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className={`bg-white/70 backdrop-blur-2xl border border-white/60 border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-sm shadow-2xl relative`}>
               <h2 className={`text-xl font-bold mb-6 text-slate-800 tracking-tight text-center`}>Opções do Horário</h2>
               <div className="flex flex-col gap-3">
-                <motion.button whileTap={{ scale: 0.95 }} onClick={() => router.push(`/alunos/${selectedAula.aluno.id}`)} className={`py-4 rounded-2xl bg-indigo-600 text-white font-bold uppercase shadow-md text-xs hover:bg-indigo-500 transition-all`}>Acessar Perfil do Aluno</motion.button>
-                <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleRemoverDaGrade(selectedAula.id)} className={`py-4 rounded-2xl bg-rose-50 text-rose-600 font-bold uppercase shadow-sm border border-rose-100 text-xs hover:bg-rose-500 hover:text-white transition-all`}>Remover da Grade</motion.button>
-                <motion.button whileTap={{ scale: 0.95 }} onClick={() => setSelectedAula(null)} className={`py-4 rounded-2xl font-bold uppercase text-slate-600 hover:bg-white transition-all text-xs border border-white/80 shadow-sm mt-2`}>Fechar</motion.button>
+                <motion.button whileTap={{ scale: 0.95 }} onClick={() => router.push(`/alunos/${selectedAula.aluno.id}`)} className={`py-4 rounded-2xl bg-indigo-600 text-white font-bold uppercase shadow-md text-xs hover:bg-indigo-500 transition-all`}>
+                  Acessar Perfil do Aluno
+                </motion.button>
+                
+                {/* BOTÃO: Desmarcar Aula Específica */}
+                <motion.button whileTap={{ scale: 0.95 }} onClick={handleDesmarcarAula} disabled={isSubmitting} className={`py-4 rounded-2xl bg-amber-500 text-white font-bold uppercase shadow-sm border text-xs hover:bg-amber-600 transition-all disabled:opacity-50`}>
+                  Desmarcar Aula do Dia
+                </motion.button>
+
+                <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleRemoverDaGrade(selectedAula.id)} className={`py-4 rounded-2xl bg-rose-50 text-rose-600 font-bold uppercase shadow-sm border border-rose-100 text-xs hover:bg-rose-500 hover:text-white transition-all`}>
+                  Remover Grade Fixa
+                </motion.button>
+
+                <motion.button whileTap={{ scale: 0.95 }} onClick={() => setSelectedAula(null)} className={`py-4 rounded-2xl font-bold uppercase text-slate-600 hover:bg-white transition-all text-xs border border-white/80 shadow-sm mt-2`}>
+                  Fechar
+                </motion.button>
               </div>
             </motion.div>
           </motion.div>
