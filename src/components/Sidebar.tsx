@@ -35,7 +35,13 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [senhaAluno, setSenhaAluno] = useState(''); 
   const [telAluno, setTelAluno] = useState(''); const [cpf, setCpf] = useState(''); const [dataNascimento, setDataNascimento] = useState('')
   const [cep, setCep] = useState(''); const [endereco, setEndereco] = useState(''); const [numero, setNumero] = useState(''); const [complemento, setComplemento] = useState(''); const [bairro, setBairro] = useState(''); const [cidade, setCidade] = useState(''); const [estado, setEstado] = useState('')
-  const [comoConheceu, setComoConheceu] = useState(''); const [indicacaoNome, setIndicacaoNome] = useState(''); const [valorMensalidade, setValorMensalidade] = useState('250'); const [vencimento, setVencimento] = useState('10')
+  
+  // ESTADOS FINANCEIRO & MARKETING
+  const [comoConheceu, setComoConheceu] = useState(''); 
+  const [indicacaoNome, setIndicacaoNome] = useState(''); 
+  const [valorMensalidade, setValorMensalidade] = useState('250'); 
+  const [vencimento, setVencimento] = useState('10')
+  
   const [fotoArquivo, setFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   const [profId, setProfId] = useState(''); const [salaId, setSalaId] = useState(''); const [diaSemana, setDiaSemana] = useState('Segunda'); const [horaInicio, setHoraInicio] = useState('08:00'); const [horaFim, setHoraFim] = useState('09:00'); const [modalidade, setModalidade] = useState('')
   
@@ -117,7 +123,12 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const fecharModalMatricula = () => { setIsModalOpen(false); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setCpf(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); setComoConheceu(''); setIndicacaoNome(''); setFotoArquivo(null); setFotoPreview(null); setModalidade(''); setHoraInicio('08:00'); }
+  const fecharModalMatricula = () => { 
+    setIsModalOpen(false); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setCpf(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
+    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); 
+    setFotoArquivo(null); setFotoPreview(null); setModalidade(''); setHoraInicio('08:00'); 
+  }
+  
   const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const newCep = formatCEP(e.target.value); setCep(newCep); const cleanCep = newCep.replace(/\D/g, ''); if (cleanCep.length === 8) { try { const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`); const data = await res.json(); if (!data.erro) { setEndereco(data.logradouro || ''); setBairro(data.bairro || ''); setCidade(data.localidade || ''); setEstado(data.uf || ''); document.getElementById('input-numero')?.focus() } } catch (error) { console.error("Erro") } } }
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) { const reader = new FileReader(); reader.onload = () => { setImageToCrop(reader.result as string); setShowCropModal(true) }; reader.readAsDataURL(e.target.files[0]) } }
   const handleConfirmCrop = async () => { if (imageToCrop && croppedAreaPixels) { const croppedFile = await getCroppedImg(imageToCrop, croppedAreaPixels); if (croppedFile) { setFotoArquivo(croppedFile); setFotoPreview(URL.createObjectURL(croppedFile)) } }; setShowCropModal(false); setImageToCrop(null); setCrop({ x: 0, y: 0 }); setZoom(1) }
@@ -152,6 +163,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     const { error: err1 } = await supabase.from('profiles').insert([{ id: alunoId, nome_completo: nomeAluno, email: emailAluno, telefone: telAluno, cpf, data_nascimento: dataNascimento || null, cep, endereco, numero, complemento, bairro, cidade, estado, avatar_url: avatarPublicUrl, role: 'ALUNO' }])
     if (err1) { setIsSubmitting(false); return alert("Erro ao criar perfil: " + err1.message) }
     
+    // Insere no DB o valor, vencimento e origem do aluno
     await supabase.from('alunos_info').insert([{ id: alunoId, valor_mensalidade: parseFloat(valorMensalidade), data_vencimento: parseInt(vencimento), como_conheceu: comoConheceu, indicacao_nome: comoConheceu === 'Indicação' ? indicacaoNome : null, status: 'Ativo' }])
     await supabase.from('agenda').insert([{ professor_id: profId, aluno_id: alunoId, sala_id: parseInt(salaId), dia: diaSemana, horario_inicio: horaInicio, horario_fim: horaFim, instrumento_aula: modalidade }])
     
@@ -218,7 +230,6 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   return (
     <div className={`min-h-screen w-full text-slate-900 font-sans flex flex-col xl:flex-row relative z-0`}>
       
-      {/* Overlay do Menu Mobile */}
       <AnimatePresence>
         {menuAberto && (
           <motion.div 
@@ -231,10 +242,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         )}
       </AnimatePresence>
       
-      {/* 👇 FIX DO LAYOUT: Usando CSS nativo para ser 100% à prova de redimensionamento */}
-      <aside 
-        className={`fixed inset-y-0 left-0 z-50 w-[280px] h-screen border-r border-white/50 bg-white/40 backdrop-blur-2xl p-6 flex flex-col justify-between shadow-[8px_0_30px_rgba(0,0,0,0.03)] overflow-y-auto custom-scrollbar transition-transform duration-300 ease-in-out xl:relative xl:translate-x-0 ${menuAberto ? 'translate-x-0' : '-translate-x-full'}`}
-      >
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[280px] h-screen border-r border-white/50 bg-white/40 backdrop-blur-2xl p-6 flex flex-col justify-between shadow-[8px_0_30px_rgba(0,0,0,0.03)] overflow-y-auto custom-scrollbar transition-transform duration-300 ease-in-out xl:relative xl:translate-x-0 ${menuAberto ? 'translate-x-0' : '-translate-x-full'}`}>
         <div>
           <div className="flex justify-center px-2 relative">
             <button className="xl:hidden absolute -right-2 top-0 p-2 text-slate-400 hover:text-rose-500 text-lg transition-colors" onClick={() => setMenuAberto(false)}>✕</button>
@@ -247,10 +255,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
           <NavLinks />
         </div>
         
-        <motion.div 
-          whileHover={{ y: -2 }}
-          className={`p-4 bg-white/50 backdrop-blur-md shadow-sm hover:bg-white/70 transition-colors rounded-2xl flex items-center justify-between border border-white/60 mt-4 cursor-default shrink-0`}
-        >
+        <motion.div whileHover={{ y: -2 }} className={`p-4 bg-white/50 backdrop-blur-md shadow-sm hover:bg-white/70 transition-colors rounded-2xl flex items-center justify-between border border-white/60 mt-4 cursor-default shrink-0`}>
             <div className="overflow-hidden pr-2">
               <p className="font-black text-xs uppercase text-slate-800 truncate">{perfil?.nome_completo || 'Carregando...'}</p>
               <p className={`text-slate-500 text-[9px] uppercase font-bold mt-0.5`}>{perfil?.role}</p>
@@ -260,11 +265,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
       <main className="flex-1 w-full p-4 md:p-8 overflow-x-hidden flex flex-col relative z-0">
         <header className={`xl:hidden flex items-center justify-between mb-6 backdrop-blur-xl bg-white/40 p-4 rounded-[2rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.04)] relative z-10 transition-all`}>
-            <motion.button 
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setMenuAberto(true)} 
-              className={`p-2 rounded-xl bg-white/30 backdrop-blur-sm border border-white/50 hover:bg-white/60 transition-colors flex flex-col gap-1.5 justify-center items-center w-10 h-10 shadow-sm`}
-            >
+            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setMenuAberto(true)} className={`p-2 rounded-xl bg-white/30 backdrop-blur-sm border border-white/50 hover:bg-white/60 transition-colors flex flex-col gap-1.5 justify-center items-center w-10 h-10 shadow-sm`}>
               <div className={`w-5 h-0.5 rounded-full bg-slate-700`}></div>
               <div className={`w-5 h-0.5 rounded-full bg-slate-700`}></div>
               <div className={`w-5 h-0.5 rounded-full bg-slate-700`}></div>
@@ -280,7 +281,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         </AnimatePresence>
       </main>
 
-      {/* --- MODAIS DE MATRÍCULA --- */}
+      {/* --- MODAL DE MATRÍCULA --- */}
       <AnimatePresence>
         {isModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -318,6 +319,39 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
                 <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Dados Pessoais</p><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><input placeholder="Nome Completo" required value={nomeAluno} onChange={e => setNomeAluno(e.target.value)} className={`md:col-span-2 ${inputClass}`} /><div><label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data Nasc.</label><input type="date" required value={dataNascimento} onChange={e => setDataNascimento(e.target.value)} className={inputClass} /></div><input placeholder="CPF" required value={cpf} onChange={e => setCpf(formatCPF(e.target.value))} maxLength={14} className={inputClass} /><input placeholder="WhatsApp" required value={telAluno} onChange={e => setTelAluno(formatPhone(e.target.value))} maxLength={15} className={inputClass} /></div></div>
                 <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Endereço</p><div className="grid grid-cols-2 md:grid-cols-4 gap-4"><input placeholder="CEP" required value={cep} onChange={handleCepChange} maxLength={9} className={`col-span-2 md:col-span-1 ${inputClass}`} /><input placeholder="Endereço / Rua" required value={endereco} onChange={e => setEndereco(e.target.value)} className={`col-span-2 md:col-span-2 ${inputClass}`} /><input id="input-numero" placeholder="Número" required value={numero} onChange={e => setNumero(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass}`} /></div></div>
+                
+                {/* 👇 NOVA SESSÃO: FINANCEIRO E MARKETING */}
+                <div className="space-y-4">
+                  <p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest border-b border-emerald-500/20 pb-2">Financeiro & Marketing</p>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Valor Vigente (R$)</label>
+                      <input type="number" placeholder="Ex: 250" required value={valorMensalidade} onChange={e => setValorMensalidade(e.target.value)} className={inputClass} />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Dia do Vencimento</label>
+                      <input type="number" min="1" max="31" placeholder="Ex: 10" required value={vencimento} onChange={e => setVencimento(e.target.value)} className={inputClass} />
+                    </div>
+                    <div className={comoConheceu === 'Indicação' ? 'md:col-span-1' : 'md:col-span-2'}>
+                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Como conheceu?</label>
+                      <select required value={comoConheceu} onChange={e => setComoConheceu(e.target.value)} className={inputClass}>
+                        <option value="">Selecione...</option>
+                        <option value="Instagram">Instagram</option>
+                        <option value="Facebook/Google">Google / Pesquisa</option>
+                        <option value="Indicação">Indicação de Aluno</option>
+                        <option value="Fachada">Passou na frente (Fachada)</option>
+                        <option value="Outros">Outros</option>
+                      </select>
+                    </div>
+                    {comoConheceu === 'Indicação' && (
+                      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
+                        <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Quem indicou?</label>
+                        <input required value={indicacaoNome} onChange={e => setIndicacaoNome(e.target.value)} placeholder="Nome da pessoa" className={inputClass} />
+                      </motion.div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Agendamento</p><div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div><label className="text-[9px] font-bold text-slate-500 ml-1">Dia</label><select required value={diaSemana} onChange={e => setDiaSemana(e.target.value)} className={inputClass}>{dias.map((d: string) => <option key={d} value={d}>{d}</option>)}</select></div>
                   <div><label className="text-[9px] font-bold text-slate-500 ml-1">Horário</label><input type="time" required value={horaInicio} onChange={e => setHoraInicio(e.target.value)} className={inputClass} /></div><div><label className="text-[9px] font-bold text-slate-500 ml-1">Professor</label><select required value={profId} onChange={e => setProfId(e.target.value)} className={inputClass}><option value="">Selecione...</option>{professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}</select></div><div><label className="text-[9px] font-bold text-slate-500 ml-1">Sala</label><select required value={salaId} onChange={e => setSalaId(e.target.value)} className={inputClass}><option value="">Selecione...</option>{salasList.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></div></div><div className="pt-4"><label className="text-[10px] font-black uppercase mb-3 block text-slate-500 tracking-widest">Modalidade</label><div className="flex flex-wrap gap-2">{modalidadesLista.map(m => (<motion.button whileTap={{ scale: 0.95 }} key={m.nome} type="button" onClick={() => setModalidade(m.nome)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${modalidade === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-lg scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}>{modalidade === m.nome && <span className="mr-2">✓</span>} {m.nome}</motion.button>))}</div></div></div>
