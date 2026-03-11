@@ -17,7 +17,7 @@ export default function RootLayout({
         <title>Lótus Music</title>
         <meta name="description" content="Sistema de Gestão Lótus Music" />
         <link rel="manifest" href="/manifest.json" />
-        <link rel="apple-touch-icon" href="/logo.png" />
+        <link rel="apple-touch-icon" href="/icon.png" />
         <meta name="theme-color" content="#4f46e5" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
