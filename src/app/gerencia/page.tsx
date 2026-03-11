@@ -48,6 +48,7 @@ export default function Gerencia() {
   // --- ESTADOS: MOTOR DE HORÁRIOS ---
   const [selectedProfId, setSelectedProfId] = useState('')
   const [disponibilidades, setDisponibilidades] = useState<any[]>([])
+  const [matriculasProf, setMatriculasProf] = useState<any[]>([]) 
   const [dispDia, setDispDia] = useState('Segunda')
   const [dispInicio, setDispInicio] = useState('08:00')
   const [dispFim, setDispFim] = useState('22:00')
@@ -151,12 +152,34 @@ export default function Gerencia() {
   // --- FUNÇÕES DO MOTOR DE HORÁRIOS ---
   async function carregarDisponibilidadeProf(id: string) {
     const { data } = await supabase.from('disponibilidade_professor').select('*').eq('professor_id', id)
+    
+    // 🔥 AGORA ESTAMOS BUSCANDO ONDE OS HORÁRIOS FIXOS ESTÃO REALMENTE SALVOS: NA AGENDA!
+    const { data: agendaMats, error } = await supabase.from('agenda').select('*').eq('professor_id', id)
+    if (error) console.log("🚨 Erro ao buscar agenda:", error.message)
+
+    setMatriculasProf(agendaMats || []) 
+
     const ordemDias: Record<string, number> = { 'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6 }
     const ordenado = (data || []).sort((a: any, b: any) => {
       if (ordemDias[a.dia_semana] !== ordemDias[b.dia_semana]) return ordemDias[a.dia_semana] - ordemDias[b.dia_semana]
       return a.hora_inicio.localeCompare(b.hora_inicio)
     })
     setDisponibilidades(ordenado)
+  }
+
+  // --- HELPER: O RASTREADOR IMPLACÁVEL DE HORÁRIOS OCUPADOS (USANDO A AGENDA) ---
+  const isSlotOcupado = (disp: any) => {
+    // Procura na tabela 'agenda' se existe um horário marcado EXATAMENTE igual
+    return matriculasProf.some(m => {
+      const diaAgenda = String(m.dia || '').trim().toLowerCase()
+      const diaGrade = String(disp.dia_semana || '').trim().toLowerCase()
+      
+      const horaAgenda = String(m.horario_inicio || '').slice(0, 5)
+      const horaGrade = String(disp.hora_inicio || '').slice(0, 5)
+
+      // Se o professor, o dia e a hora forem os mesmos da agenda do aluno, está ocupado!
+      return (diaAgenda === diaGrade) && (horaAgenda === horaGrade)
+    })
   }
 
   const handleGerarDisponibilidade = async () => {
@@ -196,8 +219,24 @@ export default function Gerencia() {
     setIsSubmitting(false)
   }
 
-  const handleDelDisponibilidade = async (id: string) => { if (!confirm("Excluir este horário?")) return; await supabase.from('disponibilidade_professor').delete().eq('id', id); carregarDisponibilidadeProf(selectedProfId) }
-  const handleLimparDia = async (dia: string) => { if (!confirm(`🚨 Apagar TODOS os horários livres de ${dia}?`)) return; setIsSubmitting(true); await supabase.from('disponibilidade_professor').delete().eq('professor_id', selectedProfId).eq('dia_semana', dia); carregarDisponibilidadeProf(selectedProfId); setIsSubmitting(false) }
+  const handleDelDisponibilidade = async (id: string) => { 
+    const disp = disponibilidades.find(d => d.id === id);
+    if (disp && isSlotOcupado(disp)) {
+      alert("⚠️ ATENÇÃO: Existe uma matrícula preenchendo este horário na Agenda! Você não pode excluir a vaga da grade sem antes alterar ou cancelar a matrícula do aluno.");
+      return;
+    }
+    if (!confirm("Excluir este horário livre da grade?")) return; 
+    await supabase.from('disponibilidade_professor').delete().eq('id', id); 
+    carregarDisponibilidadeProf(selectedProfId) 
+  }
+
+  const handleLimparDia = async (dia: string) => { 
+    if (!confirm(`🚨 Apagar TODOS os horários de ${dia}? As vagas que já estão com matrículas cadastradas vão ficar órfãs se você prosseguir.`)) return; 
+    setIsSubmitting(true); 
+    await supabase.from('disponibilidade_professor').delete().eq('professor_id', selectedProfId).eq('dia_semana', dia); 
+    carregarDisponibilidadeProf(selectedProfId); 
+    setIsSubmitting(false) 
+  }
 
   // --- FUNÇÕES DA EQUIPE ---
   const handleProfCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -483,7 +522,7 @@ export default function Gerencia() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6 border-b border-white/60 pb-6">
                   <div>
                     <h3 className="text-2xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><span className="text-amber-500 drop-shadow-sm">⏰</span> Motor de Disponibilidade</h3>
-                    <p className={`text-slate-500 text-sm mt-2 max-w-2xl`}>Gere múltiplos horários de uma vez. O aplicativo do aluno vai cruzar essas "vagas" com a Grade Real para mostrar apenas os horários livres no calendário.</p>
+                    <p className={`text-slate-500 text-sm mt-2 max-w-2xl`}>Gere múltiplos horários de uma vez. O aplicativo cruza essas "vagas" com as matrículas ativas para mostrar o que está livre ou preenchido.</p>
                   </div>
                   <div className="w-full md:w-80">
                     <label className="text-xs font-semibold text-amber-600 ml-1 mb-2 block">1. Escolha o Professor</label>
@@ -498,7 +537,7 @@ export default function Gerencia() {
                   <div className="flex flex-col items-center justify-center opacity-50 border-2 border-dashed border-slate-300 rounded-[2rem] p-24 text-center bg-white/30">
                     <span className="text-6xl mb-4 grayscale">🧑‍🏫</span>
                     <p className="font-bold text-xl text-slate-700">Professor não selecionado</p>
-                    <p className="font-medium text-sm text-slate-500 mt-2">Escolha no menu acima para liberar a geração de grade.</p>
+                    <p className="font-medium text-sm text-slate-500 mt-2">Escolha no menu acima para gerenciar a grade e vagas.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
@@ -559,15 +598,15 @@ export default function Gerencia() {
                           </div>
                         </div>
                         
-                        {/* PAINEL DE CONTAGEM */}
+                        {/* PAINEL DE CONTAGEM INTELIGENTE */}
                         <div className="flex gap-3 w-full">
                           <div className="flex-1 bg-emerald-50/80 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
                             <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 mb-1">Livres</span>
-                            <span className="text-xl font-black">{disponibilidades.filter(d => !d.aluno_id && !d.ocupado).length}</span>
+                            <span className="text-xl font-black">{disponibilidades.filter(d => !isSlotOcupado(d)).length}</span>
                           </div>
                           <div className="flex-1 bg-rose-50/80 border border-rose-200 text-rose-700 px-4 py-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
                             <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 mb-1">Preenchidos</span>
-                            <span className="text-xl font-black">{disponibilidades.filter(d => d.aluno_id || d.ocupado).length}</span>
+                            <span className="text-xl font-black">{disponibilidades.filter(d => isSlotOcupado(d)).length}</span>
                           </div>
                           <div className="flex-1 bg-slate-100/80 border border-slate-200 text-slate-700 px-4 py-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
                             <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 mb-1">Totais</span>
@@ -584,17 +623,28 @@ export default function Gerencia() {
                           </div>
                         ) : (
                           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                            {disponibilidades.map(disp => (
-                              <motion.div whileHover={{ scale: 1.02 }} key={disp.id} className={`bg-white/60 backdrop-blur-md p-4 rounded-2xl border border-white/80 border-l-4 border-l-amber-400 flex justify-between items-center group shadow-sm hover:shadow-md transition-all`}>
-                                <div>
-                                  <p className="font-bold text-[10px] uppercase text-amber-600 mb-0.5">{disp.dia_semana}</p>
-                                  <p className="text-sm font-bold text-slate-800 tracking-tight">{disp.hora_inicio.slice(0,5)} <span className="opacity-60 text-[10px] font-medium">- {disp.hora_fim.slice(0,5)}</span></p>
-                                </div>
-                                <button onClick={() => handleDelDisponibilidade(disp.id)} className="h-8 w-8 bg-rose-50 border border-rose-100 text-rose-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition-all shadow-sm">
-                                  ✖
-                                </button>
-                              </motion.div>
-                            ))}
+                            {disponibilidades.map(disp => {
+                              const ocupado = isSlotOcupado(disp);
+                              
+                              return (
+                                <motion.div whileHover={{ scale: 1.02 }} key={disp.id} className={`p-4 rounded-2xl border flex justify-between items-center group shadow-sm hover:shadow-md transition-all ${ocupado ? 'bg-rose-50/80 backdrop-blur-md border-rose-200 border-l-4 border-l-rose-500' : 'bg-emerald-50/50 backdrop-blur-md border-emerald-200 border-l-4 border-l-emerald-500'}`}>
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                      <p className={`font-bold text-[10px] uppercase ${ocupado ? 'text-rose-700' : 'text-emerald-700'}`}>{disp.dia_semana}</p>
+                                      {ocupado ? (
+                                        <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded uppercase font-bold tracking-wider shadow-sm">Preenchido</span>
+                                      ) : (
+                                        <span className="text-[8px] bg-emerald-500 text-white px-1.5 py-0.5 rounded uppercase font-bold tracking-wider shadow-sm">Livre</span>
+                                      )}
+                                    </div>
+                                    <p className="text-sm font-bold text-slate-800 tracking-tight">{disp.hora_inicio.slice(0,5)} <span className="opacity-60 text-[10px] font-medium">- {disp.hora_fim.slice(0,5)}</span></p>
+                                  </div>
+                                  <button onClick={() => handleDelDisponibilidade(disp.id)} className="h-8 w-8 bg-white border border-rose-100 text-rose-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition-all shadow-sm">
+                                    ✖
+                                  </button>
+                                </motion.div>
+                              )
+                            })}
                           </div>
                         )}
                       </div>
