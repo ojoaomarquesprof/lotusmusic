@@ -40,7 +40,8 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [comoConheceu, setComoConheceu] = useState(''); 
   const [indicacaoNome, setIndicacaoNome] = useState(''); 
   const [valorMensalidade, setValorMensalidade] = useState('250'); 
-  const [vencimento, setVencimento] = useState('10')
+  const [vencimento, setVencimento] = useState('10');
+  const [dataPrimeiroPagamento, setDataPrimeiroPagamento] = useState(new Date().toISOString().split('T')[0]); // 🆕 Data do 1º Pagamento
   
   const [fotoArquivo, setFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   const [profId, setProfId] = useState(''); const [salaId, setSalaId] = useState(''); const [diaSemana, setDiaSemana] = useState('Segunda'); const [horaInicio, setHoraInicio] = useState('08:00'); const [horaFim, setHoraFim] = useState('09:00'); const [modalidade, setModalidade] = useState('')
@@ -125,7 +126,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const fecharModalMatricula = () => { 
     setIsModalOpen(false); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setCpf(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
-    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); 
+    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
     setFotoArquivo(null); setFotoPreview(null); setModalidade(''); setHoraInicio('08:00'); 
   }
   
@@ -163,10 +164,24 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     const { error: err1 } = await supabase.from('profiles').insert([{ id: alunoId, nome_completo: nomeAluno, email: emailAluno, telefone: telAluno, cpf, data_nascimento: dataNascimento || null, cep, endereco, numero, complemento, bairro, cidade, estado, avatar_url: avatarPublicUrl, role: 'ALUNO' }])
     if (err1) { setIsSubmitting(false); return alert("Erro ao criar perfil: " + err1.message) }
     
-    // Insere no DB o valor, vencimento e origem do aluno
     await supabase.from('alunos_info').insert([{ id: alunoId, valor_mensalidade: parseFloat(valorMensalidade), data_vencimento: parseInt(vencimento), como_conheceu: comoConheceu, indicacao_nome: comoConheceu === 'Indicação' ? indicacaoNome : null, status: 'Ativo' }])
     await supabase.from('agenda').insert([{ professor_id: profId, aluno_id: alunoId, sala_id: parseInt(salaId), dia: diaSemana, horario_inicio: horaInicio, horario_fim: horaFim, instrumento_aula: modalidade }])
     
+    // 🔥 LÓGICA INTELIGENTE DO 1º PAGAMENTO
+    const hojeStr = new Date().toISOString().split('T')[0];
+    
+    // Se a data de pagamento for hoje ou no passado, já registra como PAGO!
+    if (dataPrimeiroPagamento <= hojeStr) {
+      const { error: errPg } = await supabase.from('pagamentos').insert([{
+        aluno_id: alunoId,
+        valor: parseFloat(valorMensalidade),
+        data_pagamento: dataPrimeiroPagamento,
+        metodo_pagamento: 'Pix/Dinheiro (Matrícula)'
+      }]);
+      if (errPg) console.error("Erro ao registrar pagamento inicial:", errPg);
+    }
+    // Se for no futuro, não faz nada, e o seu painel financeiro vai ler ele como "Pendente / A Vencer" automaticamente.
+
     setIsSubmitting(false); fecharModalMatricula(); alert("🎉 Matrícula realizada!"); window.location.reload();
   }
 
@@ -323,17 +338,25 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                 {/* 👇 NOVA SESSÃO: FINANCEIRO E MARKETING */}
                 <div className="space-y-4">
                   <p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest border-b border-emerald-500/20 pb-2">Financeiro & Marketing</p>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Valor Vigente (R$)</label>
                       <input type="number" placeholder="Ex: 250" required value={valorMensalidade} onChange={e => setValorMensalidade(e.target.value)} className={inputClass} />
                     </div>
                     <div>
-                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Dia do Vencimento</label>
+                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Dia Vencimento</label>
                       <input type="number" min="1" max="31" placeholder="Ex: 10" required value={vencimento} onChange={e => setVencimento(e.target.value)} className={inputClass} />
                     </div>
-                    <div className={comoConheceu === 'Indicação' ? 'md:col-span-1' : 'md:col-span-2'}>
-                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Como conheceu?</label>
+                    <div className="col-span-2 md:col-span-1">
+                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data do 1º Pagamento</label>
+                      <input type="date" required value={dataPrimeiroPagamento} onChange={e => setDataPrimeiroPagamento(e.target.value)} className={inputClass} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Como conheceu a escola?</label>
                       <select required value={comoConheceu} onChange={e => setComoConheceu(e.target.value)} className={inputClass}>
                         <option value="">Selecione...</option>
                         <option value="Instagram">Instagram</option>

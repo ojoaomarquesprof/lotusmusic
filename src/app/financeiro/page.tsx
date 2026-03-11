@@ -75,15 +75,40 @@ export default function RelatorioFinanceiro() {
 
     let inadimplenciaM = 0
     alunos?.forEach(aluno => {
-      const info = Array.isArray(aluno.alunos_info) ? aluno.alunos_info[0] : aluno.alunos_info; if (!info || !info.valor_mensalidade || info.status === 'Inativo') return
+      const info = Array.isArray(aluno.alunos_info) ? aluno.alunos_info[0] : aluno.alunos_info; 
+      if (!info || !info.valor_mensalidade || info.status === 'Inativo') return
+      
       previsaoTotal += Number(info.valor_mensalidade)
+      
+      // Se não pagou este mês...
       if (!pgsMes.some(pg => pg.aluno_id === aluno.id)) {
-        const venc = info.data_vencimento || 10; const status = diaAtual > venc ? 'Atrasado' : 'Pendente'
-        inadimplenciaM += Number(info.valor_mensalidade)
-        pendentesTemp.push({ id: aluno.id, nome: aluno.nome_completo, telefone: aluno.telefone, valor: info.valor_mensalidade, vencimento: venc, status: status })
+        const venc = info.data_vencimento || 10; 
+        
+        // 🔥 LÓGICA CORRIGIDA: Atrasado x A Vencer
+        const status = diaAtual > venc ? 'Atrasado' : 'A Vencer'
+        
+        // Só soma na "Inadimplência" quem REALMENTE já passou do prazo
+        if (status === 'Atrasado') {
+           inadimplenciaM += Number(info.valor_mensalidade)
+        }
+        
+        pendentesTemp.push({ 
+           id: aluno.id, 
+           nome: aluno.nome_completo, 
+           telefone: aluno.telefone, 
+           valor: info.valor_mensalidade, 
+           vencimento: venc, 
+           status: status 
+        })
       }
     })
-    pendentesTemp.sort((a, b) => (a.status === 'Atrasado' && b.status !== 'Atrasado' ? -1 : a.vencimento - b.vencimento))
+
+    // Ordena: Atrasados primeiro, depois por ordem de vencimento
+    pendentesTemp.sort((a, b) => {
+       if (a.status === 'Atrasado' && b.status !== 'Atrasado') return -1;
+       if (a.status !== 'Atrasado' && b.status === 'Atrasado') return 1;
+       return a.vencimento - b.vencimento;
+    })
 
     transMes.forEach(t => { if (t.tipo === 'Entrada') entradasM += Number(t.valor); if (t.tipo === 'Saída') saidasM += Number(t.valor) })
 
@@ -161,7 +186,6 @@ export default function RelatorioFinanceiro() {
   if (!isMounted) return null;
   if (loading) return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500"></div></div>
   
-  // Formatando o mês de uma forma mais suave
   const mesNome = new Date().toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
   const mesFormatado = mesNome.charAt(0).toUpperCase() + mesNome.slice(1)
 
@@ -277,7 +301,7 @@ export default function RelatorioFinanceiro() {
           </div>
         </motion.div>
 
-        {/* MENSALIDADES PENDENTES */}
+        {/* MENSALIDADES PENDENTES E A VENCER */}
         <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
           <h3 className="text-xl font-bold tracking-tight mb-6 flex items-center gap-3 text-slate-800"><span className="text-amber-500 drop-shadow-sm">⏳</span> Pendências</h3>
           <div className="space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
