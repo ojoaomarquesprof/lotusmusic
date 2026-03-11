@@ -17,10 +17,12 @@ export default function RootLayout({
         <title>Lótus Music</title>
         <meta name="description" content="Sistema de Gestão Lótus Music" />
         <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/logo.png" />
         <meta name="theme-color" content="#4f46e5" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        
       </head>
       
       <body className={`${inter.className} min-h-screen w-full text-slate-900 flex flex-col overflow-x-hidden relative selection:bg-indigo-500/30`}>
