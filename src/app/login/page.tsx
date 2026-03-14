@@ -108,7 +108,7 @@ export default function Login() {
               href="/esqueci-senha"
               className="text-[10px] font-black uppercase text-indigo-600 hover:text-indigo-800 transition-colors tracking-widest"
             >
-              Esqueceu a senha?
+              Esqueceu a Senha?
             </Link>
           </div>
           
