@@ -20,6 +20,12 @@ export default function CalendarioEscolar() {
 
   const [eventos, setEventos] = useState<any[]>([])
   
+  // ESTADOS DO HISTÓRICO DE AULAS
+  const [historicoAulas, setHistoricoAulas] = useState<any[]>([])
+  const [historicoPage, setHistoricoPage] = useState(0)
+  const [hasMoreHistorico, setHasMoreHistorico] = useState(false)
+  const [loadingHistorico, setLoadingHistorico] = useState(false)
+  
   // ESTADOS DO FORMULÁRIO
   const [titulo, setTitulo] = useState('')
   const [dataEvento, setDataEvento] = useState('')
@@ -38,7 +44,30 @@ export default function CalendarioEscolar() {
 
     const { data } = await supabase.from('eventos_calendario').select('*').order('data_evento', { ascending: true })
     setEventos(data || [])
+    
+    // Chama a função para carregar a primeira página do histórico
+    await fetchHistorico(0)
+    
     setLoading(false)
+  }
+
+  async function fetchHistorico(pageIndex: number) {
+    setLoadingHistorico(true)
+    const limite = 10
+    const from = pageIndex * limite
+    const to = from + limite - 1
+
+    const { data, count } = await supabase
+      .from('historico_aulas')
+      .select('*, aluno:profiles!aluno_id(nome_completo)', { count: 'exact' })
+      .order('id', { ascending: false }) 
+      .range(from, to)
+
+    if (data) {
+      setHistoricoAulas(data)
+      setHasMoreHistorico(count !== null && to + 1 < count)
+    }
+    setLoadingHistorico(false)
   }
 
   const handleAddEvento = async (e: React.FormEvent) => {
@@ -138,7 +167,7 @@ export default function CalendarioEscolar() {
           </motion.div>
         </div>
 
-        {/* COLUNA DIREITA: LISTA DE EVENTOS */}
+        {/* COLUNA DIREITA: LISTAS E HISTÓRICO */}
         <div className="xl:col-span-2 space-y-8">
           
           {/* EVENTOS FUTUROS */}
@@ -172,6 +201,82 @@ export default function CalendarioEscolar() {
                 </AnimatePresence>
               </div>
             )}
+          </motion.div>
+
+          {/* HISTÓRICO DE AULAS RECÉM CONCLUÍDAS/DESMARCADAS */}
+          <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+              <div>
+                <h3 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-3"><span className="text-indigo-500 drop-shadow-sm">📖</span> Diário Recente</h3>
+                <p className="text-xs font-medium text-slate-500 mt-1">Últimas aulas lançadas no sistema.</p>
+              </div>
+              
+              {/* NAVEGAÇÃO LATERAL (Paginação) */}
+              <div className="flex gap-2">
+                <button 
+                  disabled={historicoPage === 0 || loadingHistorico} 
+                  onClick={() => { setHistoricoPage(p => p - 1); fetchHistorico(historicoPage - 1); }} 
+                  className="h-10 w-10 rounded-full bg-white/80 border border-slate-200 text-slate-600 font-bold flex items-center justify-center hover:bg-white hover:text-indigo-600 disabled:opacity-40 disabled:hover:bg-white/80 transition-all shadow-sm"
+                  title="Página Anterior"
+                >◀</button>
+                <button 
+                  disabled={!hasMoreHistorico || loadingHistorico} 
+                  onClick={() => { setHistoricoPage(p => p + 1); fetchHistorico(historicoPage + 1); }} 
+                  className="h-10 w-10 rounded-full bg-white/80 border border-slate-200 text-slate-600 font-bold flex items-center justify-center hover:bg-white hover:text-indigo-600 disabled:opacity-40 disabled:hover:bg-white/80 transition-all shadow-sm"
+                  title="Próxima Página"
+                >▶</button>
+              </div>
+            </div>
+
+            <div className="space-y-3 min-h-[300px]">
+              {loadingHistorico ? (
+                <div className="flex items-center justify-center h-full pt-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
+                </div>
+              ) : historicoAulas.length === 0 ? (
+                <div className="text-center pt-12 opacity-60">
+                   <span className="text-4xl mb-2 grayscale block">📭</span>
+                   <p className="text-sm font-semibold text-slate-500">Nenhum registro de aula.</p>
+                </div>
+              ) : (
+                historicoAulas.map(aula => {
+                  const dataHoraLancamento = aula.criado_em || aula.created_at; // Pega o timestamp
+                  return (
+                    <div key={aula.id} className="p-4 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all group">
+                      <div className="flex items-center gap-4 overflow-hidden">
+                        <div className={`h-12 w-12 rounded-full flex items-center justify-center text-xl shadow-inner flex-shrink-0 ${aula.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600' : aula.status === 'Desmarcada' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+                          {aula.status === 'Realizada' ? '✓' : aula.status === 'Desmarcada' ? '✖' : '📅'}
+                        </div>
+                        <div className="overflow-hidden pr-2">
+                          <p className="font-bold text-sm text-slate-800 truncate">{aula.aluno?.nome_completo || 'Aluno Desconhecido'}</p>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${aula.status === 'Realizada' ? 'text-emerald-600' : aula.status === 'Desmarcada' ? 'text-rose-600' : 'text-amber-600'}`}>{aula.status}</span>
+                            <span className="text-slate-300">•</span>
+                            <span className="text-[11px] font-semibold text-slate-500">Aula: {new Date(aula.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</span>
+                            
+                            {/* 🔥 MOSTRA A DATA E HORA DO LANÇAMENTO AQUI */}
+                            {dataHoraLancamento && (
+                               <>
+                                 <span className="text-slate-300 hidden sm:inline">•</span>
+                                 <span className="text-[10px] font-medium text-slate-400 mt-1 sm:mt-0 flex items-center gap-1">
+                                   🕒 Lançado em {new Date(dataHoraLancamento).toLocaleDateString('pt-BR')} às {new Date(dataHoraLancamento).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
+                                 </span>
+                               </>
+                            )}
+
+                          </div>
+                        </div>
+                      </div>
+                      {aula.observacoes && (
+                         <div className="hidden sm:flex max-w-[200px] items-center text-[10px] font-medium text-slate-500 italic px-3 py-2 bg-white/50 rounded-xl border border-slate-100 line-clamp-2" title={aula.observacoes}>
+                            "{aula.observacoes}"
+                         </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
           </motion.div>
 
           {/* HISTÓRICO (EVENTOS PASSADOS) */}

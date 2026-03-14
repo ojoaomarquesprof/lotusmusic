@@ -29,7 +29,10 @@ export default function Dashboard() {
   const [selectedAula, setSelectedAula] = useState<any>(null)
   const [aulaParaDarBaixa, setAulaParaDarBaixa] = useState<any>(null) 
   const [obsBaixa, setObsBaixa] = useState('') 
+  
+  // Modais
   const [isDiarioModalOpen, setIsDiarioModalOpen] = useState(false)
+  const [isSolicitacoesModalOpen, setIsSolicitacoesModalOpen] = useState(false)
   
   const [saudacao, setSaudacao] = useState('Olá')
   const [primeiroNome, setPrimeiroNome] = useState('')
@@ -121,16 +124,24 @@ export default function Dashboard() {
     const { data: ev } = await supabase.from('eventos_calendario').select('*').gte('data_evento', inicioDaSemana).lte('data_evento', fimDaSemana)
     const { data: hist } = await supabase.from('historico_aulas').select('aluno_id, data_aula, status').gte('data_aula', inicioDaSemana).lte('data_aula', fimDaSemana + 'T23:59:59')
 
-    const { data: sol } = await supabase.from('solicitacoes_reagendamento').select('*').eq('status', 'Pendente')
+    // 🔥 BUSCA BLINDADA DE SOLICITAÇÕES (Aceita maiúsculas, minúsculas e evita falhas de ID nulo)
+    const { data: sol } = await supabase.from('solicitacoes_reagendamento').select('*').in('status', ['Pendente', 'pendente', 'PENDENTE'])
     let solMapeadas = sol || []
+    
     if (solMapeadas.length > 0) {
-      const idsPerfis = Array.from(new Set([...solMapeadas.map((s:any) => s.aluno_id), ...solMapeadas.map((s:any) => s.professor_id)]))
-      const { data: perfis } = await supabase.from('profiles').select('id, nome_completo').in('id', idsPerfis)
-      solMapeadas = solMapeadas.map((s:any) => ({
-        ...s,
-        aluno_nome: perfis?.find((p:any) => p.id === s.aluno_id)?.nome_completo || 'Aluno',
-        prof_nome: perfis?.find((p:any) => p.id === s.professor_id)?.nome_completo || 'Prof.'
-      }))
+      const idsPerfis = Array.from(new Set([
+        ...solMapeadas.map((s:any) => s.aluno_id), 
+        ...solMapeadas.map((s:any) => s.professor_id)
+      ])).filter(Boolean)
+
+      if (idsPerfis.length > 0) {
+          const { data: perfis } = await supabase.from('profiles').select('id, nome_completo').in('id', idsPerfis)
+          solMapeadas = solMapeadas.map((s:any) => ({
+            ...s,
+            aluno_nome: perfis?.find((p:any) => p.id === s.aluno_id)?.nome_completo || 'Aluno Desconhecido',
+            prof_nome: perfis?.find((p:any) => p.id === s.professor_id)?.nome_completo || 'Professor Desconhecido'
+          }))
+      }
     }
 
     const pendentesParaLancar: any[] = [];
@@ -150,7 +161,8 @@ export default function Dashboard() {
 
         try {
           const [ano, mes, dia] = diaVisual.dataStr.split('-').map(Number);
-          const [h, m] = aula.horario_fim.split(':').map(Number);
+          const horarioParaCalculo = aula.horario_fim || '23:59';
+          const [h, m] = horarioParaCalculo.split(':').map(Number);
           const endDateTime = new Date(ano, mes - 1, dia, h, m);
 
           if (agora > endDateTime) {
@@ -159,18 +171,24 @@ export default function Dashboard() {
               pendentesParaLancar.push({ ...aula, data_selecionada: diaVisual.dataStr });
             }
           }
-        } catch (e) {}
+        } catch (e) {
+           console.error("Aviso: Falha ao calcular data da aula (possivelmente dados incompletos):", e)
+        }
       });
     });
 
     pendentesParaLancar.sort((a, b) => {
-      const dateA = new Date(`${a.data_selecionada}T${a.horario_inicio}:00`).getTime();
-      const dateB = new Date(`${b.data_selecionada}T${b.horario_inicio}:00`).getTime();
+      const horaA = a.horario_inicio || '00:00';
+      const horaB = b.horario_inicio || '00:00';
+      const dateA = new Date(`${a.data_selecionada}T${horaA}:00`).getTime();
+      const dateB = new Date(`${b.data_selecionada}T${horaB}:00`).getTime();
       return dateA - dateB;
     });
 
     setAulasPendentesBaixa(pendentesParaLancar);
-    setSolicitacoes(solMapeadas); setEventosSemana(ev || []); setHistoricoSemana(hist || []); 
+    setSolicitacoes(solMapeadas); 
+    setEventosSemana(ev || []); 
+    setHistoricoSemana(hist || []); 
     setAulas([...(agenda || []), ...aulasReposicao]);
     
     setLoading(false)
@@ -211,9 +229,13 @@ export default function Dashboard() {
     if (!confirm(`Aprovar a reposição de ${sol.aluno_nome} para ${sol.novo_dia} às ${sol.novo_horario_inicio}?`)) return;
     setIsSubmitting(true)
     await supabase.from('solicitacoes_reagendamento').update({ status: 'Aprovada' }).eq('id', sol.id)
-    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '✅ Reposição Aprovada!', mensagem: `Sua reposição para o dia ${new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} às ${sol.novo_horario_inicio?.slice(0,5)} foi confirmada na agenda.`, lida: false }])
+    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '✅ Reposição Aprovada!', mensagem: `Sua reposição para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} às ${sol.novo_horario_inicio?.slice(0,5)} foi confirmada na agenda.`, lida: false }])
+    
+    setSolicitacoes(prev => prev.filter(s => s.id !== sol.id))
     alert("✅ Solicitação Aprovada com sucesso! A aula já está na sua grade.")
-    setIsSubmitting(false); carregarDados()
+    setIsSubmitting(false); 
+    carregarDados();
+    if(solicitacoes.length <= 1) setIsSolicitacoesModalOpen(false);
   }
 
   const handleNegarSolicitacao = async (sol: any) => {
@@ -221,9 +243,13 @@ export default function Dashboard() {
     if (motivo === null) return 
     setIsSubmitting(true)
     await supabase.from('solicitacoes_reagendamento').update({ status: 'Negada', motivo_recusa: motivo || 'Horário indisponível no momento.' }).eq('id', sol.id)
-    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '❌ Reposição Recusada', mensagem: `Seu pedido para o dia ${new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} foi recusado. Motivo: "${motivo || 'Indisponível no momento'}".`, lida: false }])
+    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '❌ Reposição Recusada', mensagem: `Seu pedido para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} foi recusado. Motivo: "${motivo || 'Indisponível no momento'}".`, lida: false }])
+    
+    setSolicitacoes(prev => prev.filter(s => s.id !== sol.id))
     alert("❌ Solicitação Negada.")
-    setIsSubmitting(false); carregarDados()
+    setIsSubmitting(false); 
+    carregarDados();
+    if(solicitacoes.length <= 1) setIsSolicitacoesModalOpen(false);
   }
 
   const handleDesmarcarAula = async () => {
@@ -299,20 +325,37 @@ export default function Dashboard() {
 
         <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
           
-          <motion.button 
-            whileHover={{ scale: 1.05 }} 
-            whileTap={{ scale: 0.95 }} 
-            onClick={() => setIsDiarioModalOpen(true)}
-            className={`relative flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-sm border transition-all font-black text-[10px] md:text-xs tracking-widest uppercase ${aulasPendentesBaixa.length > 0 ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200' : 'bg-white/60 border-white/80 text-slate-600 hover:bg-white'}`}
-          >
-            <span className="text-lg drop-shadow-sm">📖</span>
-            <span className="hidden md:inline">Diário de Aula</span>
-            {aulasPendentesBaixa.length > 0 && (
-              <span className="absolute -top-2 -right-2 h-6 w-6 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-bounce">
-                {aulasPendentesBaixa.length}
-              </span>
-            )}
-          </motion.button>
+          <div className="flex gap-2 w-full md:w-auto">
+            <motion.button 
+              whileHover={{ scale: 1.05 }} 
+              whileTap={{ scale: 0.95 }} 
+              onClick={() => setIsSolicitacoesModalOpen(true)}
+              className={`relative flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2.5 rounded-2xl shadow-sm border transition-all font-black text-[10px] md:text-xs tracking-widest uppercase ${solicitacoes.length > 0 ? 'bg-indigo-100 border-indigo-300 text-indigo-800 hover:bg-indigo-200' : 'bg-white/60 border-white/80 text-slate-600 hover:bg-white'}`}
+            >
+              <span className="text-lg drop-shadow-sm">🛎️</span>
+              <span className="hidden md:inline">Solicitações</span>
+              {solicitacoes.length > 0 && (
+                <span className="absolute -top-2 -right-2 h-6 w-6 bg-indigo-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-bounce">
+                  {solicitacoes.length}
+                </span>
+              )}
+            </motion.button>
+
+            <motion.button 
+              whileHover={{ scale: 1.05 }} 
+              whileTap={{ scale: 0.95 }} 
+              onClick={() => setIsDiarioModalOpen(true)}
+              className={`relative flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2.5 rounded-2xl shadow-sm border transition-all font-black text-[10px] md:text-xs tracking-widest uppercase ${aulasPendentesBaixa.length > 0 ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200' : 'bg-white/60 border-white/80 text-slate-600 hover:bg-white'}`}
+            >
+              <span className="text-lg drop-shadow-sm">📖</span>
+              <span className="hidden md:inline">Diário de Aula</span>
+              {aulasPendentesBaixa.length > 0 && (
+                <span className="absolute -top-2 -right-2 h-6 w-6 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-bounce">
+                  {aulasPendentesBaixa.length}
+                </span>
+              )}
+            </motion.button>
+          </div>
 
           <div className="flex bg-white/40 p-1.5 rounded-2xl shadow-sm border border-white/60 w-full md:w-auto">
             <button onClick={() => { setViewMode('dia'); semanaAtual(); }} className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${viewMode === 'dia' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>
@@ -339,30 +382,6 @@ export default function Dashboard() {
           </AnimatePresence>
         </div>
       </motion.div>
-
-      {solicitacoes.length > 0 && (
-        <motion.div variants={itemVariants} className={`mb-6 p-6 md:p-8 rounded-[2.5rem] border border-indigo-400/50 bg-indigo-500/10 backdrop-blur-xl shadow-[0_8px_32px_rgba(99,102,241,0.1)] relative overflow-hidden`}>
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-400/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
-          <h3 className="text-lg font-black uppercase text-indigo-800 mb-6 flex items-center gap-3 relative z-10"><span className="text-2xl drop-shadow-sm">🛎️</span> Solicitações de Reposição ({solicitacoes.length})</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 relative z-10">
-            {solicitacoes.map(sol => (
-              <motion.div whileHover={{ y: -4 }} key={sol.id} className={`bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/80 shadow-sm relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-all`}>
-                <div className={`absolute top-0 right-0 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest rounded-bl-xl shadow-sm bg-indigo-500 text-white`}>Aprovar</div>
-                <div>
-                  <p className="font-bold text-sm uppercase mb-1 pr-24 text-slate-800">{sol.aluno_nome.split(' ')[0]}</p>
-                  <p className={`text-slate-600 text-[10px] font-medium leading-tight mb-4`}>
-                    Solicitou aula no dia <span className="font-bold text-indigo-700 uppercase underline">{new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone: 'UTC'})} ({sol.novo_dia}) às {sol.novo_horario_inicio?.slice(0,5)}</span>.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleAprovarSolicitacao(sol)} disabled={isSubmitting} className="flex-1 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-[9px] font-bold uppercase tracking-widest rounded-xl shadow-md disabled:opacity-50">Aprovar</motion.button>
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleNegarSolicitacao(sol)} disabled={isSubmitting} className="flex-1 py-2.5 bg-white/80 text-rose-600 border border-rose-100 text-[9px] font-bold uppercase tracking-widest rounded-xl hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-colors disabled:opacity-50 shadow-sm">Negar</motion.button>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      )}
 
       {loading ? (
         <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
@@ -402,8 +421,8 @@ export default function Dashboard() {
                   
                   <div className="flex justify-between items-start mb-4 pl-3">
                     <div>
-                      <p className={`text-xl font-bold leading-none ${isPast && !isPendenteDeBaixa ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{aula.horario_inicio.slice(0, 5)}</p>
-                      <p className="text-[10px] font-semibold text-slate-400 mt-1">Até {aula.horario_fim.slice(0, 5)}</p>
+                      <p className={`text-xl font-bold leading-none ${isPast && !isPendenteDeBaixa ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{aula.horario_inicio?.slice(0, 5)}</p>
+                      <p className="text-[10px] font-semibold text-slate-400 mt-1">Até {aula.horario_fim?.slice(0, 5)}</p>
                     </div>
                     
                     {isPendenteDeBaixa ? (
@@ -501,7 +520,7 @@ export default function Dashboard() {
                         <motion.div whileHover={{ scale: 1.02 }} key={aula.id} className={`bg-white/50 backdrop-blur-md p-4 rounded-2xl border shadow-sm transition-all relative group ${isPendenteDeBaixa ? 'border-amber-300 bg-amber-50/50' : isPast ? 'opacity-40 grayscale border-white/80' : 'hover:shadow-lg border-white/80 border-l-4 ' + (dia.isHoje ? 'border-l-emerald-500' : aula.is_reposicao ? 'border-l-indigo-400' : 'border-l-indigo-500')}`}>
                           <div className="flex justify-between items-start mb-1">
                             <p className={`font-bold text-[9px] mb-1 ${isPast && !isPendenteDeBaixa ? 'text-slate-500 line-through' : dia.isHoje ? 'text-emerald-600' : aula.is_reposicao ? 'text-indigo-500' : 'text-indigo-700'}`}>
-                              {aula.horario_inicio.slice(0, 5)} - {aula.horario_fim.slice(0, 5)}
+                              {aula.horario_inicio?.slice(0, 5)} - {aula.horario_fim?.slice(0, 5)}
                             </p>
                             {isPendenteDeBaixa ? (
                               <button onClick={() => setAulaParaDarBaixa({ ...aula, data_selecionada: dia.dataStr })} className={`text-[8px] font-bold uppercase transition-opacity text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded shadow-sm animate-pulse`}>Lançar</button>
@@ -535,6 +554,50 @@ export default function Dashboard() {
         </motion.div>
       )}
 
+      {/* 🔥 MODAL DE SOLICITAÇÕES PENDENTES 🔥 */}
+      <AnimatePresence>
+        {isSolicitacoesModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[60]">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>🛎️</span> Solicitações de Reposição</h2>
+                  <p className="text-xs font-semibold text-slate-500 mt-1">Aprove ou negue os pedidos dos alunos.</p>
+                </div>
+                <button onClick={() => setIsSolicitacoesModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
+              </div>
+
+              <div className="overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
+                {solicitacoes.length === 0 ? (
+                  <div className="text-center py-12 opacity-80">
+                    <span className="text-5xl block mb-3 drop-shadow-sm grayscale">📭</span>
+                    <p className="font-bold text-slate-600 text-sm">Caixa vazia.</p>
+                    <p className="text-xs font-medium text-slate-500 mt-1">Nenhuma solicitação pendente no momento.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {solicitacoes.map(sol => (
+                      <motion.div whileHover={{ y: -2 }} key={sol.id} className={`p-5 rounded-2xl border border-indigo-200 bg-indigo-50/80 shadow-sm flex flex-col justify-between hover:shadow-md transition-all`}>
+                        <div className="mb-4">
+                          <p className="font-bold text-sm uppercase text-slate-800 tracking-tight">{sol.aluno_nome?.split(' ')[0]}</p>
+                          <p className={`text-slate-600 text-xs font-medium leading-relaxed mt-1`}>
+                            Deseja repor a aula no dia <span className="font-bold text-indigo-700 underline">{sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'Indefinido'} ({sol.novo_dia})</span> às <span className="font-bold text-indigo-700">{sol.novo_horario_inicio?.slice(0,5)}</span>.
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleAprovarSolicitacao(sol)} disabled={isSubmitting} className="flex-1 py-2.5 bg-indigo-600 text-white text-[10px] font-bold uppercase tracking-widest rounded-xl shadow-md disabled:opacity-50 hover:bg-indigo-500 transition-all">Aprovar</motion.button>
+                          <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleNegarSolicitacao(sol)} disabled={isSubmitting} className="flex-1 py-2.5 bg-white/80 text-rose-600 border border-rose-200 text-[10px] font-bold uppercase tracking-widest rounded-xl hover:bg-rose-50 hover:border-rose-300 transition-colors disabled:opacity-50 shadow-sm">Negar</motion.button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* 🔥 MODAL (LISTA) DA FILA DO DIÁRIO 🔥 */}
       <AnimatePresence>
         {isDiarioModalOpen && (
@@ -561,7 +624,7 @@ export default function Dashboard() {
                         <span className="text-[9px] font-bold text-amber-700 bg-amber-100/80 border border-amber-200 px-2 py-1 rounded shadow-sm">{dataFormatada}</span>
                       </div>
                       <p className={`text-slate-600 text-[10px] font-medium leading-tight mb-3`}>
-                        {aula.instrumento_aula} • {aula.horario_inicio.slice(0,5)} até {aula.horario_fim.slice(0,5)}
+                        {aula.instrumento_aula} • {aula.horario_inicio?.slice(0,5)} até {aula.horario_fim?.slice(0,5)}
                       </p>
                       <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setIsDiarioModalOpen(false); setAulaParaDarBaixa(aula); }} className="w-full py-2.5 bg-amber-400 text-amber-950 font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-sm hover:bg-amber-500 hover:text-white transition-all">
                         Lançar Diário

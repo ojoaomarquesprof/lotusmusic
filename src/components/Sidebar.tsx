@@ -66,7 +66,8 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession()
       
       if (session) {
-        const { data: p } = await supabase.from('profiles').select('nome_completo, role').eq('id', session.user.id).single()
+        // 🔥 Adicionado 'avatar_url' aqui para buscar a foto no banco
+        const { data: p } = await supabase.from('profiles').select('nome_completo, role, avatar_url').eq('id', session.user.id).single()
         setPerfil(p)
 
         if (pathname === '/login') {
@@ -274,11 +275,26 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
           <NavLinks />
         </div>
         
-        <motion.div whileHover={{ y: -2 }} className={`p-4 bg-white/50 backdrop-blur-md shadow-sm hover:bg-white/70 transition-colors rounded-2xl flex items-center justify-between border border-white/60 mt-4 cursor-default shrink-0`}>
-            <div className="overflow-hidden pr-2">
-              <p className="font-black text-xs uppercase text-slate-800 truncate">{perfil?.nome_completo || 'Carregando...'}</p>
-              <p className={`text-slate-500 text-[9px] uppercase font-bold mt-0.5`}>{perfil?.role}</p>
+        {/* 🔥 AQUI ENTRA A FOTO E OS DADOS NO FINAL DA SIDEBAR 🔥 */}
+        <motion.div whileHover={{ y: -2 }} className={`p-4 bg-white/50 backdrop-blur-md shadow-sm hover:bg-white/70 transition-colors rounded-2xl flex items-center gap-3 border border-white/60 mt-4 cursor-default shrink-0`}>
+          
+          {/* FOTO DO PERFIL OU FALLBACK COM A INICIAL */}
+          {perfil?.avatar_url ? (
+            <img src={perfil.avatar_url} alt="Perfil" className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm shrink-0" />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center border-2 border-white shadow-sm shrink-0">
+              <span className="font-bold text-indigo-600">
+                {perfil?.nome_completo?.charAt(0) || 'U'}
+              </span>
             </div>
+          )}
+
+          {/* NOME E FUNÇÃO */}
+          <div className="overflow-hidden pr-2 flex-1">
+            <p className="font-black text-xs uppercase text-slate-800 truncate" title={perfil?.nome_completo}>{perfil?.nome_completo || 'Carregando...'}</p>
+            <p className={`text-slate-500 text-[9px] uppercase font-bold mt-0.5`}>{perfil?.role}</p>
+          </div>
+
         </motion.div>
       </aside>
 
