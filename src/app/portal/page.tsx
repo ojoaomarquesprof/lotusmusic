@@ -30,6 +30,9 @@ export default function PortalAluno() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false)
   const [isNotificacaoModalOpen, setIsNotificacaoModalOpen] = useState(false)
+  const [isClassDetailsModalOpen, setIsClassDetailsModalOpen] = useState(false)
+  const [selectedClassDetails, setSelectedClassDetails] = useState<any>(null)
+  
   const [notificacaoTab, setNotificacaoTab] = useState('NaoLidas') 
   const [todasNotificacoes, setTodasNotificacoes] = useState<any[]>([]) 
 
@@ -56,7 +59,7 @@ export default function PortalAluno() {
 
   useEffect(() => { if (s.bg && s.bg.includes('950')) toggleTheme() }, [s.bg, toggleTheme])
   
-  // 🟢 REALTIME (Atualizado para escutar sem restrições)
+  // 🟢 REALTIME
   useEffect(() => {
     if (!isMounted) return;
     const channel = supabase.channel('portal-aluno-global')
@@ -238,9 +241,8 @@ export default function PortalAluno() {
       idAgendaPai = String(aulaParaMudar.id).startsWith('repo_') ? null : aulaParaMudar.id;
     }
 
-    // Se o aluno está pedindo pra reagendar a aula ORIGINAL (não desmarcada), a gente cria o registro de Desmarcada pro original sumir da tela dele!
     if (!aulaParaMudar.is_reposicao) {
-        const dStr = aulaParaMudar.data_original_desmarcada || new Date().toISOString().split('T')[0]; // fallback
+        const dStr = aulaParaMudar.data_original_desmarcada || new Date().toISOString().split('T')[0]; 
         await supabase.from('historico_aulas').delete().eq('aluno_id', aluno.id).eq('data_aula', dStr);
         await supabase.from('historico_aulas').insert([{
             aluno_id: aluno.id,
@@ -300,6 +302,11 @@ export default function PortalAluno() {
     } catch (e) {
       return false;
     }
+  }
+
+  const abrirDetalhesAula = (aula: any) => {
+    setSelectedClassDetails(aula);
+    setIsClassDetailsModalOpen(true);
   }
 
   if (!isMounted) return null;
@@ -380,7 +387,6 @@ export default function PortalAluno() {
               const statusAteProxima = historico.find(h => h.data_aula === dadosData.dataBaseString)?.status;
               const isDesmarcada = statusAteProxima === 'Desmarcada';
 
-              // 🔥 Oculta a aula original se já tem reposição
               if (!aula.is_reposicao && (isDesmarcada || solicitacaoPendente)) {
                 const temReposicaoAtiva = todasReposicoes.some(rep => 
                   String(rep.agenda_original_id) === String(aula.id) && 
@@ -490,7 +496,7 @@ export default function PortalAluno() {
           <h3 className="text-sm font-semibold text-slate-500 mb-3 ml-2 flex items-center gap-2 drop-shadow-sm"><span className="text-lg">📖</span> Diário de Aulas</h3>
           <div className="bg-white/50 backdrop-blur-xl rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border border-white/60 p-2 space-y-2">
             {historico.length === 0 ? <p className="p-6 text-center text-sm font-medium text-slate-500">Nenhum registro.</p> : historico.map(h => (
-              <div key={h.id} className="p-4 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all">
+              <motion.div whileTap={{ scale: 0.98 }} onClick={() => abrirDetalhesAula(h)} key={h.id} className="p-4 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all cursor-pointer group">
                 <div className="flex items-center gap-3">
                   <div className={`h-10 w-10 rounded-full flex items-center justify-center text-lg shadow-inner ${h.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600' : h.status === 'Desmarcada' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
                     {h.status === 'Realizada' ? '✓' : h.status === 'Desmarcada' ? '✖' : '📅'}
@@ -500,7 +506,10 @@ export default function PortalAluno() {
                     <p className="text-[11px] font-semibold text-slate-500 mt-0.5">{h.status}</p>
                   </div>
                 </div>
-              </div>
+                <div className="text-slate-400 opacity-60 group-hover:opacity-100 transition-opacity">
+                    <span className="text-xl">👁️</span>
+                </div>
+              </motion.div>
             ))}
           </div>
         </motion.section>
@@ -667,6 +676,108 @@ export default function PortalAluno() {
               <motion.button whileTap={{ scale: 0.98 }} onClick={handleSolicitarReagendamento} disabled={!selectedSlot || isSubmitting || diaBloqueadoMsg !== null} className="w-full py-4 bg-slate-800 text-white rounded-2xl font-bold text-sm shadow-xl disabled:opacity-50 hover:bg-slate-700 transition-all">
                 {isSubmitting ? 'Processando...' : 'Confirmar e Enviar para Escola'}
               </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isProfileModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[90]">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>👤</span> Editar Perfil</h2>
+                <button onClick={() => setIsProfileModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
+              </div>
+              <form onSubmit={handleAtualizarPerfil} className="space-y-4 overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
+                  <div className="flex flex-col items-center gap-2 mb-4">
+                    <div className="w-20 h-20 rounded-full bg-slate-200 overflow-hidden relative shadow-md">
+                       {fotoPreview ? <img src={fotoPreview} className="w-full h-full object-cover"/> : <span className="text-3xl flex items-center justify-center h-full">📷</span>}
+                    </div>
+                    <input type="file" accept="image/*" onChange={(e) => {
+                       const file = e.target.files?.[0];
+                       if (file) { setEditFotoArquivo(file); setFotoPreview(URL.createObjectURL(file)); }
+                    }} className="text-xs text-slate-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Nome Completo</label>
+                    <input type="text" value={editNome} onChange={e => setEditNome(e.target.value)} className="w-full p-3 rounded-xl border border-white/80 bg-white/60 text-slate-700 focus:outline-none focus:border-indigo-400 focus:bg-white shadow-sm transition-all" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Nova Senha (opcional)</label>
+                    <input type="password" value={editSenha} onChange={e => setEditSenha(e.target.value)} placeholder="Deixe em branco para não alterar" className="w-full p-3 rounded-xl border border-white/80 bg-white/60 text-slate-700 focus:outline-none focus:border-indigo-400 focus:bg-white shadow-sm transition-all" />
+                  </div>
+                  <motion.button whileTap={{ scale: 0.98 }} type="submit" disabled={isSubmitting} className="w-full mt-4 py-4 bg-slate-800 text-white rounded-2xl font-bold text-sm shadow-xl disabled:opacity-50 hover:bg-slate-700 transition-all">
+                    {isSubmitting ? 'Salvando...' : 'Salvar Alterações'}
+                  </motion.button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isPayHistoryModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[90]">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>📄</span> Histórico de Pagamentos</h2>
+                <button onClick={() => setIsPayHistoryModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
+              </div>
+              <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
+                 {historicoPagamentos.length === 0 ? (
+                   <div className="text-center py-10 opacity-60">
+                      <span className="text-4xl mb-2 grayscale block">💸</span>
+                      <p className="text-sm font-semibold text-slate-500">Nenhum pagamento registrado.</p>
+                   </div>
+                 ) : historicoPagamentos.map(pag => (
+                   <div key={pag.id} className="p-4 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all">
+                     <div className="flex items-center gap-3">
+                       <div className="h-10 w-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg shadow-inner flex-shrink-0">✓</div>
+                       <div>
+                         <p className="font-bold text-sm text-slate-800">{new Date(pag.data_pagamento).toLocaleDateString('pt-BR', {timeZone:'UTC'})}</p>
+                         <p className="text-xs font-semibold text-slate-500 mt-0.5">R$ {pag.valor}</p>
+                       </div>
+                     </div>
+                     {pag.recibo_url && (
+                       <a href={pag.recibo_url} target="_blank" rel="noopener noreferrer" className="h-8 w-8 bg-white/80 border border-white rounded-xl flex items-center justify-center text-slate-600 shadow-sm hover:bg-slate-50 transition-all flex-shrink-0 group-hover:scale-105" title="Ver Recibo">⬇️</a>
+                     )}
+                   </div>
+                 ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* NOVO MODAL: DETALHES DA AULA */}
+      <AnimatePresence>
+        {isClassDetailsModalOpen && selectedClassDetails && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[90]">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>📝</span> Resumo da Aula</h2>
+                <button onClick={() => setIsClassDetailsModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
+              </div>
+              
+              <div className="overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
+                  <div className="flex items-center gap-4 mb-6">
+                      <div className={`h-14 w-14 rounded-full flex items-center justify-center text-2xl shadow-inner flex-shrink-0 ${selectedClassDetails.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600' : selectedClassDetails.status === 'Desmarcada' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+                          {selectedClassDetails.status === 'Realizada' ? '✓' : selectedClassDetails.status === 'Desmarcada' ? '✖' : '📅'}
+                      </div>
+                      <div>
+                          <p className="font-bold text-xl text-slate-800 tracking-tight">{new Date(selectedClassDetails.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
+                          <p className={`text-sm font-bold mt-0.5 ${selectedClassDetails.status === 'Realizada' ? 'text-emerald-600' : selectedClassDetails.status === 'Desmarcada' ? 'text-rose-600' : 'text-amber-600'}`}>{selectedClassDetails.status}</p>
+                      </div>
+                  </div>
+
+                  <div className="bg-white/60 border border-white/80 p-5 rounded-2xl shadow-sm">
+                      <p className="text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-1"><span>✏️</span> Anotações do Professor</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">
+                          {selectedClassDetails.observacoes || "Nenhuma anotação registrada para esta aula."}
+                      </p>
+                  </div>
+              </div>
             </motion.div>
           </motion.div>
         )}

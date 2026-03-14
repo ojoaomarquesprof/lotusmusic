@@ -4,7 +4,6 @@ import { createClient } from '@supabase/supabase-js'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    // 👇 Adicionamos a variável 'modalidades' aqui
     const { 
       nome_completo, email, senha, role, telefone, cpf, data_nascimento, 
       cep, endereco, numero, complemento, bairro, cidade, estado, avatar_url,
@@ -16,23 +15,43 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
+    // 1. Cria o usuário na tabela de autenticação
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: email,
       password: senha,
       email_confirm: true,
+      user_metadata: {
+        nome_completo: nome_completo,
+        role: role
+      }
     })
 
     if (authError) {
       return NextResponse.json({ error: authError.message }, { status: 400 })
     }
 
-    // 👇 Salvamos as modalidades no perfil recém criado
-    const { error: profileError } = await supabaseAdmin.from('profiles').update({
-        nome_completo, role, telefone, cpf, 
+    // 2. Aguarda 1 segundo para garantir que a trigger automática do Supabase tenha tempo de agir (evita Race Condition)
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    // 3. Usa o .upsert em vez do .update e ADICIONA o campo de email que estava faltando
+    const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
+        id: authData.user.id,
+        email: email, // 🔥 AQUI ESTÁ A CORREÇÃO!
+        nome_completo, 
+        role, 
+        telefone, 
+        cpf, 
         data_nascimento: data_nascimento || null, 
-        cep, endereco, numero, complemento, bairro, cidade, estado, avatar_url,
+        cep, 
+        endereco, 
+        numero, 
+        complemento, 
+        bairro, 
+        cidade, 
+        estado, 
+        avatar_url,
         modalidades 
-    }).eq('id', authData.user.id)
+    })
 
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 400 })
