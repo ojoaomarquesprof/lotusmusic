@@ -296,6 +296,7 @@ export default function Dashboard() {
   const eventosDeHoje = eventosSemana.filter(e => e.data_evento === hojeDataStr)
   const isFeriadoHoje = eventosDeHoje.some(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')
 
+  // 🔥 ORDENAÇÃO APLICADA AQUI
   const aulasDeHoje = aulas.filter(aula => {
     if (aula.is_reposicao) return aula.data_selecionada === hojeDataStr;
     return aula.dia === nomeDiaHoje;
@@ -305,6 +306,10 @@ export default function Dashboard() {
     const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(hojeDataStr))?.status;
     if (statusHistorico === 'Desmarcada') return false; 
     return true;
+  }).sort((a, b) => {
+    const horaA = a.horario_inicio || '00:00';
+    const horaB = b.horario_inicio || '00:00';
+    return horaA.localeCompare(horaB);
   })
 
   const getStatusColor = (status: string) => {
@@ -490,6 +495,10 @@ export default function Dashboard() {
               if (statusHistorico === 'Desmarcada') return false; 
 
               return true;
+            }).sort((a, b) => {
+              const horaA = a.horario_inicio || '00:00';
+              const horaB = b.horario_inicio || '00:00';
+              return horaA.localeCompare(horaB);
             });
 
             return (
