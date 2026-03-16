@@ -13,6 +13,11 @@ const formatCEP = (v: string) => v.replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$
 const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<File | null> => { const image = await createImage(imageSrc); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); if (!ctx) return null; canvas.width = 256; canvas.height = 256; ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, 256, 256); return new Promise(resolve => canvas.toBlob(blob => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.9)) }
 
+const HORARIOS_DISPONIVEIS = Array.from({ length: 16 }, (_, i) => {
+  const h = i + 7;
+  return `${h.toString().padStart(2, '0')}:00`;
+});
+
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
 const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }
 
@@ -35,13 +40,8 @@ export default function PerfilAluno() {
   const [editComoConheceu, setEditComoConheceu] = useState(''); const [editIndicacaoNome, setEditIndicacaoNome] = useState(''); const [editValor, setEditValor] = useState(''); const [editVencimento, setEditVencimento] = useState('')
   const [editAvatarUrl, setEditAvatarUrl] = useState(''); const [editFotoArquivo, setEditFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null); const [showCropModal, setShowCropModal] = useState(false); const [imageToCrop, setImageToCrop] = useState<string | null>(null); const [crop, setCrop] = useState({ x: 0, y: 0 }); const [zoom, setZoom] = useState(1); const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
 
-  const [editAulaId, setEditAulaId] = useState<string | null>(null)
-  const [editDiaSemana, setEditDiaSemana] = useState('Segunda')
-  const [editHoraInicio, setEditHoraInicio] = useState('08:00')
-  const [editHoraFim, setEditHoraFim] = useState('09:00')
-  const [editProfId, setEditProfId] = useState('')
-  const [editSalaId, setEditSalaId] = useState('')
-  const [editModalidade, setEditModalidade] = useState('')
+  // 🔥 NOVO ESTADO DE MÚLTIPLOS HORÁRIOS (EDICÃO)
+  const [editAgendas, setEditAgendas] = useState<any[]>([])
 
   const [isClassModalOpen, setIsClassModalOpen] = useState(false); const [dataAula, setDataAula] = useState(new Date().toISOString().split('T')[0]); const [horaInicioAula, setHoraInicioAula] = useState('08:00'); const [horaFimAula, setHoraFimAula] = useState('09:00'); const [statusAula, setStatusAula] = useState('Realizada'); const [obsAula, setObsAula] = useState('')
   const [isPayModalOpen, setIsPayModalOpen] = useState(false); const [payData, setPayData] = useState(new Date().toISOString().split('T')[0]); const [payMetodo, setPayMetodo] = useState('PIX'); const [payValor, setPayValor] = useState('')
@@ -55,7 +55,6 @@ export default function PerfilAluno() {
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (isMounted) carregarDados() }, [id, isMounted])
   useEffect(() => { if (horaInicioAula) { const [h, m] = horaInicioAula.split(':').map(Number); const d = new Date(); d.setHours(h + 1, m); setHoraFimAula(d.toTimeString().slice(0, 5)) } }, [horaInicioAula])
-  useEffect(() => { if (editHoraInicio) { const [h, m] = editHoraInicio.split(':').map(Number); const d = new Date(); d.setHours(h + 1, m); setEditHoraFim(d.toTimeString().slice(0, 5)) } }, [editHoraInicio])
 
   async function carregarDados() {
     const { data: profile } = await supabase.from('profiles').select('*, alunos_info(*)').eq('id', id).single()
@@ -76,9 +75,38 @@ export default function PerfilAluno() {
 
   const abrirModalEdicao = () => { 
     setEditStatus(infoMatricula?.status || 'Ativo'); setEditNome(aluno.nome_completo || ''); setEditEmail(aluno.email || ''); setEditTel(aluno.telefone || ''); setEditCpf(aluno.cpf || ''); setEditDataNascimento(aluno.data_nascimento || ''); setEditCep(aluno.cep || ''); setEditEndereco(aluno.endereco || ''); setEditNumero(aluno.numero || ''); setEditComplemento(aluno.complemento || ''); setEditBairro(aluno.bairro || ''); setEditCidade(aluno.cidade || ''); setEditEstado(aluno.estado || ''); setEditComoConheceu(infoMatricula?.como_conheceu || ''); setEditIndicacaoNome(infoMatricula?.indicacao_nome || ''); setEditValor(infoMatricula?.valor_mensalidade || ''); setEditVencimento(infoMatricula?.data_vencimento || ''); setEditAvatarUrl(aluno.avatar_url || ''); setFotoPreview(aluno.avatar_url || null); setEditFotoArquivo(null); 
-    if (aulasFixas.length > 0) { const aulaAtual = aulasFixas[0]; setEditAulaId(aulaAtual.id); setEditDiaSemana(aulaAtual.dia); setEditHoraInicio(aulaAtual.horario_inicio.slice(0, 5)); setEditHoraFim(aulaAtual.horario_fim.slice(0, 5)); setEditProfId(aulaAtual.professor_id); setEditSalaId(aulaAtual.sala_id?.toString()); setEditModalidade(aulaAtual.instrumento_aula) } else { setEditAulaId(null); setEditDiaSemana('Segunda'); setEditHoraInicio('08:00'); setEditHoraFim('09:00'); setEditProfId(''); setEditSalaId(''); setEditModalidade('') }
+    
+    // CARREGA AULAS EXISTENTES
+    if (aulasFixas.length > 0) { 
+      setEditAgendas(aulasFixas.map(a => ({
+        id: a.id,
+        dia: a.dia,
+        horario_inicio: a.horario_inicio.slice(0, 5),
+        horario_fim: a.horario_fim.slice(0, 5),
+        professor_id: a.professor_id,
+        sala_id: a.sala_id?.toString(),
+        instrumento_aula: a.instrumento_aula
+      })))
+    } else { 
+      setEditAgendas([{ id: 'new_'+Date.now(), dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
+    }
+    
     setIsEditModalOpen(true) 
   }
+
+  // GERENCIAR MÚLTIPLAS AGENDAS NA EDIÇÃO
+  const handleEditAgendaChange = (index: number, field: string, value: any) => {
+    const newAgendas = [...editAgendas];
+    newAgendas[index][field] = value;
+    if (field === 'horario_inicio') {
+        const [h, m] = value.split(':').map(Number);
+        const d = new Date(); d.setHours(h + 1, m);
+        newAgendas[index].horario_fim = d.toTimeString().slice(0, 5);
+    }
+    setEditAgendas(newAgendas);
+  }
+  const addEditAgenda = () => setEditAgendas([...editAgendas, { id: 'new_' + Date.now(), dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
+  const removeEditAgenda = (index: number) => setEditAgendas(editAgendas.filter((_, i) => i !== index))
   
   const handleEditCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const newCep = formatCEP(e.target.value); setEditCep(newCep); const cleanCep = newCep.replace(/\D/g, ''); if (cleanCep.length === 8) { try { const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`); const data = await res.json(); if (!data.erro) { setEditEndereco(data.logradouro || ''); setEditBairro(data.bairro || ''); setEditCidade(data.localidade || ''); setEditEstado(data.uf || ''); document.getElementById('edit-input-numero')?.focus() } } catch (error) { console.error("Erro CEP") } } }
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) { const reader = new FileReader(); reader.onload = () => { setImageToCrop(reader.result as string); setShowCropModal(true) }; reader.readAsDataURL(e.target.files[0]) } }
@@ -86,13 +114,52 @@ export default function PerfilAluno() {
   
   const handleSalvarEdicao = async (e: React.FormEvent) => { 
     e.preventDefault(); setIsSubmitting(true); 
-    if (editProfId && editSalaId && editModalidade && !isEditingInativo) { let query = supabase.from('agenda').select('id').eq('dia', editDiaSemana).or(`professor_id.eq.${editProfId},sala_id.eq.${editSalaId}`).lt('horario_inicio', editHoraFim).gt('horario_fim', editHoraInicio); if (editAulaId) query = query.neq('id', editAulaId); const { data: conflitos } = await query; if (conflitos && conflitos.length > 0) { setIsSubmitting(false); return alert("🚨 CONFLITO DE AGENDA: Este professor ou sala já está ocupado neste horário.") } }
+    
+    if (!isEditingInativo) {
+      if (editAgendas.some(ag => !ag.professor_id || !ag.sala_id || !ag.instrumento_aula)) {
+        setIsSubmitting(false);
+        return alert("Preencha modalidade, sala e professor de TODOS os horários de aula.");
+      }
+
+      // Verifica Conflitos para todos os horários
+      for (let ag of editAgendas) {
+        let query = supabase.from('agenda').select('id').eq('dia', ag.dia).or(`professor_id.eq.${ag.professor_id},sala_id.eq.${ag.sala_id}`).lt('horario_inicio', ag.horario_fim).gt('horario_fim', ag.horario_inicio); 
+        if (!String(ag.id).startsWith('new_')) query = query.neq('id', ag.id); 
+        const { data: conflitos } = await query; 
+        if (conflitos && conflitos.length > 0) { 
+          setIsSubmitting(false); 
+          return alert(`🚨 CONFLITO DE AGENDA: O professor ou sala já está ocupado no dia ${ag.dia} às ${ag.horario_inicio}.`) 
+        }
+      }
+    }
+
     let finalAvatarUrl = editAvatarUrl; 
     if (editFotoArquivo) { const fileName = `alunos/${id}-${crypto.randomUUID()}.jpg`; const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, editFotoArquivo); if (!uploadError) { finalAvatarUrl = supabase.storage.from('avatars').getPublicUrl(fileName).data.publicUrl } } 
+    
     const { error: err1 } = await supabase.from('profiles').update({ nome_completo: editNome, email: editEmail, telefone: editTel, cpf: editCpf, data_nascimento: editDataNascimento || null, cep: editCep, endereco: editEndereco, numero: editNumero, complemento: editComplemento, bairro: editBairro, cidade: editCidade, estado: editEstado, avatar_url: finalAvatarUrl }).eq('id', id); if (err1) { setIsSubmitting(false); return alert("Erro: " + err1.message) } 
+    
     const dataInativacao = editStatus === 'Inativo' ? new Date().toISOString().split('T')[0] : null;
     await supabase.from('alunos_info').update({ valor_mensalidade: editValor ? parseFloat(editValor) : 0, data_vencimento: editVencimento ? parseInt(editVencimento) : null, status: editStatus, como_conheceu: editComoConheceu, indicacao_nome: editComoConheceu === 'Indicação' ? editIndicacaoNome : null, data_inativacao: dataInativacao }).eq('id', id); 
-    if (editProfId && editSalaId && editModalidade) { const agendaData = { professor_id: editProfId, aluno_id: id as string, sala_id: parseInt(editSalaId), dia: editDiaSemana, horario_inicio: editHoraInicio, horario_fim: editHoraFim, instrumento_aula: editModalidade }; if (editAulaId) { await supabase.from('agenda').update(agendaData).eq('id', editAulaId) } else { await supabase.from('agenda').insert([agendaData]) } } 
+    
+    if (!isEditingInativo) {
+      // Deletar os que foram removidos
+      const idsAtuais = editAgendas.filter(a => !String(a.id).startsWith('new_')).map(a => a.id);
+      const deletados = aulasFixas.filter(a => !idsAtuais.includes(a.id));
+      for (let del of deletados) {
+          await supabase.from('agenda').delete().eq('id', del.id);
+      }
+
+      // Inserir ou Atualizar
+      for (let ag of editAgendas) {
+        const agendaData = { professor_id: ag.professor_id, aluno_id: id as string, sala_id: parseInt(ag.sala_id), dia: ag.dia, horario_inicio: ag.horario_inicio, horario_fim: ag.horario_fim, instrumento_aula: ag.instrumento_aula }; 
+        if (String(ag.id).startsWith('new_')) {
+          await supabase.from('agenda').insert([agendaData])
+        } else {
+          await supabase.from('agenda').update(agendaData).eq('id', ag.id)
+        }
+      }
+    }
+
     setIsSubmitting(false); setIsEditModalOpen(false); carregarDados(); alert("✅ Ficha Atualizada!") 
   }
 
@@ -120,7 +187,6 @@ export default function PerfilAluno() {
     setIsSubmitting(false);
   }
 
-  // Classes Globais de Inputs para os Modais
   const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
 
   if (!isMounted) return null;
@@ -185,7 +251,7 @@ export default function PerfilAluno() {
         <div className="lg:col-span-2 space-y-6">
           
           <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
-            <h3 className="text-xl font-bold tracking-tight mb-6 flex items-center gap-3 text-slate-800"><span className="text-indigo-500 drop-shadow-sm">📌</span> Horário Fixo</h3>
+            <h3 className="text-xl font-bold tracking-tight mb-6 flex items-center gap-3 text-slate-800"><span className="text-indigo-500 drop-shadow-sm">📌</span> Horários Fixos</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {aulasFixas.map(aula => { 
                 const nomeProf = Array.isArray(aula.professor) ? aula.professor[0]?.nome_completo : aula.professor?.nome_completo; 
@@ -277,7 +343,7 @@ export default function PerfilAluno() {
         </div>
       </div>
 
-      {/* --- MODAIS COM VIDRO (GLASSMORPHISM) --- */}
+      {/* --- MODAIS --- */}
       <AnimatePresence>
         {isMsgModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -362,7 +428,7 @@ export default function PerfilAluno() {
             <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-emerald-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
               <div className="flex justify-between items-center mb-6">
                 <h2 className={`text-2xl font-bold tracking-tight text-slate-800 drop-shadow-sm`}>Editar Recibo</h2>
-                <button onClick={() => handleExcluirPagamento(editPayId)} className="h-10 w-10 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all shadow-sm" title="Apagar Registro Definitivamente">🗑️</button>
+                <button type="button" onClick={() => handleExcluirPagamento(editPayId)} className="h-10 w-10 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all shadow-sm" title="Apagar Registro Definitivamente">🗑️</button>
               </div>
               <form onSubmit={handleSalvarEdicaoPagamento} className="space-y-5">
                 <div>
@@ -487,36 +553,51 @@ export default function PerfilAluno() {
                   </div>
                 </div>
 
+                {/* 🔥 SESSÃO DE MÚLTIPLOS HORÁRIOS 🔥 */}
                 <div className="space-y-4">
-                  <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-indigo-600 border-indigo-500/10'}`}>Agendamento (Horário Fixo)</p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 ml-1">Dia</label>
-                      <select required={!isEditingInativo} disabled={isEditingInativo} value={editDiaSemana} onChange={e => setEditDiaSemana(e.target.value)} className={`${inputClass} disabled:opacity-50`}>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 ml-1">Horário</label>
-                      <input type="time" required={!isEditingInativo} disabled={isEditingInativo} value={editHoraInicio} onChange={e => setEditHoraInicio(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 ml-1">Professor</label>
-                      <select required={!isEditingInativo} disabled={isEditingInativo} value={editProfId} onChange={e => setEditProfId(e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option>{professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}</select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 ml-1">Sala</label>
-                      <select required={!isEditingInativo} disabled={isEditingInativo} value={editSalaId} onChange={e => setEditSalaId(e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option>{salasList.map(sl => <option key={sl.id} value={sl.id}>{sl.nome}</option>)}</select>
-                    </div>
+                  <div className={`flex items-center justify-between border-b pb-2 ${isEditingInativo ? 'border-slate-500/10' : 'border-indigo-500/10'}`}>
+                    <p className={`text-[11px] font-semibold uppercase tracking-wider ${isEditingInativo ? 'text-slate-500' : 'text-indigo-600'}`}>Agendamento (Horários Fixos)</p>
+                    <button type="button" onClick={addEditAgenda} disabled={isEditingInativo} className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 shadow-sm transition-all disabled:opacity-50">+ Add Horário</button>
                   </div>
-                  <div className="pt-2">
-                    <label className="text-xs font-semibold text-slate-500 ml-1 mb-2 block">Modalidade</label>
-                    <div className="flex flex-wrap gap-2">
-                      {modalidadesLista.map(m => (
-                        <motion.button whileTap={{ scale: 0.95 }} key={m.nome} type="button" disabled={isEditingInativo} onClick={() => setEditModalidade(m.nome)} className={`px-5 py-2.5 rounded-xl text-[11px] font-bold uppercase border transition-all disabled:opacity-50 ${editModalidade === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-md scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}>
-                          {editModalidade === m.nome && <span className="mr-2">✓</span>} {m.nome}
-                        </motion.button>
-                      ))}
+
+                  {editAgendas.map((ag, index) => (
+                    <div key={ag.id} className="p-5 rounded-2xl border border-indigo-100 bg-indigo-50/50 shadow-sm relative">
+                      {editAgendas.length > 1 && !isEditingInativo && (
+                        <button type="button" onClick={() => removeEditAgenda(index)} className="absolute -top-3 -right-2 bg-rose-100 text-rose-600 border border-rose-200 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md hover:bg-rose-500 hover:text-white transition-all">✕</button>
+                      )}
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 ml-1">Dia</label>
+                          <select required={!isEditingInativo} disabled={isEditingInativo} value={ag.dia} onChange={e => handleEditAgendaChange(index, 'dia', e.target.value)} className={`${inputClass} disabled:opacity-50`}>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 ml-1">Horário</label>
+                          <select required={!isEditingInativo} disabled={isEditingInativo} value={ag.horario_inicio} onChange={e => handleEditAgendaChange(index, 'horario_inicio', e.target.value)} className={`${inputClass} disabled:opacity-50`}>
+                            {HORARIOS_DISPONIVEIS.map(h => <option key={h} value={h}>{h}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 ml-1">Professor</label>
+                          <select required={!isEditingInativo} disabled={isEditingInativo} value={ag.professor_id} onChange={e => handleEditAgendaChange(index, 'professor_id', e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option>{professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}</select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 ml-1">Sala</label>
+                          <select required={!isEditingInativo} disabled={isEditingInativo} value={ag.sala_id} onChange={e => handleEditAgendaChange(index, 'sala_id', e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option>{salasList.map(sl => <option key={sl.id} value={sl.id}>{sl.nome}</option>)}</select>
+                        </div>
+                      </div>
+                      <div className="pt-4">
+                        <label className="text-xs font-semibold text-slate-500 ml-1 mb-2 block">Modalidade</label>
+                        <div className="flex flex-wrap gap-2">
+                          {modalidadesLista.map(m => (
+                            <motion.button whileTap={{ scale: 0.95 }} key={m.nome} type="button" disabled={isEditingInativo} onClick={() => handleEditAgendaChange(index, 'instrumento_aula', m.nome)} className={`px-5 py-2.5 rounded-xl text-[11px] font-bold uppercase border transition-all disabled:opacity-50 ${ag.instrumento_aula === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-md scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}>
+                              {ag.instrumento_aula === m.nome && <span className="mr-2">✓</span>} {m.nome}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
