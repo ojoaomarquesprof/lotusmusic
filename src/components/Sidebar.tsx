@@ -10,6 +10,7 @@ import Cropper from 'react-easy-crop'
 // --- FUNÇÕES DE MÁSCARA E CROPPER ---
 const formatPhone = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/g, '($1) $2').replace(/(\d)(\d{4})$/, '$1-$2').slice(0, 15)
 const formatCPF = (v: string) => v.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2').slice(0, 14)
+const formatCNPJ = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2').slice(0, 18)
 const formatCEP = (v: string) => v.replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2').slice(0, 9)
 const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<File | null> => { const image = await createImage(imageSrc); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); if (!ctx) return null; canvas.width = 256; canvas.height = 256; ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, 256, 256); return new Promise(resolve => canvas.toBlob(blob => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.9)) }
@@ -37,9 +38,10 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [modalidadesLista, setModalidadesLista] = useState<any[]>([])
   const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
+  const [tipoCadastro, setTipoCadastro] = useState<'PF' | 'PJ'>('PF')
   const [nomeAluno, setNomeAluno] = useState(''); const [emailAluno, setEmailAluno] = useState(''); 
   const [senhaAluno, setSenhaAluno] = useState(''); 
-  const [telAluno, setTelAluno] = useState(''); const [cpf, setCpf] = useState(''); const [dataNascimento, setDataNascimento] = useState('')
+  const [telAluno, setTelAluno] = useState(''); const [documento, setDocumento] = useState(''); const [dataNascimento, setDataNascimento] = useState('')
   const [cep, setCep] = useState(''); const [endereco, setEndereco] = useState(''); const [numero, setNumero] = useState(''); const [complemento, setComplemento] = useState(''); const [bairro, setBairro] = useState(''); const [cidade, setCidade] = useState(''); const [estado, setEstado] = useState('')
   
   // ESTADOS FINANCEIRO & MARKETING
@@ -66,7 +68,6 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession()
       
       if (session) {
-        // 🔥 Adicionado 'avatar_url' aqui para buscar a foto no banco
         const { data: p } = await supabase.from('profiles').select('nome_completo, role, avatar_url').eq('id', session.user.id).single()
         setPerfil(p)
 
@@ -133,7 +134,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   }
 
   const fecharModalMatricula = () => { 
-    setIsModalOpen(false); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setCpf(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
+    setIsModalOpen(false); setTipoCadastro('PF'); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setDocumento(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
     setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
     setFotoArquivo(null); setFotoPreview(null); setModalidade(''); setHoraInicio('08:00'); 
   }
@@ -145,14 +146,33 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const handleMatricular = async (e: React.FormEvent) => {
     e.preventDefault(); if (!modalidade || !salaId || !profId) return alert("Preencha modalidade, sala e professor.")
     setIsSubmitting(true)
+
+    // 🔥 GERAÇÃO AUTOMÁTICA DE EMAIL/SENHA PARA IGREJAS (PJ)
+    let emailFinal = emailAluno;
+    let senhaFinal = senhaAluno;
+
+    if (tipoCadastro === 'PJ') {
+      if (!emailFinal) {
+        const randomHash = Math.random().toString(36).slice(2, 8);
+        emailFinal = `turma_${randomHash}@sistemalotus.local`; // Email fictício gerado automaticamente
+      }
+      if (!senhaFinal) {
+        senhaFinal = `lotus${Math.random().toString(36).slice(2, 8)}!`; // Senha aleatória segura
+      }
+    } else {
+      if (!emailFinal || !senhaFinal) {
+        setIsSubmitting(false);
+        return alert("Preencha o e-mail e a senha de acesso para o aluno.");
+      }
+    }
     
     const { data: conflitos } = await supabase.from('agenda').select('id').eq('dia', diaSemana).or(`professor_id.eq.${profId},sala_id.eq.${salaId}`).lt('horario_inicio', horaFim).gt('horario_fim', horaInicio)
-    if (conflitos && conflitos.length > 0) { setIsSubmitting(false); return alert("🚨 CONFLITO de agenda! Este professor ou sala já está ocupado.") }
+    if (conflitos && conflitos.length > 0) { setIsSubmitting(false); return alert("🚨 CONFLITO de agenda! Este professor ou sala já está ocupado no horário selecionado.") }
     
     const apiRes = await fetch('/api/matricular', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailAluno, password: senhaAluno, nome: nomeAluno })
+      body: JSON.stringify({ email: emailFinal, password: senhaFinal, nome: nomeAluno })
     })
     const apiData = await apiRes.json()
     
@@ -169,7 +189,17 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       if (!uploadError) avatarPublicUrl = supabase.storage.from('avatars').getPublicUrl(`alunos/${alunoId}.jpg`).data.publicUrl 
     }
     
-    const { error: err1 } = await supabase.from('profiles').insert([{ id: alunoId, nome_completo: nomeAluno, email: emailAluno, telefone: telAluno, cpf, data_nascimento: dataNascimento || null, cep, endereco, numero, complemento, bairro, cidade, estado, avatar_url: avatarPublicUrl, role: 'ALUNO' }])
+    const { error: err1 } = await supabase.from('profiles').insert([{ 
+      id: alunoId, 
+      nome_completo: nomeAluno, 
+      email: emailFinal, // Salva o e-mail (real ou fictício)
+      telefone: telAluno, 
+      cpf: documento, 
+      data_nascimento: dataNascimento || null, 
+      cep, endereco, numero, complemento, bairro, cidade, estado, 
+      avatar_url: avatarPublicUrl, 
+      role: 'ALUNO' 
+    }])
     if (err1) { setIsSubmitting(false); return alert("Erro ao criar perfil: " + err1.message) }
     
     await supabase.from('alunos_info').insert([{ id: alunoId, valor_mensalidade: parseFloat(valorMensalidade), data_vencimento: parseInt(vencimento), como_conheceu: comoConheceu, indicacao_nome: comoConheceu === 'Indicação' ? indicacaoNome : null, status: 'Ativo' }])
@@ -187,7 +217,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       if (errPg) console.error("Erro ao registrar pagamento inicial:", errPg);
     }
 
-    setIsSubmitting(false); fecharModalMatricula(); alert("🎉 Matrícula realizada!"); window.location.reload();
+    setIsSubmitting(false); fecharModalMatricula(); alert("🎉 Matrícula realizada com sucesso!"); window.location.reload();
   }
 
   if (rotasPublicas.includes(pathname) || pathname?.startsWith('/portal')) {
@@ -275,10 +305,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
           <NavLinks />
         </div>
         
-        {/* 🔥 AQUI ENTRA A FOTO E OS DADOS NO FINAL DA SIDEBAR 🔥 */}
         <motion.div whileHover={{ y: -2 }} className={`p-4 bg-white/50 backdrop-blur-md shadow-sm hover:bg-white/70 transition-colors rounded-2xl flex items-center gap-3 border border-white/60 mt-4 cursor-default shrink-0`}>
-          
-          {/* FOTO DO PERFIL OU FALLBACK COM A INICIAL */}
           {perfil?.avatar_url ? (
             <img src={perfil.avatar_url} alt="Perfil" className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm shrink-0" />
           ) : (
@@ -288,13 +315,10 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
               </span>
             </div>
           )}
-
-          {/* NOME E FUNÇÃO */}
           <div className="overflow-hidden pr-2 flex-1">
             <p className="font-black text-xs uppercase text-slate-800 truncate" title={perfil?.nome_completo}>{perfil?.nome_completo || 'Carregando...'}</p>
             <p className={`text-slate-500 text-[9px] uppercase font-bold mt-0.5`}>{perfil?.role}</p>
           </div>
-
         </motion.div>
       </aside>
 
@@ -324,7 +348,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
               
               <div className="mb-8">
                 <h2 className="text-2xl font-bold tracking-tight text-slate-800">Ficha de Matrícula</h2>
-                <p className="text-slate-500 text-sm mt-1">Preencha os dados abaixo para registrar o novo aluno.</p>
+                <p className="text-slate-500 text-sm mt-1">Preencha os dados abaixo para registrar o novo aluno ou turma.</p>
               </div>
 
               <form onSubmit={handleMatricular} className="space-y-8">
@@ -345,14 +369,75 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                   </label>
                 </div>
                 
-                <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Dados de Acesso (Portal)</p>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
+                    <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">
+                      Dados de Acesso (Portal)
+                    </p>
+                    {tipoCadastro === 'PJ' && (
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                        (Opcional para Igrejas)
+                      </span>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input placeholder="E-mail do Aluno" type="email" required value={emailAluno} onChange={e => setEmailAluno(e.target.value)} className={inputClass} />
-                    <input placeholder="Senha de Acesso (Mín. 6 letras/números)" minLength={6} type="text" required value={senhaAluno} onChange={e => setSenhaAluno(e.target.value)} className={inputClass} />
+                    <input 
+                      placeholder={tipoCadastro === 'PJ' ? "E-mail (Opcional se não houver)" : "E-mail de Cadastro"} 
+                      type="email" 
+                      required={tipoCadastro === 'PF'} 
+                      value={emailAluno} 
+                      onChange={e => setEmailAluno(e.target.value)} 
+                      className={inputClass} 
+                    />
+                    <input 
+                      placeholder={tipoCadastro === 'PJ' ? "Senha (Opcional)" : "Senha de Acesso (Mín. 6 letras/números)"} 
+                      minLength={6} 
+                      type="text" 
+                      required={tipoCadastro === 'PF'} 
+                      value={senhaAluno} 
+                      onChange={e => setSenhaAluno(e.target.value)} 
+                      className={inputClass} 
+                    />
                   </div>
                 </div>
 
-                <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Dados Pessoais</p><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><input placeholder="Nome Completo" required value={nomeAluno} onChange={e => setNomeAluno(e.target.value)} className={`md:col-span-2 ${inputClass}`} /><div><label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data Nasc.</label><input type="date" required value={dataNascimento} onChange={e => setDataNascimento(e.target.value)} className={inputClass} /></div><input placeholder="CPF" required value={cpf} onChange={e => setCpf(formatCPF(e.target.value))} maxLength={14} className={inputClass} /><input placeholder="WhatsApp" required value={telAluno} onChange={e => setTelAluno(formatPhone(e.target.value))} maxLength={15} className={inputClass} /></div></div>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
+                    <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Dados Básicos</p>
+                    
+                    {/* TOGGLE TIPO DE CADASTRO */}
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 cursor-pointer">
+                        <input type="radio" name="tipoCadastro" checked={tipoCadastro === 'PF'} onChange={() => { setTipoCadastro('PF'); setDocumento(''); setDataNascimento(''); setEmailAluno(''); setSenhaAluno(''); }} className="accent-indigo-600" />
+                        Aluno Individual (PF)
+                      </label>
+                      <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 cursor-pointer">
+                        <input type="radio" name="tipoCadastro" checked={tipoCadastro === 'PJ'} onChange={() => { setTipoCadastro('PJ'); setDocumento(''); setDataNascimento(''); setEmailAluno(''); setSenhaAluno(''); }} className="accent-indigo-600" />
+                        Turma / Igreja (PJ)
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                    <input placeholder={tipoCadastro === 'PF' ? "Nome Completo" : "Nome da Igreja / Instituição / Turma"} required value={nomeAluno} onChange={e => setNomeAluno(e.target.value)} className={`md:col-span-2 ${inputClass}`} />
+                    
+                    {tipoCadastro === 'PF' && (
+                      <div><label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data Nasc.</label><input type="date" required value={dataNascimento} onChange={e => setDataNascimento(e.target.value)} className={inputClass} /></div>
+                    )}
+                    
+                    <input 
+                      placeholder={tipoCadastro === 'PF' ? "CPF" : "CNPJ (Opcional)"} 
+                      required={tipoCadastro === 'PF'} 
+                      value={documento} 
+                      onChange={e => setDocumento(tipoCadastro === 'PF' ? formatCPF(e.target.value) : formatCNPJ(e.target.value))} 
+                      maxLength={tipoCadastro === 'PF' ? 14 : 18} 
+                      className={inputClass} 
+                    />
+                    
+                    <input placeholder={tipoCadastro === 'PF' ? "WhatsApp" : "WhatsApp do Responsável"} required value={telAluno} onChange={e => setTelAluno(formatPhone(e.target.value))} maxLength={15} className={`${tipoCadastro === 'PJ' ? 'md:col-span-2' : ''} ${inputClass}`} />
+                  </div>
+                </div>
+
                 <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Endereço</p><div className="grid grid-cols-2 md:grid-cols-4 gap-4"><input placeholder="CEP" required value={cep} onChange={handleCepChange} maxLength={9} className={`col-span-2 md:col-span-1 ${inputClass}`} /><input placeholder="Endereço / Rua" required value={endereco} onChange={e => setEndereco(e.target.value)} className={`col-span-2 md:col-span-2 ${inputClass}`} /><input id="input-numero" placeholder="Número" required value={numero} onChange={e => setNumero(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass}`} /></div></div>
                 
                 <div className="space-y-4">
@@ -406,7 +491,6 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                     </div>
                     <div>
                       <label className="text-[9px] font-bold text-slate-500 ml-1">Horário</label>
-                      {/* 🔥 Substituído input=time por select seguro */}
                       <select required value={horaInicio} onChange={e => setHoraInicio(e.target.value)} className={inputClass}>
                         {HORARIOS_DISPONIVEIS.map(h => (
                           <option key={h} value={h}>{h}</option>
