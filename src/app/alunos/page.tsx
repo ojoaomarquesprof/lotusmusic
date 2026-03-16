@@ -52,22 +52,37 @@ export default function ListaAlunos() {
 
       {/* FILTROS E BUSCA COM VIDRO */}
       <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-center gap-4 mb-8">
-        <div className={`flex p-1.5 rounded-2xl bg-white/40 backdrop-blur-md border border-white/60 shadow-inner`}>
+        <div className={`flex p-1.5 rounded-2xl bg-white/40 backdrop-blur-md border border-white/60 shadow-inner overflow-x-auto w-full lg:w-auto`}>
           <button 
             onClick={() => setFiltroStatus('Ativo')} 
-            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${filtroStatus === 'Ativo' ? 'bg-indigo-500 text-white shadow-md' : `text-slate-600 hover:bg-white/60`}`}
+            className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${filtroStatus === 'Ativo' ? 'bg-indigo-500 text-white shadow-md' : `text-slate-600 hover:bg-white/60`}`}
           >
             Matrículas Ativas
+            <AnimatePresence>
+              {filtroStatus === 'Ativo' && (
+                <motion.span initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} className="bg-white text-indigo-600 px-2 py-0.5 rounded-lg text-[10px] font-black shadow-sm ml-1">
+                  {alunosFiltrados.length}
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
+          
           <button 
             onClick={() => setFiltroStatus('Inativo')} 
-            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${filtroStatus === 'Inativo' ? 'bg-rose-500 text-white shadow-md' : `text-slate-600 hover:bg-white/60`}`}
+            className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${filtroStatus === 'Inativo' ? 'bg-rose-500 text-white shadow-md' : `text-slate-600 hover:bg-white/60`}`}
           >
             Inativos
+            <AnimatePresence>
+              {filtroStatus === 'Inativo' && (
+                <motion.span initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} className="bg-white text-rose-600 px-2 py-0.5 rounded-lg text-[10px] font-black shadow-sm ml-1">
+                  {alunosFiltrados.length}
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
         </div>
         
-        <div className="w-full lg:w-96 relative">
+        <div className="w-full lg:w-96 relative shrink-0">
           <span className="absolute left-4 top-1/2 -translate-y-1/2 opacity-40 text-lg">🔍</span>
           <input 
             type="text" 
