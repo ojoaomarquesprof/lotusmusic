@@ -52,8 +52,9 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [dataPrimeiroPagamento, setDataPrimeiroPagamento] = useState(new Date().toISOString().split('T')[0]);
   
   const [fotoArquivo, setFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null)
-  const [profId, setProfId] = useState(''); const [salaId, setSalaId] = useState(''); const [diaSemana, setDiaSemana] = useState('Segunda'); 
-  const [horaInicio, setHoraInicio] = useState('08:00'); const [horaFim, setHoraFim] = useState('09:00'); const [modalidade, setModalidade] = useState('')
+  
+  // 🔥 NOVO ESTADO DE MÚLTIPLOS HORÁRIOS (MATRÍCULA)
+  const [agendas, setAgendas] = useState<any[]>([{ id: 'new_1', dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
   
   const [showCropModal, setShowCropModal] = useState(false); const [imageToCrop, setImageToCrop] = useState<string | null>(null); const [crop, setCrop] = useState({ x: 0, y: 0 }); const [zoom, setZoom] = useState(1); const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
 
@@ -115,8 +116,6 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     }
   }, [configEscola, pathname]) 
 
-  useEffect(() => { if (horaInicio) { const [h, m] = horaInicio.split(':').map(Number); const d = new Date(); d.setHours(h + 1, m); setHoraFim(d.toTimeString().slice(0, 5)) } }, [horaInicio])
-
   const handleLogout = async () => {
     await supabase.auth.signOut()
     window.location.href = '/login'
@@ -136,15 +135,33 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const fecharModalMatricula = () => { 
     setIsModalOpen(false); setTipoCadastro('PF'); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setDocumento(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
     setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
-    setFotoArquivo(null); setFotoPreview(null); setModalidade(''); setHoraInicio('08:00'); 
+    setFotoArquivo(null); setFotoPreview(null); 
+    setAgendas([{ id: 'new_1', dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
   }
   
+  // GERENCIAR MÚLTIPLAS AGENDAS NA MATRÍCULA
+  const handleAgendaChange = (index: number, field: string, value: any) => {
+    const newAgendas = [...agendas];
+    newAgendas[index][field] = value;
+    if (field === 'horario_inicio') {
+        const [h, m] = value.split(':').map(Number);
+        const d = new Date(); d.setHours(h + 1, m);
+        newAgendas[index].horario_fim = d.toTimeString().slice(0, 5);
+    }
+    setAgendas(newAgendas);
+  }
+  const addAgenda = () => setAgendas([...agendas, { id: 'new_' + Date.now(), dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
+  const removeAgenda = (index: number) => setAgendas(agendas.filter((_, i) => i !== index))
+
   const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const newCep = formatCEP(e.target.value); setCep(newCep); const cleanCep = newCep.replace(/\D/g, ''); if (cleanCep.length === 8) { try { const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`); const data = await res.json(); if (!data.erro) { setEndereco(data.logradouro || ''); setBairro(data.bairro || ''); setCidade(data.localidade || ''); setEstado(data.uf || ''); document.getElementById('input-numero')?.focus() } } catch (error) { console.error("Erro") } } }
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) { const reader = new FileReader(); reader.onload = () => { setImageToCrop(reader.result as string); setShowCropModal(true) }; reader.readAsDataURL(e.target.files[0]) } }
   const handleConfirmCrop = async () => { if (imageToCrop && croppedAreaPixels) { const croppedFile = await getCroppedImg(imageToCrop, croppedAreaPixels); if (croppedFile) { setFotoArquivo(croppedFile); setFotoPreview(URL.createObjectURL(croppedFile)) } }; setShowCropModal(false); setImageToCrop(null); setCrop({ x: 0, y: 0 }); setZoom(1) }
 
   const handleMatricular = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!modalidade || !salaId || !profId) return alert("Preencha modalidade, sala e professor.")
+    e.preventDefault(); 
+    if (agendas.some(ag => !ag.professor_id || !ag.sala_id || !ag.instrumento_aula)) {
+      return alert("Preencha modalidade, sala e professor de TODOS os horários escolhidos.")
+    }
     setIsSubmitting(true)
 
     // 🔥 GERAÇÃO AUTOMÁTICA DE EMAIL/SENHA PARA IGREJAS (PJ)
@@ -166,8 +183,14 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       }
     }
     
-    const { data: conflitos } = await supabase.from('agenda').select('id').eq('dia', diaSemana).or(`professor_id.eq.${profId},sala_id.eq.${salaId}`).lt('horario_inicio', horaFim).gt('horario_fim', horaInicio)
-    if (conflitos && conflitos.length > 0) { setIsSubmitting(false); return alert("🚨 CONFLITO de agenda! Este professor ou sala já está ocupado no horário selecionado.") }
+    // Verificar Conflitos para todos os horários
+    for (let ag of agendas) {
+      const { data: conflitos } = await supabase.from('agenda').select('id').eq('dia', ag.dia).or(`professor_id.eq.${ag.professor_id},sala_id.eq.${ag.sala_id}`).lt('horario_inicio', ag.horario_fim).gt('horario_fim', ag.horario_inicio)
+      if (conflitos && conflitos.length > 0) { 
+        setIsSubmitting(false); 
+        return alert(`🚨 CONFLITO DE AGENDA! O professor ou sala já está ocupado no dia ${ag.dia} às ${ag.horario_inicio}.`) 
+      }
+    }
     
     const apiRes = await fetch('/api/matricular', {
       method: 'POST',
@@ -203,7 +226,18 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     if (err1) { setIsSubmitting(false); return alert("Erro ao criar perfil: " + err1.message) }
     
     await supabase.from('alunos_info').insert([{ id: alunoId, valor_mensalidade: parseFloat(valorMensalidade), data_vencimento: parseInt(vencimento), como_conheceu: comoConheceu, indicacao_nome: comoConheceu === 'Indicação' ? indicacaoNome : null, status: 'Ativo' }])
-    await supabase.from('agenda').insert([{ professor_id: profId, aluno_id: alunoId, sala_id: parseInt(salaId), dia: diaSemana, horario_inicio: horaInicio, horario_fim: horaFim, instrumento_aula: modalidade }])
+    
+    // Inserir todas as agendas
+    const agendaInserts = agendas.map(ag => ({
+      professor_id: ag.professor_id,
+      aluno_id: alunoId,
+      sala_id: parseInt(ag.sala_id),
+      dia: ag.dia,
+      horario_inicio: ag.horario_inicio,
+      horario_fim: ag.horario_fim,
+      instrumento_aula: ag.instrumento_aula
+    }))
+    await supabase.from('agenda').insert(agendaInserts)
     
     const hojeStr = new Date().toISOString().split('T')[0];
     
@@ -479,55 +513,67 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
 
-                {/* 👇 AGENDAMENTO COM SELECT SEGURO 👇 */}
+                {/* 🔥 SESSÃO DE MÚLTIPLOS HORÁRIOS (MATRÍCULA) 🔥 */}
                 <div className="space-y-4">
-                  <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Agendamento (Horário Fixo)</p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div>
-                      <label className="text-[9px] font-bold text-slate-500 ml-1">Dia</label>
-                      <select required value={diaSemana} onChange={e => setDiaSemana(e.target.value)} className={inputClass}>
-                        {dias.map((d: string) => <option key={d} value={d}>{d}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-bold text-slate-500 ml-1">Horário</label>
-                      <select required value={horaInicio} onChange={e => setHoraInicio(e.target.value)} className={inputClass}>
-                        {HORARIOS_DISPONIVEIS.map(h => (
-                          <option key={h} value={h}>{h}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-bold text-slate-500 ml-1">Professor</label>
-                      <select required value={profId} onChange={e => setProfId(e.target.value)} className={inputClass}>
-                        <option value="">Selecione...</option>
-                        {professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-bold text-slate-500 ml-1">Sala</label>
-                      <select required value={salaId} onChange={e => setSalaId(e.target.value)} className={inputClass}>
-                        <option value="">Selecione...</option>
-                        {salasList.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-                      </select>
-                    </div>
+                  <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
+                    <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Agendamento (Horários Fixos)</p>
+                    <button type="button" onClick={addAgenda} className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 shadow-sm transition-all">+ Adicionar Horário</button>
                   </div>
-                  <div className="pt-4">
-                    <label className="text-[10px] font-black uppercase mb-3 block text-slate-500 tracking-widest">Modalidade</label>
-                    <div className="flex flex-wrap gap-2">
-                      {modalidadesLista.map(m => (
-                        <motion.button 
-                          whileTap={{ scale: 0.95 }} 
-                          key={m.nome} 
-                          type="button" 
-                          onClick={() => setModalidade(m.nome)} 
-                          className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${modalidade === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-lg scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}
-                        >
-                          {modalidade === m.nome && <span className="mr-2">✓</span>} {m.nome}
-                        </motion.button>
-                      ))}
+                  
+                  {agendas.map((ag, index) => (
+                    <div key={ag.id} className="p-5 rounded-2xl border border-indigo-100 bg-indigo-50/50 shadow-sm relative">
+                      {agendas.length > 1 && (
+                        <button type="button" onClick={() => removeAgenda(index)} className="absolute -top-3 -right-2 bg-rose-100 text-rose-600 border border-rose-200 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md hover:bg-rose-500 hover:text-white transition-all">✕</button>
+                      )}
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-500 ml-1">Dia</label>
+                          <select required value={ag.dia} onChange={e => handleAgendaChange(index, 'dia', e.target.value)} className={inputClass}>
+                            {dias.map((d: string) => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-500 ml-1">Horário</label>
+                          <select required value={ag.horario_inicio} onChange={e => handleAgendaChange(index, 'horario_inicio', e.target.value)} className={inputClass}>
+                            {HORARIOS_DISPONIVEIS.map(h => (
+                              <option key={h} value={h}>{h}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-500 ml-1">Professor</label>
+                          <select required value={ag.professor_id} onChange={e => handleAgendaChange(index, 'professor_id', e.target.value)} className={inputClass}>
+                            <option value="">Selecione...</option>
+                            {professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-500 ml-1">Sala</label>
+                          <select required value={ag.sala_id} onChange={e => handleAgendaChange(index, 'sala_id', e.target.value)} className={inputClass}>
+                            <option value="">Selecione...</option>
+                            {salasList.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="pt-4">
+                        <label className="text-[10px] font-black uppercase mb-3 block text-slate-500 tracking-widest">Modalidade</label>
+                        <div className="flex flex-wrap gap-2">
+                          {modalidadesLista.map(m => (
+                            <motion.button 
+                              whileTap={{ scale: 0.95 }} 
+                              key={m.nome} 
+                              type="button" 
+                              onClick={() => handleAgendaChange(index, 'instrumento_aula', m.nome)} 
+                              className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${ag.instrumento_aula === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-lg scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}
+                            >
+                              {ag.instrumento_aula === m.nome && <span className="mr-2">✓</span>} {m.nome}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
 
                 <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40"><motion.button whileTap={{ scale: 0.95 }} type="button" onClick={fecharModalMatricula} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-black uppercase text-xs text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white disabled:opacity-50`}>Cancelar</motion.button><motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-black uppercase text-xs shadow-xl hover:shadow-emerald-500/30 transition-all disabled:opacity-50">{isSubmitting ? 'Gerando Acesso...' : 'Finalizar Matrícula'}</motion.button></div>
