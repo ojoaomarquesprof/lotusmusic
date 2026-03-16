@@ -6,6 +6,8 @@ import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
 import Cropper from 'react-easy-crop'
 import { motion, AnimatePresence } from 'framer-motion'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 // --- FUNÇÕES DE MÁSCARA E CROPPER ---
 const formatPhone = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/g, '($1) $2').replace(/(\d)(\d{4})$/, '$1-$2').slice(0, 15)
@@ -72,6 +74,12 @@ export default function Gerencia() {
   const [croppedAreaPixelsProf, setCroppedAreaPixelsProf] = useState<any>(null)
   const [editFotoArquivoProf, setEditFotoArquivoProf] = useState<File | null>(null)
   const [fotoPreviewProf, setFotoPreviewProf] = useState<string | null>(null)
+
+  // --- ESTADOS: RELATÓRIOS ---
+  const [finPeriodo, setFinPeriodo] = useState('30')
+  const [finDataInicio, setFinDataInicio] = useState('')
+  const [finDataFim, setFinDataFim] = useState('')
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(false)
 
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (isMounted) carregarTudo() }, [isMounted])
@@ -153,7 +161,6 @@ export default function Gerencia() {
   async function carregarDisponibilidadeProf(id: string) {
     const { data } = await supabase.from('disponibilidade_professor').select('*').eq('professor_id', id)
     
-    // 🔥 TRAZEMOS TUDO DA AGENDA + O PERFIL DO ALUNO COM AS INFO DE INATIVIDADE
     const { data: agendaMats, error } = await supabase.from('agenda').select('*, aluno:profiles!aluno_id(id, nome_completo, alunos_info(status, data_inativacao))').eq('professor_id', id)
     if (error) console.error("Erro ao buscar agenda:", error.message)
 
@@ -167,11 +174,9 @@ export default function Gerencia() {
     setDisponibilidades(ordenado)
   }
 
-  // 🔥 O RASTREADOR IMPLACÁVEL BLINDADO
   const getOcupante = (disp: any) => {
     const hojeStr = new Date().toISOString().split('T')[0];
 
-    // Procura na tabela 'agenda' se existe um horário marcado EXATAMENTE igual
     return matriculasProf.find(m => {
       const diaAgenda = String(m.dia || '').trim().toLowerCase()
       const diaGrade = String(disp.dia_semana || '').trim().toLowerCase()
@@ -182,14 +187,14 @@ export default function Gerencia() {
       if (diaAgenda === diaGrade && horaAgenda === horaGrade) {
         const info = Array.isArray(m.aluno?.alunos_info) ? m.aluno?.alunos_info[0] : m.aluno?.alunos_info;
         
-        if (!info) return true; // Se não tem informações, assume ocupado por segurança
+        if (!info) return true; 
         
         if (info.status === 'Inativo') {
-          if (!info.data_inativacao) return false; // Tá inativo e não tem data? Libera a vaga!
-          if (hojeStr > info.data_inativacao) return false; // A data de saída já passou? Libera a vaga!
+          if (!info.data_inativacao) return false; 
+          if (hojeStr > info.data_inativacao) return false; 
         }
         
-        return true; // Tá ocupado!
+        return true; 
       }
       return false;
     });
@@ -344,6 +349,193 @@ export default function Gerencia() {
     setShowModalProf(false);
   }
 
+  // --- FUNÇÕES DE GERAÇÃO DE RELATÓRIOS EM PDF ---
+  const handleGerarRelatorioFinanceiro = async () => {
+    setGerandoRelatorio(true)
+    try {
+      let dataInicioStr = ''
+      let dataFimStr = new Date().toISOString() 
+
+      if (finPeriodo === 'personalizado') {
+        if (!finDataInicio || !finDataFim) {
+          alert('Preencha as datas de início e fim.')
+          setGerandoRelatorio(false)
+          return
+        }
+        dataInicioStr = new Date(finDataInicio + 'T00:00:00').toISOString()
+        dataFimStr = new Date(finDataFim + 'T23:59:59').toISOString()
+      } else if (finPeriodo !== 'tudo') {
+        const dias = parseInt(finPeriodo)
+        const dInicio = new Date()
+        dInicio.setDate(dInicio.getDate() - dias)
+        dataInicioStr = dInicio.toISOString()
+      } else {
+        dataInicioStr = '2000-01-01T00:00:00.000Z'
+      }
+
+      const { data: pagamentos } = await supabase.from('pagamentos')
+        .select('*, aluno:profiles!aluno_id(nome_completo)')
+        .gte('data_pagamento', dataInicioStr)
+        .lte('data_pagamento', dataFimStr)
+      
+      const { data: transacoes } = await supabase.from('transacoes')
+        .select('*')
+        .gte('data_transacao', dataInicioStr)
+        .lte('data_transacao', dataFimStr)
+
+      const extrato = [
+        ...(pagamentos || []).map(p => ({ data: p.data_pagamento, descricao: `Mensalidade: ${p.aluno?.nome_completo || 'Aluno'}`, valor: p.valor, tipo: 'Entrada' })),
+        ...(transacoes || []).map(t => ({ data: t.data_transacao, descricao: t.descricao || t.categoria, valor: t.valor, tipo: t.tipo }))
+      ].sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
+
+      const doc = new jsPDF()
+      doc.setFontSize(18)
+      doc.text('Relatório Financeiro Lótus', 14, 20)
+      
+      doc.setFontSize(10)
+      if (finPeriodo !== 'tudo') {
+        doc.text(`Período: ${new Date(dataInicioStr).toLocaleDateString('pt-BR')} a ${new Date(dataFimStr).toLocaleDateString('pt-BR')}`, 14, 28)
+      } else {
+        doc.text(`Período: Todo o Histórico`, 14, 28)
+      }
+
+      const tableData = extrato.map(item => [
+        new Date(item.data).toLocaleDateString('pt-BR'),
+        item.descricao,
+        item.tipo,
+        `R$ ${Number(item.valor).toFixed(2)}`
+      ])
+
+      let totalEntradas = extrato.filter(i => i.tipo === 'Entrada').reduce((acc, curr) => acc + Number(curr.valor), 0)
+      let totalSaidas = extrato.filter(i => i.tipo === 'Saída').reduce((acc, curr) => acc + Number(curr.valor), 0)
+      let saldo = totalEntradas - totalSaidas
+
+      autoTable(doc, {
+        startY: 35,
+        head: [['Data', 'Descrição', 'Tipo', 'Valor']],
+        body: tableData,
+        headStyles: { fillColor: [79, 70, 229] }, 
+        alternateRowStyles: { fillColor: [248, 250, 252] }
+      })
+
+      let finalY = (doc as any).lastAutoTable.finalY || 35
+      doc.setFontSize(12)
+      doc.setTextColor(16, 185, 129) 
+      doc.text(`Entradas: R$ ${totalEntradas.toFixed(2)}`, 14, finalY + 12)
+      doc.setTextColor(244, 63, 94) 
+      doc.text(`Saídas: R$ ${totalSaidas.toFixed(2)}`, 14, finalY + 20)
+      doc.setTextColor(15, 23, 42) 
+      doc.setFont("helvetica", "bold")
+      doc.text(`Saldo do Período: R$ ${saldo.toFixed(2)}`, 14, finalY + 28)
+
+      doc.save(`relatorio_financeiro_${Date.now()}.pdf`)
+    } catch (e) {
+      console.error(e)
+      alert('Erro ao gerar relatório.')
+    }
+    setGerandoRelatorio(false)
+  }
+
+  // --- NOVA FUNÇÃO CORRIGIDA DE ALUNOS ---
+  const handleGerarRelatorioAlunos = async (status: 'Ativo' | 'Inativo') => {
+    setGerandoRelatorio(true)
+    try {
+      // 1. Busca os dados dos alunos
+      const { data: alunosData, error } = await supabase.from('profiles')
+        .select(`
+          id,
+          nome_completo, 
+          telefone, 
+          created_at, 
+          alunos_info(valor_mensalidade, status, data_inativacao)
+        `)
+        .eq('role', 'ALUNO')
+        .order('nome_completo')
+
+      if (error) {
+        console.error("Erro Supabase:", error)
+        alert('Erro do Banco de Dados: ' + error.message);
+        setGerandoRelatorio(false);
+        return;
+      }
+
+      // 2. Busca a agenda para cruzar os cursos
+      const { data: agendaData } = await supabase.from('agenda').select('aluno_id, instrumento_aula')
+
+      // 3. Monta e filtra a lista
+      const alunosFiltrados = (alunosData || []).map(aluno => {
+          const info = Array.isArray(aluno.alunos_info) ? aluno.alunos_info[0] : aluno.alunos_info;
+          
+          // Procura qual o curso desse aluno específico lá na agenda
+          const aulaDoAluno = agendaData?.find(ag => ag.aluno_id === aluno.id);
+          
+          return {
+             nome_completo: aluno.nome_completo,
+             telefone: aluno.telefone,
+             data_matricula: aluno.created_at,
+             curso: aulaDoAluno?.instrumento_aula || 'Sem Curso Informado',
+             ...(info || {})
+          }
+      }).filter(a => {
+          const statusAluno = a.status ? String(a.status).trim().toLowerCase() : '';
+          if (status === 'Ativo') {
+            return statusAluno === 'ativo' || statusAluno === '';
+          } else {
+            return statusAluno === 'inativo';
+          }
+      })
+
+      if (alunosFiltrados.length === 0) {
+          alert(`Nenhum aluno ${status} encontrado no sistema!`);
+          setGerandoRelatorio(false);
+          return;
+      }
+
+      // 4. Gera o PDF
+      const doc = new jsPDF()
+      doc.setFontSize(18)
+      doc.text(`Relatório de Alunos ${status}s`, 14, 20)
+      doc.setFontSize(10)
+      doc.text(`Data de Geração: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28)
+      
+      let head = [['Nome', 'Telefone', 'Curso', 'Matrícula', 'Mensalidade']]
+      if (status === 'Inativo') head[0].push('Inativado Em')
+
+      const tableData = alunosFiltrados.map(a => {
+        const base = [
+          a.nome_completo || '-',
+          a.telefone || '-',
+          a.curso || '-',
+          a.data_matricula ? new Date(a.data_matricula).toLocaleDateString('pt-BR') : '-',
+          `R$ ${Number(a.valor_mensalidade || 0).toFixed(2)}`
+        ]
+        if (status === 'Inativo') {
+          base.push(a.data_inativacao ? new Date(a.data_inativacao).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-')
+        }
+        return base
+      })
+
+      autoTable(doc, {
+        startY: 35,
+        head: head,
+        body: tableData,
+        headStyles: { fillColor: status === 'Ativo' ? [16, 185, 129] : [244, 63, 94] }, 
+        alternateRowStyles: { fillColor: [248, 250, 252] }
+      })
+
+      let finalY = (doc as any).lastAutoTable.finalY || 35
+      doc.setFontSize(12)
+      doc.setFont("helvetica", "bold")
+      doc.text(`Total de Alunos ${status}s: ${alunosFiltrados.length}`, 14, finalY + 12)
+
+      doc.save(`relatorio_alunos_${status.toLowerCase()}_${Date.now()}.pdf`)
+    } catch(e) {
+      console.error(e)
+      alert('Erro ao gerar relatório.')
+    }
+    setGerandoRelatorio(false)
+  }
+
   const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
 
   if (!isMounted) return null;
@@ -364,7 +556,8 @@ export default function Gerencia() {
           { id: 'Escola', icon: '🏫', label: 'Dados da Escola' },
           { id: 'Estrutura', icon: '📍', label: 'Salas & Cursos' },
           { id: 'Equipe', icon: '🧑‍🏫', label: 'Equipe & Profs' },
-          { id: 'Horarios', icon: '⏰', label: 'Motor de Horários' }
+          { id: 'Horarios', icon: '⏰', label: 'Motor de Horários' },
+          { id: 'Relatorios', icon: '📊', label: 'Relatórios' }
         ].map(tab => (
           <button 
             key={tab.id}
@@ -672,6 +865,95 @@ export default function Gerencia() {
               </div>
             </motion.div>
           )}
+
+          {/* ABA RELATÓRIOS (NOVA) */}
+          {activeTab === 'Relatorios' && (
+            <motion.div key="Relatorios" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
+              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+                
+                <h3 className="text-2xl font-bold tracking-tight text-slate-800 mb-8 flex items-center gap-3"><span className="text-indigo-500 drop-shadow-sm">📊</span> Emissão de Relatórios (PDF)</h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  
+                  {/* CARD RELATÓRIO FINANCEIRO */}
+                  <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-6 rounded-[2rem] shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl mb-4 shadow-inner border border-indigo-200">💰</div>
+                      <h4 className="font-bold text-lg text-slate-800 mb-2">Relatório Financeiro</h4>
+                      <p className="text-xs text-slate-500 mb-6">Gera um PDF contendo entradas de mensalidades, saídas manuais e o saldo detalhado do caixa.</p>
+
+                      <label className="text-xs font-semibold text-slate-600 ml-1 mb-1 block">Filtrar por Período</label>
+                      <select value={finPeriodo} onChange={(e) => setFinPeriodo(e.target.value)} className={`${inputClass} mb-4`}>
+                        <option value="7">Últimos 7 dias</option>
+                        <option value="30">Últimos 30 dias</option>
+                        <option value="60">Últimos 60 dias</option>
+                        <option value="90">Últimos 90 dias</option>
+                        <option value="tudo">Todo o Período</option>
+                        <option value="personalizado">Período Personalizado</option>
+                      </select>
+
+                      <AnimatePresence>
+                        {finPeriodo === 'personalizado' && (
+                          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="grid grid-cols-2 gap-3 mb-4">
+                            <div><label className="text-[10px] font-semibold text-slate-600 ml-1">Início</label><input type="date" value={finDataInicio} onChange={e => setFinDataInicio(e.target.value)} className={`${inputClass} !p-2 !text-xs`} /></div>
+                            <div><label className="text-[10px] font-semibold text-slate-600 ml-1">Fim</label><input type="date" value={finDataFim} onChange={e => setFinDataFim(e.target.value)} className={`${inputClass} !p-2 !text-xs`} /></div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    <motion.button 
+                      whileTap={{ scale: 0.95 }} 
+                      onClick={handleGerarRelatorioFinanceiro} 
+                      disabled={gerandoRelatorio}
+                      className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 transition-all disabled:opacity-50 mt-4"
+                    >
+                      {gerandoRelatorio ? 'Gerando PDF...' : '⬇️ Baixar Relatório'}
+                    </motion.button>
+                  </div>
+
+                  {/* CARD ALUNOS ATIVOS */}
+                  <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-6 rounded-[2rem] shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl mb-4 shadow-inner border border-emerald-200">✅</div>
+                      <h4 className="font-bold text-lg text-slate-800 mb-2">Alunos Ativos</h4>
+                      <p className="text-xs text-slate-500 mb-6">Lista completa com nome, telefone, curso, data da matrícula e valor da mensalidade de todos os alunos que estão ativos na escola.</p>
+                    </div>
+
+                    <motion.button 
+                      whileTap={{ scale: 0.95 }} 
+                      onClick={() => handleGerarRelatorioAlunos('Ativo')} 
+                      disabled={gerandoRelatorio}
+                      className="w-full py-4 bg-emerald-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-emerald-600 transition-all disabled:opacity-50 mt-4"
+                    >
+                      {gerandoRelatorio ? 'Gerando PDF...' : '⬇️ Baixar Relatório'}
+                    </motion.button>
+                  </div>
+
+                  {/* CARD ALUNOS INATIVOS */}
+                  <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-6 rounded-[2rem] shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center text-2xl mb-4 shadow-inner border border-rose-200">❌</div>
+                      <h4 className="font-bold text-lg text-slate-800 mb-2">Alunos Inativos</h4>
+                      <p className="text-xs text-slate-500 mb-6">Lista dos alunos que cancelaram ou foram trancados, informando os dados básicos e a exata data da inativação.</p>
+                    </div>
+
+                    <motion.button 
+                      whileTap={{ scale: 0.95 }} 
+                      onClick={() => handleGerarRelatorioAlunos('Inativo')} 
+                      disabled={gerandoRelatorio}
+                      className="w-full py-4 bg-rose-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-rose-600 transition-all disabled:opacity-50 mt-4"
+                    >
+                      {gerandoRelatorio ? 'Gerando PDF...' : '⬇️ Baixar Relatório'}
+                    </motion.button>
+                  </div>
+
+                </div>
+
+              </div>
+            </motion.div>
+          )}
+
         </AnimatePresence>
 
       </div>

@@ -42,6 +42,10 @@ export default function RelatorioFinanceiro() {
   const [tValor, setTValor] = useState('')
   const [tData, setTData] = useState(new Date().toISOString().split('T')[0])
 
+  // NOVOS ESTADOS: Filtro do Extrato e Edição
+  const [filtroExtrato, setFiltroExtrato] = useState('Todos')
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (isMounted) carregarDadosFinanceiros() }, [isMounted])
 
@@ -84,10 +88,8 @@ export default function RelatorioFinanceiro() {
       if (!pgsMes.some(pg => pg.aluno_id === aluno.id)) {
         const venc = info.data_vencimento || 10; 
         
-        // 🔥 LÓGICA CORRIGIDA: Atrasado x A Vencer
         const status = diaAtual > venc ? 'Atrasado' : 'A Vencer'
         
-        // Só soma na "Inadimplência" quem REALMENTE já passou do prazo
         if (status === 'Atrasado') {
            inadimplenciaM += Number(info.valor_mensalidade)
         }
@@ -103,7 +105,6 @@ export default function RelatorioFinanceiro() {
       }
     })
 
-    // Ordena: Atrasados primeiro, depois por ordem de vencimento
     pendentesTemp.sort((a, b) => {
        if (a.status === 'Atrasado' && b.status !== 'Atrasado') return -1;
        if (a.status !== 'Atrasado' && b.status === 'Atrasado') return 1;
@@ -164,6 +165,27 @@ export default function RelatorioFinanceiro() {
     setAlunosPendentes(pendentesTemp); setExtratoUnificado(extrato); setLoading(false)
   }
 
+  // FUNÇÕES DE AÇÃO
+  const handleNovaMovimentacao = () => {
+    setEditandoId(null)
+    setTTipo('Saída')
+    setTCategoria('Aluguel')
+    setTDescricao('')
+    setTValor('')
+    setTData(new Date().toISOString().split('T')[0])
+    setIsModalOpen(true)
+  }
+
+  const abrirEdicao = (item: any) => {
+    setEditandoId(item.id)
+    setTTipo(item.tipo)
+    setTCategoria(item.categoria)
+    setTDescricao(item.descricao)
+    setTValor(item.valor.toString())
+    setTData(item.data.split('T')[0]) // Formata para YYYY-MM-DD
+    setIsModalOpen(true)
+  }
+
   const handleSalvarConfig = async (e: React.FormEvent) => {
     e.preventDefault(); setIsSavingConfig(true)
     const { error } = await supabase.from('configuracoes').upsert({ id: 1, chave_pix: chavePix, mensagem_pendente: msgPendente || DEFAULT_PENDENTE, mensagem_atrasado: msgAtrasado || DEFAULT_ATRASADO })
@@ -171,9 +193,35 @@ export default function RelatorioFinanceiro() {
   }
 
   const handleSalvarTransacao = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!tValor || Number(tValor) <= 0) return alert("Valor inválido.")
-    const { error } = await supabase.from('transacoes').insert([{ tipo: tTipo, categoria: tCategoria, descricao: tDescricao, valor: parseFloat(tValor), data_transacao: tData }])
-    if (error) alert("Erro: " + error.message); else { setIsModalOpen(false); setTDescricao(''); setTValor(''); setTCategoria(tTipo === 'Saída' ? 'Aluguel' : 'Investimento'); carregarDadosFinanceiros(); alert("✅ Salvo!") }
+    e.preventDefault(); 
+    if (!tValor || Number(tValor) <= 0) return alert("Valor inválido.")
+
+    if (editandoId) {
+      const prefix = editandoId.substring(0, 3)
+      const realId = editandoId.substring(3)
+
+      if (prefix === 'tr-') {
+        const { error } = await supabase.from('transacoes').update({ 
+          tipo: tTipo, categoria: tCategoria, descricao: tDescricao, valor: parseFloat(tValor), data_transacao: tData 
+        }).eq('id', realId)
+        if (error) return alert("Erro: " + error.message)
+      } else if (prefix === 'pg-') {
+        const { error } = await supabase.from('pagamentos').update({ 
+          valor: parseFloat(tValor), data_pagamento: tData 
+        }).eq('id', realId)
+        if (error) return alert("Erro: " + error.message)
+      }
+      alert("✅ Atualizado com sucesso!")
+    } else {
+      const { error } = await supabase.from('transacoes').insert([{ 
+        tipo: tTipo, categoria: tCategoria, descricao: tDescricao, valor: parseFloat(tValor), data_transacao: tData 
+      }])
+      if (error) return alert("Erro: " + error.message)
+      alert("✅ Salvo com sucesso!")
+    }
+    
+    setIsModalOpen(false)
+    carregarDadosFinanceiros()
   }
 
   const enviarCobrancaWhatsApp = (aluno: any) => {
@@ -189,6 +237,11 @@ export default function RelatorioFinanceiro() {
   const mesNome = new Date().toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
   const mesFormatado = mesNome.charAt(0).toUpperCase() + mesNome.slice(1)
 
+  // APLICANDO O FILTRO
+  const extratoFiltrado = extratoUnificado.filter(item => 
+    filtroExtrato === 'Todos' ? true : item.tipo === filtroExtrato
+  )
+
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show">
       
@@ -202,7 +255,7 @@ export default function RelatorioFinanceiro() {
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={() => setIsConfigModalOpen(true)} className={`px-4 py-3 rounded-xl bg-white/40 backdrop-blur-md border border-white/60 font-bold text-sm text-slate-700 hover:bg-white/60 shadow-sm transition-all flex items-center gap-2`}>
             <span>⚙️</span> Configurações
           </motion.button>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={() => setIsModalOpen(true)} className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-lg hover:shadow-xl transition-all">
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={handleNovaMovimentacao} className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-lg hover:shadow-xl transition-all">
             Nova Movimentação
           </motion.button>
         </div>
@@ -277,9 +330,24 @@ export default function RelatorioFinanceiro() {
         
         {/* EXTRATO */}
         <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
-          <h3 className="text-xl font-bold tracking-tight mb-6 flex items-center gap-3 text-slate-800"><span className="text-emerald-500 drop-shadow-sm">📄</span> Extrato do Mês</h3>
+          
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold tracking-tight flex items-center gap-3 text-slate-800">
+              <span className="text-emerald-500 drop-shadow-sm">📄</span> Extrato do Mês
+            </h3>
+            <select
+              value={filtroExtrato}
+              onChange={e => setFiltroExtrato(e.target.value)}
+              className="px-3 py-1.5 rounded-lg bg-white/50 border border-slate-200 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500/20"
+            >
+              <option value="Todos">Ambos</option>
+              <option value="Entrada">Entradas</option>
+              <option value="Saída">Saídas</option>
+            </select>
+          </div>
+
           <div className="space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
-            {extratoUnificado.map(item => (
+            {extratoFiltrado.map(item => (
               <motion.div whileHover={{ scale: 1.01 }} key={item.id} className={`bg-white/60 backdrop-blur-md p-4 rounded-2xl border border-white/80 shadow-sm flex justify-between items-center hover:shadow-md transition-all`}>
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-inner ${item.tipo === 'Entrada' ? 'bg-emerald-100/80 border border-emerald-200' : 'bg-rose-100/80 border border-rose-200'}`}>
@@ -290,14 +358,25 @@ export default function RelatorioFinanceiro() {
                     <p className={`text-slate-500 text-[11px] font-medium`}>{new Date(item.data).toLocaleDateString('pt-BR')} • {item.categoria}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className={`font-bold text-lg tracking-tight ${item.tipo === 'Entrada' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {item.tipo === 'Entrada' ? '+' : '-'} R$ {Number(item.valor).toFixed(2)}
-                  </p>
+                
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className={`font-bold text-lg tracking-tight ${item.tipo === 'Entrada' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {item.tipo === 'Entrada' ? '+' : '-'} R$ {Number(item.valor).toFixed(2)}
+                    </p>
+                  </div>
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => abrirEdicao(item)}
+                    className="h-8 w-8 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center text-sm shadow-sm"
+                    title="Editar Movimentação"
+                  >
+                    ✏️
+                  </motion.button>
                 </div>
               </motion.div>
             ))}
-            {extratoUnificado.length === 0 && <p className={`text-slate-500 text-center py-8 italic text-sm border border-dashed border-slate-300 rounded-2xl bg-white/30`}>Nenhuma movimentação neste mês.</p>}
+            {extratoFiltrado.length === 0 && <p className={`text-slate-500 text-center py-8 italic text-sm border border-dashed border-slate-300 rounded-2xl bg-white/30`}>Nenhuma movimentação encontrada.</p>}
           </div>
         </motion.div>
 
@@ -385,17 +464,21 @@ export default function RelatorioFinanceiro() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-emerald-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
               
-              <h2 className={`text-2xl font-bold tracking-tight mb-6 text-slate-800 drop-shadow-sm`}>Registro de Caixa</h2>
+              <h2 className={`text-2xl font-bold tracking-tight mb-6 text-slate-800 drop-shadow-sm`}>
+                {editandoId ? 'Editar Movimentação' : 'Registro de Caixa'}
+              </h2>
               
               <form onSubmit={handleSalvarTransacao} className="space-y-5">
                 {(() => {
-                  const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none shadow-inner";
+                  const isEditandoPagamento = editandoId?.startsWith('pg-');
+                  const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none shadow-inner disabled:opacity-50 disabled:cursor-not-allowed";
+                  
                   return (
                     <>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="text-xs font-semibold text-slate-600 ml-1">Tipo</label>
-                          <select required value={tTipo} onChange={e => { setTTipo(e.target.value); setTCategoria(e.target.value === 'Saída' ? 'Aluguel' : 'Investimento'); }} className={inputClass}>
+                          <select required disabled={isEditandoPagamento} value={tTipo} onChange={e => { setTTipo(e.target.value); setTCategoria(e.target.value === 'Saída' ? 'Aluguel' : 'Investimento'); }} className={inputClass}>
                             <option value="Entrada">Entrada 📈</option>
                             <option value="Saída">Saída / Despesa 📉</option>
                           </select>
@@ -408,18 +491,18 @@ export default function RelatorioFinanceiro() {
                       
                       <div>
                         <label className="text-xs font-semibold text-slate-600 ml-1">Categoria</label>
-                        <select required value={tCategoria} onChange={e => setTCategoria(e.target.value)} className={inputClass}>
+                        <select required disabled={isEditandoPagamento} value={tCategoria} onChange={e => setTCategoria(e.target.value)} className={inputClass}>
                           {tTipo === 'Saída' ? (
                             <><option value="Aluguel">Aluguel</option><option value="Água">Água</option><option value="Energia">Energia</option><option value="Internet">Internet</option><option value="Compra de Material">Compra de Material</option><option value="Retirada (Salário)">Retirada (Meu Salário)</option><option value="Outros">Outras Despesas</option></>
                           ) : (
-                            <><option value="Investimento">Investimento (Aporte)</option><option value="Outros">Outras Entradas</option></>
+                            <><option value="Investimento">Investimento (Aporte)</option><option value="Mensalidade">Mensalidade</option><option value="Outros">Outras Entradas</option></>
                           )}
                         </select>
                       </div>
                       
                       <div>
                         <label className="text-xs font-semibold text-slate-600 ml-1">Descrição Breve</label>
-                        <input placeholder="Ex: Compra de cordas..." value={tDescricao} onChange={e => setTDescricao(e.target.value)} className={inputClass} />
+                        <input required disabled={isEditandoPagamento} placeholder="Ex: Compra de cordas..." value={tDescricao} onChange={e => setTDescricao(e.target.value)} className={inputClass} />
                       </div>
                       
                       <div>
@@ -432,7 +515,9 @@ export default function RelatorioFinanceiro() {
 
                 <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40">
                   <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setIsModalOpen(false)} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white`}>Cancelar</motion.button>
-                  <motion.button whileTap={{ scale: 0.95 }} type="submit" className="px-10 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-xl hover:shadow-emerald-500/30 transition-all">Salvar no Caixa</motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} type="submit" className="px-10 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-xl hover:shadow-emerald-500/30 transition-all">
+                    {editandoId ? 'Salvar Alterações' : 'Salvar no Caixa'}
+                  </motion.button>
                 </div>
               </form>
             </motion.div>
