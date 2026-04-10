@@ -42,7 +42,6 @@ export default function RelatorioFinanceiro() {
   const [tValor, setTValor] = useState('')
   const [tData, setTData] = useState(new Date().toISOString().split('T')[0])
 
-  // NOVOS ESTADOS: Filtro do Extrato e Edição
   const [filtroExtrato, setFiltroExtrato] = useState('Todos')
   const [editandoId, setEditandoId] = useState<string | null>(null)
 
@@ -66,13 +65,13 @@ export default function RelatorioFinanceiro() {
     allPagamentos?.forEach(p => caixaTotal += Number(p.valor)); 
     allTransacoes?.forEach(t => { if (t.tipo === 'Entrada') caixaTotal += Number(t.valor); if (t.tipo === 'Saída') caixaTotal -= Number(t.valor) })
 
-    const inicioMes = new Date(anoAtual, mesAtual - 1, 1).toISOString()
-    const fimMes = new Date(anoAtual, mesAtual, 0).toISOString()
+    // FIX: Filtragem por prefixo string para evitar bugs de fuso horário em dias 01 ou 31.
+    const prefixoMesAtual = `${anoAtual}-${String(mesAtual).padStart(2, '0')}`;
     
     const { data: alunos } = await supabase.from('profiles').select('id, nome_completo, telefone, alunos_info(valor_mensalidade, data_vencimento, status)').eq('role', 'ALUNO')
     
-    const pgsMes = allPagamentos?.filter(p => p.data_pagamento >= inicioMes && p.data_pagamento <= fimMes) || []
-    const transMes = allTransacoes?.filter(t => t.data_transacao >= inicioMes && t.data_transacao <= fimMes) || []
+    const pgsMes = allPagamentos?.filter(p => p.data_pagamento.startsWith(prefixoMesAtual)) || []
+    const transMes = allTransacoes?.filter(t => t.data_transacao.startsWith(prefixoMesAtual)) || []
 
     let entradasM = 0; let saidasM = 0; let pendentesTemp: any[] = []; let previsaoTotal = 0;
     pgsMes.forEach(pg => entradasM += Number(pg.valor))
@@ -84,10 +83,8 @@ export default function RelatorioFinanceiro() {
       
       previsaoTotal += Number(info.valor_mensalidade)
       
-      // Se não pagou este mês...
       if (!pgsMes.some(pg => pg.aluno_id === aluno.id)) {
         const venc = info.data_vencimento || 10; 
-        
         const status = diaAtual > venc ? 'Atrasado' : 'A Vencer'
         
         if (status === 'Atrasado') {
@@ -133,15 +130,13 @@ export default function RelatorioFinanceiro() {
     }
 
     allPagamentos?.forEach(p => {
-      const d = new Date(p.data_pagamento)
-      const mesStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const mesStr = p.data_pagamento.substring(0, 7) // Pega YYYY-MM direto da string
       const hist = historicoGrafico.find(h => h.mesStr === mesStr)
       if (hist) hist.Entradas += Number(p.valor)
     })
 
     allTransacoes?.forEach(t => {
-      const d = new Date(t.data_transacao)
-      const mesStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const mesStr = t.data_transacao.substring(0, 7) // Pega YYYY-MM direto da string
       const hist = historicoGrafico.find(h => h.mesStr === mesStr)
       if (hist) {
         if (t.tipo === 'Entrada') hist.Entradas += Number(t.valor)
@@ -165,7 +160,6 @@ export default function RelatorioFinanceiro() {
     setAlunosPendentes(pendentesTemp); setExtratoUnificado(extrato); setLoading(false)
   }
 
-  // FUNÇÕES DE AÇÃO
   const handleNovaMovimentacao = () => {
     setEditandoId(null)
     setTTipo('Saída')
@@ -182,7 +176,7 @@ export default function RelatorioFinanceiro() {
     setTCategoria(item.categoria)
     setTDescricao(item.descricao)
     setTValor(item.valor.toString())
-    setTData(item.data.split('T')[0]) // Formata para YYYY-MM-DD
+    setTData(item.data.split('T')[0])
     setIsModalOpen(true)
   }
 
@@ -237,7 +231,6 @@ export default function RelatorioFinanceiro() {
   const mesNome = new Date().toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
   const mesFormatado = mesNome.charAt(0).toUpperCase() + mesNome.slice(1)
 
-  // APLICANDO O FILTRO
   const extratoFiltrado = extratoUnificado.filter(item => 
     filtroExtrato === 'Todos' ? true : item.tipo === filtroExtrato
   )
@@ -245,7 +238,6 @@ export default function RelatorioFinanceiro() {
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show">
       
-      {/* CABEÇALHO LIMPO E MODERNO */}
       <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-slate-800">Financeiro</h2>
@@ -261,7 +253,6 @@ export default function RelatorioFinanceiro() {
         </div>
       </motion.div>
 
-      {/* CARDS DE RESUMO */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
         {[
           { color: 'cyan', icon: '🏦', label: 'Saldo Atual', value: resumo.saldoCaixa },
@@ -281,7 +272,6 @@ export default function RelatorioFinanceiro() {
         ))}
       </div>
 
-      {/* GRÁFICOS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] lg:col-span-2`}>
           <h3 className="text-xl font-bold tracking-tight mb-6 flex items-center gap-3 text-slate-800"><span className="text-cyan-500 drop-shadow-sm">📊</span> Fluxo de Caixa</h3>
@@ -325,10 +315,8 @@ export default function RelatorioFinanceiro() {
         </motion.div>
       </div>
 
-      {/* LISTAS: EXTRATO E PENDENTES */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* EXTRATO */}
         <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
           
           <div className="flex justify-between items-center mb-6">
@@ -380,7 +368,6 @@ export default function RelatorioFinanceiro() {
           </div>
         </motion.div>
 
-        {/* MENSALIDADES PENDENTES E A VENCER */}
         <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
           <h3 className="text-xl font-bold tracking-tight mb-6 flex items-center gap-3 text-slate-800"><span className="text-amber-500 drop-shadow-sm">⏳</span> Pendências</h3>
           <div className="space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
@@ -412,7 +399,6 @@ export default function RelatorioFinanceiro() {
         </motion.div>
       </div>
 
-      {/* MODAL: CONFIGURAÇÕES DE COBRANÇA */}
       <AnimatePresence>
         {isConfigModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -458,7 +444,6 @@ export default function RelatorioFinanceiro() {
         )}
       </AnimatePresence>
 
-      {/* MODAL: NOVA MOVIMENTAÇÃO */}
       <AnimatePresence>
         {isModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">

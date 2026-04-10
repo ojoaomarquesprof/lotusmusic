@@ -55,6 +55,9 @@ export default function PortalAluno() {
   const [selectedSlot, setSelectedSlot] = useState<any>(null)
   const [diaBloqueadoMsg, setDiaBloqueadoMsg] = useState<string | null>(null)
 
+  // ESTADO DE CRÉDITOS DE REPOSIÇÃO
+  const [creditos, setCreditos] = useState(0)
+
   useEffect(() => { setIsMounted(true) }, [])
 
   useEffect(() => { if (s.bg && s.bg.includes('950')) toggleTheme() }, [s.bg, toggleTheme])
@@ -72,9 +75,10 @@ export default function PortalAluno() {
 
   useEffect(() => { if (isMounted) carregarPortal() }, [isMounted])
 
+  // 🟢 CALENDÁRIO 60 DIAS A FRENTE
   useEffect(() => {
     const dias = []; const mapaDias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
-    for (let i = 1; i <= 15; i++) {
+    for (let i = 1; i <= 60; i++) {
       const d = new Date(); d.setDate(d.getDate() + i);
       if (d.getDay() !== 0) dias.push({ dataObj: d, dataString: d.toISOString().split('T')[0], diaSemana: mapaDias[d.getDay()], displayData: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) })
     }
@@ -162,6 +166,8 @@ export default function PortalAluno() {
       const { data: profs } = await supabase.from('profiles').select('id, nome_completo').in('id', profIds)
       aulasMapeadas = aulasMapeadas.map((aula: any) => ({ ...aula, professor_nome: profs?.find((p: any) => p.id === aula.professor_id)?.nome_completo || null }))
     }
+    
+    // Sort so repositions appear below fixed classes if they are in the same week, etc.
     setAulas(aulasMapeadas)
 
     const { data: solArr } = await supabase.from('solicitacoes_reagendamento').select('*').eq('aluno_id', session.user.id).eq('status', 'Pendente').order('criado_em', { ascending: false }).limit(1)
@@ -182,6 +188,12 @@ export default function PortalAluno() {
 
     const { data: hist } = await supabase.from('historico_aulas').select('*').eq('aluno_id', session.user.id).order('data_aula', { ascending: false }).limit(10)
     setHistorico(hist || [])
+
+    // CÁLCULO INTELIGENTE DE CRÉDITOS (Desmarcadas + Créditos Manuais)
+    const { data: histAll } = await supabase.from('historico_aulas').select('*').eq('aluno_id', session.user.id).order('data_aula', { ascending: false }).limit(200)
+    const qtdDesmarcadas = (histAll || []).filter(h => h.status === 'Desmarcada' || h.status === 'Crédito').length;
+    const qtdUsadas = (rep || []).filter((r: any) => r.status !== 'Negada').length; // Pedidos pendentes ou aprovados consomem crédito
+    setCreditos(Math.max(0, qtdDesmarcadas - qtdUsadas));
 
     const { data: allPgs } = await supabase.from('pagamentos').select('*').eq('aluno_id', session.user.id).order('data_pagamento', { ascending: false })
     setHistoricoPagamentos(allPgs || [])
@@ -241,7 +253,8 @@ export default function PortalAluno() {
       idAgendaPai = String(aulaParaMudar.id).startsWith('repo_') ? null : aulaParaMudar.id;
     }
 
-    if (!aulaParaMudar.is_reposicao) {
+    // Só desmarca a aula se NÃO estiver usando um crédito passado
+    if (!aulaParaMudar.is_reposicao && !aulaParaMudar.usando_credito) {
         const dStr = aulaParaMudar.data_original_desmarcada || new Date().toISOString().split('T')[0]; 
         await supabase.from('historico_aulas').delete().eq('aluno_id', aluno.id).eq('data_aula', dStr);
         await supabase.from('historico_aulas').insert([{
@@ -313,7 +326,6 @@ export default function PortalAluno() {
   if (loading && !aluno) return <div className={`min-h-screen bg-slate-50 flex justify-center items-center`}><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
   
   const infoFinanceira = Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info
-  const hojeDataStr = new Date().toISOString().split('T')[0]
   
   const notificacoesNaoLidas = todasNotificacoes.filter(n => !n.is_read)
   const notificacoesLidas = todasNotificacoes.filter(n => n.is_read)
@@ -366,6 +378,32 @@ export default function PortalAluno() {
           </motion.div>
         )}
 
+        {/* --- BANNER DE CRÉDITOS --- */}
+        {creditos > 0 && !solicitacaoPendente && (
+          <motion.div variants={itemVariants} className="bg-gradient-to-r from-indigo-500 to-cyan-500 p-[1px] rounded-[2rem] shadow-lg mb-6">
+            <div className="bg-white/10 backdrop-blur-md rounded-[31px] p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+               <div className="flex items-center gap-4">
+                 <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center text-2xl shadow-inner border border-white/30 text-white">🌟</div>
+                 <div>
+                    <h3 className="text-white font-bold text-lg leading-tight">Você tem {creditos} {creditos === 1 ? 'aula' : 'aulas'} para repor!</h3>
+                    <p className="text-white/80 text-xs font-medium mt-1">Escolha um horário e agende sua reposição.</p>
+                 </div>
+               </div>
+               <motion.button 
+                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                     const aulaBase = aulas.find(a => !a.is_reposicao);
+                     if(aulaBase) abrirModalReagendamento('Reposição', { ...aulaBase, usando_credito: true });
+                     else alert('Nenhuma aula fixa encontrada para basear a reposição.');
+                  }}
+                  className="w-full md:w-auto px-6 py-3 bg-white text-indigo-600 font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition-all"
+               >
+                  Agendar Reposição
+               </motion.button>
+            </div>
+          </motion.div>
+        )}
+
         <motion.section variants={itemVariants}>
           <h3 className="text-sm font-semibold text-slate-500 mb-3 ml-2 flex items-center gap-2 drop-shadow-sm"><span className="text-lg">🎯</span> Sua Próxima Aula</h3>
           {aulas.length === 0 ? (
@@ -387,25 +425,10 @@ export default function PortalAluno() {
               const statusAteProxima = historico.find(h => h.data_aula === dadosData.dataBaseString)?.status;
               const isDesmarcada = statusAteProxima === 'Desmarcada';
 
-              if (!aula.is_reposicao && (isDesmarcada || solicitacaoPendente)) {
-                const temReposicaoAtiva = todasReposicoes.some(rep => 
-                  String(rep.agenda_original_id) === String(aula.id) && 
-                  (rep.status === 'Pendente' || (rep.status === 'Aprovada' && rep.nova_data >= hojeDataStr))
-                );
-                if (temReposicaoAtiva) return null; 
-              }
-
-              if (aula.is_reposicao && (isDesmarcada || solicitacaoPendente)) {
-                 const isSubstituida = todasReposicoes.some(r => 
-                    String(r.agenda_original_id) === String(aula.agenda_original_id) && 
-                    String(r.id) !== String(aula.id_real) && 
-                    new Date(r.criado_em).getTime() > new Date(aula.criado_em).getTime()
-                 );
-                 if (isSubstituida) return null; 
-              }
-
               const canRescheduleInTime = checkCanReschedule(dadosData.dataBaseString, aula.horario_inicio);
-              const deveMostrarBotaoReagendar = !solicitacaoPendente && (isDesmarcada || canRescheduleInTime);
+              
+              // Se a aula já for reposição ou já foi cancelada (Desmarcada), escondemos o botão.
+              const deveMostrarBotaoReagendar = !solicitacaoPendente && !isDesmarcada && canRescheduleInTime && !aula.is_reposicao;
 
               return (
                 <motion.div whileHover={{ y: -4 }} key={aula.id} className={`bg-white/50 backdrop-blur-xl p-6 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border relative overflow-hidden group mb-4 transition-all ${isDesmarcada ? 'border-rose-400 opacity-90' : aula.is_reposicao ? 'border-amber-400' : 'border-white/60'}`}>
@@ -440,12 +463,11 @@ export default function PortalAluno() {
                     <motion.button 
                       whileTap={{ scale: 0.98 }} 
                       onClick={() => {
-                        if (!isDesmarcada && !window.confirm("Você está pedindo para reagendar uma aula confirmada. O professor precisará aprovar. Deseja continuar?")) return;
                         abrirModalReagendamento('Reposição', aula, dadosData.dataBaseString)
                       }} 
-                      className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 ${isDesmarcada ? 'bg-rose-500 text-white border-rose-600 hover:bg-rose-600' : 'bg-white/60 border border-white/80 text-slate-700 hover:bg-white'}`}
+                      className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 bg-white/60 border border-white/80 text-slate-700 hover:bg-white`}
                     >
-                      <span>📅</span> {isDesmarcada ? 'Escolher Nova Data' : 'Reagendar Aula'}
+                      <span>📅</span> Desmarcar e Reagendar
                     </motion.button>
                   )}
                 </motion.div>
