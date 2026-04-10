@@ -70,6 +70,7 @@ export default function PerfilAluno() {
     const { data: mats } = await supabase.from('materiais_aluno').select('*').eq('aluno_id', id).order('data_envio', { ascending: false })
     const { data: reposicoes } = await supabase.from('solicitacoes_reagendamento').select('*').eq('aluno_id', id)
     
+    // Calcula o saldo de créditos
     const qtdDesmarcadas = (hist || []).filter(h => h.status === 'Desmarcada' || h.status === 'Crédito' || h.status === 'Falta Justificada').length;
     const qtdUsadasPortal = (reposicoes || []).filter((r: any) => r.status !== 'Negada').length;
     const qtdUsadasManual = (hist || []).filter(h => h.status === 'Reposição' || h.status === 'Ajuste de Saldo').length;
@@ -99,7 +100,7 @@ export default function PerfilAluno() {
         instrumento_aula: a.instrumento_aula
       })))
     } else { 
-      setEditAgendas([{ id: 'new_'+Date.now(), dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
+      setEditAgendas([{ id: `new_${crypto.randomUUID()}`, dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
     }
     
     setIsEditModalOpen(true) 
@@ -115,7 +116,8 @@ export default function PerfilAluno() {
     }
     setEditAgendas(newAgendas);
   }
-  const addEditAgenda = () => setEditAgendas([...editAgendas, { id: 'new_' + Date.now(), dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
+  
+  const addEditAgenda = () => setEditAgendas([...editAgendas, { id: `new_${crypto.randomUUID()}`, dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
   const removeEditAgenda = (index: number) => setEditAgendas(editAgendas.filter((_, i) => i !== index))
   
   const handleEditCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const newCep = formatCEP(e.target.value); setEditCep(newCep); const cleanCep = newCep.replace(/\D/g, ''); if (cleanCep.length === 8) { try { const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`); const data = await res.json(); if (!data.erro) { setEditEndereco(data.logradouro || ''); setEditBairro(data.bairro || ''); setEditCidade(data.localidade || ''); setEditEstado(data.uf || ''); document.getElementById('edit-input-numero')?.focus() } } catch (error) { console.error("Erro CEP") } } }
@@ -228,8 +230,14 @@ export default function PerfilAluno() {
     doc.text(`Histórico de Aulas - ${aluno.nome_completo}`, 14, 15);
     const ultimoPagamento = pagamentos.length > 0 ? pagamentos[0].data_pagamento : null;
     let aulasFeitas = 0;
-    if (ultimoPagamento) { aulasFeitas = historicoAulas.filter(h => h.data_aula > ultimoPagamento && h.status === 'Realizada').length; } 
-    else { aulasFeitas = historicoAulas.filter(h => h.status === 'Realizada').length; }
+    
+    if (ultimoPagamento) { 
+      const dataPg = ultimoPagamento.split('T')[0];
+      aulasFeitas = historicoAulas.filter(h => h.data_aula.split('T')[0] >= dataPg && (h.status === 'Realizada' || h.status === 'Reposição')).length; 
+    } else { 
+      aulasFeitas = historicoAulas.filter(h => h.status === 'Realizada' || h.status === 'Reposição').length; 
+    }
+    
     doc.setFontSize(10);
     doc.text(`Aulas concluídas desde o último pagamento: ${aulasFeitas}`, 14, 25);
     const tableData = historicoAulas.map(h => [ new Date(h.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'}), h.horario_inicio ? `${h.horario_inicio.slice(0,5)} - ${h.horario_fim?.slice(0,5)}` : '--', h.status, h.observacoes || '--' ]);
@@ -251,6 +259,19 @@ export default function PerfilAluno() {
     });
     autoTable(doc, { startY: 25, head: [['Data', 'Valor', 'Forma', 'Situação']], body: tableData });
     doc.save(`Pagamentos_${aluno.nome_completo.split(' ')[0]}.pdf`);
+  }
+
+  // CÁLCULO DE AULAS DESDE O ÚLTIMO PAGAMENTO
+  const ultimoPagamentoObj = pagamentos.length > 0 ? pagamentos[0] : null;
+  let aulasDesdeUltimoPagamento = 0;
+  if (ultimoPagamentoObj) {
+    const dataPg = ultimoPagamentoObj.data_pagamento.split('T')[0];
+    aulasDesdeUltimoPagamento = historicoAulas.filter(h => {
+      const dataAula = h.data_aula.split('T')[0];
+      return dataAula >= dataPg && (h.status === 'Realizada' || h.status === 'Reposição');
+    }).length;
+  } else {
+    aulasDesdeUltimoPagamento = historicoAulas.filter(h => h.status === 'Realizada' || h.status === 'Reposição').length;
   }
 
   const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
@@ -307,6 +328,18 @@ export default function PerfilAluno() {
               <div className="flex gap-2">
                 <motion.button whileTap={{ scale: 0.95 }} onClick={handleRemoverCredito} disabled={isSubmitting || saldoCreditos <= 0} className="h-10 w-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center font-bold text-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm disabled:opacity-50" title="Abater Crédito Manualmente">-</motion.button>
                 <motion.button whileTap={{ scale: 0.95 }} onClick={handleConcederCredito} disabled={isSubmitting} className="h-10 w-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center font-bold text-xl hover:bg-indigo-500 hover:text-white transition-all shadow-sm disabled:opacity-50" title="Conceder Crédito Manual">+</motion.button>
+              </div>
+            </div>
+
+            {/* NOVO CARD: AULAS DESDE O ÚLTIMO PAGAMENTO */}
+            <div className={`p-5 rounded-2xl bg-white/40 border border-white/80 shadow-inner mb-4 flex justify-between items-center`}>
+              <div className="text-left">
+                <p className={`text-slate-500 text-[10px] font-semibold uppercase mb-1 flex items-center gap-1`}><span className="text-lg">🎼</span> Ciclo de Aulas</p>
+                <p className="text-2xl font-bold tracking-tight text-indigo-600">{aulasDesdeUltimoPagamento} <span className="text-sm font-medium text-slate-500">feitas</span></p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Desde o</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">último pagto</p>
               </div>
             </div>
             
@@ -462,7 +495,7 @@ export default function PerfilAluno() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[60]">
             <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col items-center`}>
               <h3 className="text-xl font-bold tracking-tight mb-6 text-slate-800">Ajustar Foto</h3>
-              <div className="relative w-full h-64 bg-slate-900/5 backdrop-blur-inner rounded-2xl overflow-hidden mb-6 shadow-inner"><Cropper image={imageToCrop} crop={crop} zoom={zoom} aspect={1} cropShape="round" showGrid={false} onCropChange={setCrop} onCropComplete={(cA, cAP) => setCroppedAreaPixels(cAP)} onZoomChange={setZoom} /></div>
+              <div className="relative w-full h-64 bg-slate-900/5 backdrop-blur-inner rounded-2xl overflow-hidden mb-6 shadow-inner"><Cropper image={imageToCrop} crop={crop} zoom={zoom} aspect={1} showGrid={false} onCropChange={setCrop} onCropComplete={(cA, cAP) => setCroppedAreaPixels(cAP)} onZoomChange={setZoom} /></div>
               <div className="w-full mb-8"><label className="text-xs font-semibold text-slate-500 block mb-2 text-center">Zoom da Imagem</label><input type="range" min={1} max={3} step={0.1} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="w-full accent-indigo-500" /></div>
               <div className="flex gap-3 w-full">
                 <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowCropModal(false)} className={`flex-1 py-4 rounded-2xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white`}>Cancelar</motion.button>
