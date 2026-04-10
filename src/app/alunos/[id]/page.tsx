@@ -53,7 +53,9 @@ export default function PerfilAluno() {
   const [msgTitulo, setMsgTitulo] = useState('Aviso da Secretaria')
   const [msgTexto, setMsgTexto] = useState('')
 
-  // NOVO: Controle de Saldo
+  const [isClassDetailsModalOpen, setIsClassDetailsModalOpen] = useState(false)
+  const [selectedClassDetails, setSelectedClassDetails] = useState<any>(null)
+
   const [saldoCreditos, setSaldoCreditos] = useState(0)
 
   useEffect(() => { setIsMounted(true) }, [])
@@ -68,10 +70,10 @@ export default function PerfilAluno() {
     const { data: mats } = await supabase.from('materiais_aluno').select('*').eq('aluno_id', id).order('data_envio', { ascending: false })
     const { data: reposicoes } = await supabase.from('solicitacoes_reagendamento').select('*').eq('aluno_id', id)
     
-    // Calcula o saldo de créditos (Desmarcadas + Créditos Manuais)
-    const qtdDesmarcadas = (hist || []).filter(h => h.status === 'Desmarcada' || h.status === 'Crédito').length;
-    const qtdUsadas = (reposicoes || []).filter((r: any) => r.status !== 'Negada').length;
-    setSaldoCreditos(Math.max(0, qtdDesmarcadas - qtdUsadas));
+    const qtdDesmarcadas = (hist || []).filter(h => h.status === 'Desmarcada' || h.status === 'Crédito' || h.status === 'Falta Justificada').length;
+    const qtdUsadasPortal = (reposicoes || []).filter((r: any) => r.status !== 'Negada').length;
+    const qtdUsadasManual = (hist || []).filter(h => h.status === 'Reposição' || h.status === 'Ajuste de Saldo').length;
+    setSaldoCreditos(Math.max(0, qtdDesmarcadas - (qtdUsadasPortal + qtdUsadasManual)));
 
     const { data: pL } = await supabase.from('profiles').select('id, nome_completo').in('role', ['PROFESSOR', 'ADMIN'])
     const { data: sL } = await supabase.from('salas').select('id, nome')
@@ -186,23 +188,41 @@ export default function PerfilAluno() {
     setIsMsgModalOpen(false); setMsgTexto(''); setIsSubmitting(false);
   }
 
-  // NOVO: Adicionar Crédito Manual
   const handleConcederCredito = async () => {
-    if (!window.confirm("Deseja adicionar 1 crédito de reposição manual para este aluno? (Isso aparecerá no portal dele)")) return;
+    if (!window.confirm("Deseja adicionar 1 crédito manual (Aparecerá no portal dele)?")) return;
     setIsSubmitting(true);
     const hojeStr = new Date().toISOString().split('T')[0];
-    await supabase.from('historico_aulas').insert([{
-        aluno_id: id,
-        data_aula: hojeStr,
-        status: 'Crédito', // O sistema no portal soma tudo que é "Desmarcada" e "Crédito"
-        observacoes: 'Crédito extra concedido manualmente.'
-    }]);
-    alert("✅ Crédito adicionado com sucesso!");
+    await supabase.from('historico_aulas').insert([{ aluno_id: id, data_aula: hojeStr, status: 'Crédito', observacoes: 'Crédito extra concedido manualmente.' }]);
+    alert("✅ Crédito adicionado!");
     carregarDados();
     setIsSubmitting(false);
   }
 
-  // LÓGICA DE PDF AULAS
+  const handleRemoverCredito = async () => {
+    if (saldoCreditos <= 0) return alert("O aluno não possui saldo para remover.");
+    if (!window.confirm("Deseja abater 1 crédito do saldo deste aluno?")) return;
+    setIsSubmitting(true);
+    const hojeStr = new Date().toISOString().split('T')[0];
+    await supabase.from('historico_aulas').insert([{ aluno_id: id, data_aula: hojeStr, status: 'Ajuste de Saldo', observacoes: 'Crédito removido manualmente (abate).' }]);
+    alert("✅ Saldo ajustado com sucesso!");
+    carregarDados();
+    setIsSubmitting(false);
+  }
+
+  const handleExcluirAulaHistorico = async (idAula: string) => {
+    if (!window.confirm("🚨 Tem certeza que deseja apagar este registro do diário? Se for uma aula que gerou crédito, o saldo será recalculado automaticamente.")) return;
+    setIsSubmitting(true);
+    await supabase.from('historico_aulas').delete().eq('id', idAula);
+    setIsClassDetailsModalOpen(false);
+    carregarDados();
+    setIsSubmitting(false);
+  }
+
+  const abrirDetalhesAula = (aula: any) => {
+    setSelectedClassDetails(aula);
+    setIsClassDetailsModalOpen(true);
+  }
+
   const gerarPdfAulas = () => {
     const doc = new jsPDF();
     doc.text(`Histórico de Aulas - ${aluno.nome_completo}`, 14, 15);
@@ -217,7 +237,6 @@ export default function PerfilAluno() {
     doc.save(`Aulas_${aluno.nome_completo.split(' ')[0]}.pdf`);
   }
 
-  // LÓGICA DE PDF PAGAMENTOS
   const gerarPdfPagamentos = () => {
     const doc = new jsPDF();
     doc.text(`Histórico de Pagamentos - ${aluno.nome_completo}`, 14, 15);
@@ -285,7 +304,10 @@ export default function PerfilAluno() {
                 <p className={`text-slate-500 text-[10px] font-semibold uppercase mb-1 flex items-center gap-1`}><span className="text-lg">🌟</span> Créditos de Reposição</p>
                 <p className="text-2xl font-bold tracking-tight text-indigo-600">{saldoCreditos} Saldo</p>
               </div>
-              <motion.button whileTap={{ scale: 0.95 }} onClick={handleConcederCredito} disabled={isSubmitting} className="h-10 w-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center font-bold text-xl hover:bg-indigo-500 hover:text-white transition-all shadow-sm disabled:opacity-50" title="Conceder Crédito Manual">+</motion.button>
+              <div className="flex gap-2">
+                <motion.button whileTap={{ scale: 0.95 }} onClick={handleRemoverCredito} disabled={isSubmitting || saldoCreditos <= 0} className="h-10 w-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center font-bold text-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm disabled:opacity-50" title="Abater Crédito Manualmente">-</motion.button>
+                <motion.button whileTap={{ scale: 0.95 }} onClick={handleConcederCredito} disabled={isSubmitting} className="h-10 w-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center font-bold text-xl hover:bg-indigo-500 hover:text-white transition-all shadow-sm disabled:opacity-50" title="Conceder Crédito Manual">+</motion.button>
+              </div>
             </div>
             
             <div className={`p-5 rounded-2xl bg-white/40 border border-white/80 shadow-inner mb-6`}>
@@ -332,15 +354,18 @@ export default function PerfilAluno() {
               </div>
             </div>
             <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
-              {historicoAulas.map(hist => (
-                <div key={hist.id} className={`bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/80 shadow-sm flex flex-col gap-2 ${hist.status === 'Agendada' ? 'border-l-4 border-l-blue-400' : ''} ${hist.status === 'Crédito' ? 'border-l-4 border-l-purple-400' : ''}`}>
-                  <div className="flex justify-between items-center">
-                    <p className="font-bold text-sm text-slate-800">{new Date(hist.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})} {hist.horario_inicio && <span className={`text-slate-500 font-medium text-[11px] ml-3`}>⏰ {hist.horario_inicio.slice(0, 5)} - {hist.horario_fim?.slice(0, 5)}</span>}</p>
-                    <span className={`px-3 py-1 rounded-lg text-[10px] font-bold border shadow-sm ${hist.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : hist.status === 'Falta' ? 'bg-rose-50 text-rose-600 border-rose-200' : hist.status === 'Crédito' ? 'bg-purple-50 text-purple-600 border-purple-200' : hist.status === 'Agendada' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>{hist.status}</span>
+              {historicoAulas.map(hist => {
+                const isAjuste = hist.status === 'Ajuste de Saldo';
+                return (
+                  <div key={hist.id} onClick={() => abrirDetalhesAula(hist)} className={`bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/80 shadow-sm flex flex-col gap-2 cursor-pointer hover:bg-white/80 transition-all ${hist.status === 'Agendada' ? 'border-l-4 border-l-blue-400' : ''} ${(hist.status === 'Crédito' || hist.status === 'Falta Justificada') ? 'border-l-4 border-l-purple-400' : ''} ${isAjuste ? 'border-l-4 border-l-slate-400' : ''}`}>
+                    <div className="flex justify-between items-center">
+                      <p className="font-bold text-sm text-slate-800">{new Date(hist.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})} {hist.horario_inicio && <span className={`text-slate-500 font-medium text-[11px] ml-3`}>⏰ {hist.horario_inicio.slice(0, 5)} - {hist.horario_fim?.slice(0, 5)}</span>}</p>
+                      <span className={`px-3 py-1 rounded-lg text-[10px] font-bold border shadow-sm ${hist.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : (hist.status === 'Falta' || hist.status === 'Falta Injustificada') ? 'bg-rose-50 text-rose-600 border-rose-200' : (hist.status === 'Crédito' || hist.status === 'Falta Justificada') ? 'bg-purple-50 text-purple-600 border-purple-200' : isAjuste ? 'bg-slate-50 text-slate-600 border-slate-200' : hist.status === 'Agendada' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>{hist.status}</span>
+                    </div>
+                    {hist.observacoes && <p className={`text-slate-600 text-xs bg-white/50 p-3 rounded-xl border border-white/60 mt-1 shadow-inner`}>"{hist.observacoes}"</p>}
                   </div>
-                  {hist.observacoes && <p className={`text-slate-600 text-xs bg-white/50 p-3 rounded-xl border border-white/60 mt-1 shadow-inner`}>"{hist.observacoes}"</p>}
-                </div>
-              ))}
+                )
+              })}
               {historicoAulas.length === 0 && <p className={`text-slate-500 text-center py-8 italic text-sm border border-dashed border-slate-300 rounded-2xl bg-white/30`}>Nenhuma aula registrada.</p>}
             </div>
           </motion.div>
@@ -540,10 +565,12 @@ export default function PerfilAluno() {
                   <select required value={statusAula} onChange={e => setStatusAula(e.target.value)} className={inputClass}>
                     <option value="Realizada">Realizada ✅</option>
                     <option value="Agendada">Agendada (Futura) 📅</option>
-                    <option value="Falta">Falta ❌</option>
+                    <option value="Falta Injustificada">Falta Injustificada ❌</option>
+                    <option value="Falta Justificada">Falta Justificada ⚖️</option>
                     <option value="Desmarcada">Desmarcada 🔄</option>
                     <option value="Reposição">Reposição 🌟</option>
                     <option value="Crédito">Crédito (Apenas Injeta Saldo) 🎟️</option>
+                    <option value="Ajuste de Saldo">Ajuste de Saldo (Remove 1 Crédito) ➖</option>
                   </select>
                 </div>
                 <div>
@@ -700,6 +727,42 @@ export default function PerfilAluno() {
                   <motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-sm shadow-md hover:bg-indigo-500 transition-all disabled:opacity-50">{isSubmitting ? 'Salvando...' : 'Salvar Alterações'}</motion.button>
                 </div>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* NOVO MODAL: DETALHES DA AULA COM BOTÃO DE EXCLUIR */}
+      <AnimatePresence>
+        {isClassDetailsModalOpen && selectedClassDetails && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[90]">
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>📝</span> Resumo da Aula</h2>
+                <div className="flex gap-2">
+                    <button onClick={() => handleExcluirAulaHistorico(selectedClassDetails.id)} disabled={isSubmitting} className="h-10 w-10 bg-rose-50 text-rose-500 border border-rose-100 rounded-xl font-bold flex items-center justify-center hover:bg-rose-500 hover:text-white shadow-sm transition-all disabled:opacity-50" title="Apagar Registro do Diário">🗑️</button>
+                    <button onClick={() => setIsClassDetailsModalOpen(false)} disabled={isSubmitting} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-xl font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all disabled:opacity-50">✖</button>
+                </div>
+              </div>
+              
+              <div className="overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
+                  <div className="flex items-center gap-4 mb-6">
+                      <div className={`h-14 w-14 rounded-full flex items-center justify-center text-2xl shadow-inner flex-shrink-0 ${selectedClassDetails.status === 'Realizada' || selectedClassDetails.status === 'Reposição' ? 'bg-emerald-50 text-emerald-600' : selectedClassDetails.status === 'Desmarcada' || selectedClassDetails.status === 'Falta' || selectedClassDetails.status === 'Falta Injustificada' ? 'bg-rose-50 text-rose-600' : selectedClassDetails.status === 'Crédito' || selectedClassDetails.status === 'Falta Justificada' ? 'bg-purple-50 text-purple-600' : selectedClassDetails.status === 'Ajuste de Saldo' ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-600'}`}>
+                          {selectedClassDetails.status === 'Realizada' || selectedClassDetails.status === 'Reposição' ? '✓' : selectedClassDetails.status === 'Desmarcada' || selectedClassDetails.status === 'Falta' || selectedClassDetails.status === 'Falta Injustificada' ? '✖' : selectedClassDetails.status === 'Ajuste de Saldo' ? '➖' : '📅'}
+                      </div>
+                      <div>
+                          <p className="font-bold text-xl text-slate-800 tracking-tight">{new Date(selectedClassDetails.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
+                          <p className={`text-sm font-bold mt-0.5 ${selectedClassDetails.status === 'Realizada' || selectedClassDetails.status === 'Reposição' ? 'text-emerald-600' : selectedClassDetails.status === 'Desmarcada' || selectedClassDetails.status === 'Falta' || selectedClassDetails.status === 'Falta Injustificada' ? 'text-rose-600' : selectedClassDetails.status === 'Crédito' || selectedClassDetails.status === 'Falta Justificada' ? 'text-purple-600' : selectedClassDetails.status === 'Ajuste de Saldo' ? 'text-slate-600' : 'text-amber-600'}`}>{selectedClassDetails.status}</p>
+                      </div>
+                  </div>
+
+                  <div className="bg-white/60 border border-white/80 p-5 rounded-2xl shadow-sm">
+                      <p className="text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-1"><span>✏️</span> Anotações do Professor</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">
+                          {selectedClassDetails.observacoes || "Nenhuma anotação registrada para este lançamento."}
+                      </p>
+                  </div>
+              </div>
             </motion.div>
           </motion.div>
         )}

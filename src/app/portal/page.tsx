@@ -167,7 +167,6 @@ export default function PortalAluno() {
       aulasMapeadas = aulasMapeadas.map((aula: any) => ({ ...aula, professor_nome: profs?.find((p: any) => p.id === aula.professor_id)?.nome_completo || null }))
     }
     
-    // Sort so repositions appear below fixed classes if they are in the same week, etc.
     setAulas(aulasMapeadas)
 
     const { data: solArr } = await supabase.from('solicitacoes_reagendamento').select('*').eq('aluno_id', session.user.id).eq('status', 'Pendente').order('criado_em', { ascending: false }).limit(1)
@@ -189,11 +188,12 @@ export default function PortalAluno() {
     const { data: hist } = await supabase.from('historico_aulas').select('*').eq('aluno_id', session.user.id).order('data_aula', { ascending: false }).limit(10)
     setHistorico(hist || [])
 
-    // CÁLCULO INTELIGENTE DE CRÉDITOS (Desmarcadas + Créditos Manuais)
+    // CÁLCULO INTELIGENTE DE CRÉDITOS (Desmarcadas + Falta Justificada + Créditos Manuais)
     const { data: histAll } = await supabase.from('historico_aulas').select('*').eq('aluno_id', session.user.id).order('data_aula', { ascending: false }).limit(200)
-    const qtdDesmarcadas = (histAll || []).filter(h => h.status === 'Desmarcada' || h.status === 'Crédito').length;
-    const qtdUsadas = (rep || []).filter((r: any) => r.status !== 'Negada').length; // Pedidos pendentes ou aprovados consomem crédito
-    setCreditos(Math.max(0, qtdDesmarcadas - qtdUsadas));
+    const qtdDesmarcadas = (histAll || []).filter(h => h.status === 'Desmarcada' || h.status === 'Crédito' || h.status === 'Falta Justificada').length;
+    const qtdUsadasPortal = (rep || []).filter((r: any) => r.status !== 'Negada').length; 
+    const qtdUsadasManual = (histAll || []).filter(h => h.status === 'Reposição' || h.status === 'Ajuste de Saldo').length;
+    setCreditos(Math.max(0, qtdDesmarcadas - (qtdUsadasPortal + qtdUsadasManual)));
 
     const { data: allPgs } = await supabase.from('pagamentos').select('*').eq('aluno_id', session.user.id).order('data_pagamento', { ascending: false })
     setHistoricoPagamentos(allPgs || [])
@@ -423,11 +423,11 @@ export default function PortalAluno() {
               }
               
               const statusAteProxima = historico.find(h => h.data_aula === dadosData.dataBaseString)?.status;
-              const isDesmarcada = statusAteProxima === 'Desmarcada';
+              const isDesmarcada = statusAteProxima === 'Desmarcada' || statusAteProxima === 'Falta Justificada';
 
               const canRescheduleInTime = checkCanReschedule(dadosData.dataBaseString, aula.horario_inicio);
               
-              // Se a aula já for reposição ou já foi cancelada (Desmarcada), escondemos o botão.
+              // Se a aula já for reposição ou já foi cancelada, escondemos o botão.
               const deveMostrarBotaoReagendar = !solicitacaoPendente && !isDesmarcada && canRescheduleInTime && !aula.is_reposicao;
 
               return (
@@ -517,22 +517,25 @@ export default function PortalAluno() {
         <motion.section variants={itemVariants}>
           <h3 className="text-sm font-semibold text-slate-500 mb-3 ml-2 flex items-center gap-2 drop-shadow-sm"><span className="text-lg">📖</span> Diário de Aulas</h3>
           <div className="bg-white/50 backdrop-blur-xl rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border border-white/60 p-2 space-y-2">
-            {historico.length === 0 ? <p className="p-6 text-center text-sm font-medium text-slate-500">Nenhum registro.</p> : historico.map(h => (
-              <motion.div whileTap={{ scale: 0.98 }} onClick={() => abrirDetalhesAula(h)} key={h.id} className="p-4 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all cursor-pointer group">
-                <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-full flex items-center justify-center text-lg shadow-inner ${h.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600' : h.status === 'Desmarcada' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
-                    {h.status === 'Realizada' ? '✓' : h.status === 'Desmarcada' ? '✖' : '📅'}
+            {historico.length === 0 ? <p className="p-6 text-center text-sm font-medium text-slate-500">Nenhum registro.</p> : historico.map(h => {
+              const isAjuste = h.status === 'Ajuste de Saldo';
+              return (
+                <motion.div whileTap={{ scale: 0.98 }} onClick={() => abrirDetalhesAula(h)} key={h.id} className={`p-4 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all cursor-pointer group ${isAjuste ? 'opacity-80' : ''}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center text-lg shadow-inner ${(h.status === 'Realizada' || h.status === 'Reposição') ? 'bg-emerald-50 text-emerald-600' : (h.status === 'Desmarcada' || h.status === 'Falta' || h.status === 'Falta Injustificada') ? 'bg-rose-50 text-rose-600' : (h.status === 'Crédito' || h.status === 'Falta Justificada') ? 'bg-purple-50 text-purple-600' : isAjuste ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-600'}`}>
+                      {(h.status === 'Realizada' || h.status === 'Reposição') ? '✓' : (h.status === 'Desmarcada' || h.status === 'Falta' || h.status === 'Falta Injustificada') ? '✖' : isAjuste ? '➖' : '📅'}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-slate-800">{new Date(h.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
+                      <p className="text-[11px] font-semibold text-slate-500 mt-0.5">{h.status}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold text-sm text-slate-800">{new Date(h.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
-                    <p className="text-[11px] font-semibold text-slate-500 mt-0.5">{h.status}</p>
+                  <div className="text-slate-400 opacity-60 group-hover:opacity-100 transition-opacity">
+                      <span className="text-xl">👁️</span>
                   </div>
-                </div>
-                <div className="text-slate-400 opacity-60 group-hover:opacity-100 transition-opacity">
-                    <span className="text-xl">👁️</span>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              )
+            })}
           </div>
         </motion.section>
 
@@ -784,19 +787,19 @@ export default function PortalAluno() {
               
               <div className="overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
                   <div className="flex items-center gap-4 mb-6">
-                      <div className={`h-14 w-14 rounded-full flex items-center justify-center text-2xl shadow-inner flex-shrink-0 ${selectedClassDetails.status === 'Realizada' ? 'bg-emerald-50 text-emerald-600' : selectedClassDetails.status === 'Desmarcada' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
-                          {selectedClassDetails.status === 'Realizada' ? '✓' : selectedClassDetails.status === 'Desmarcada' ? '✖' : '📅'}
+                      <div className={`h-14 w-14 rounded-full flex items-center justify-center text-2xl shadow-inner flex-shrink-0 ${selectedClassDetails.status === 'Realizada' || selectedClassDetails.status === 'Reposição' ? 'bg-emerald-50 text-emerald-600' : selectedClassDetails.status === 'Desmarcada' || selectedClassDetails.status === 'Falta' || selectedClassDetails.status === 'Falta Injustificada' ? 'bg-rose-50 text-rose-600' : selectedClassDetails.status === 'Crédito' || selectedClassDetails.status === 'Falta Justificada' ? 'bg-purple-50 text-purple-600' : selectedClassDetails.status === 'Ajuste de Saldo' ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-600'}`}>
+                          {selectedClassDetails.status === 'Realizada' || selectedClassDetails.status === 'Reposição' ? '✓' : selectedClassDetails.status === 'Desmarcada' || selectedClassDetails.status === 'Falta' || selectedClassDetails.status === 'Falta Injustificada' ? '✖' : selectedClassDetails.status === 'Ajuste de Saldo' ? '➖' : '📅'}
                       </div>
                       <div>
                           <p className="font-bold text-xl text-slate-800 tracking-tight">{new Date(selectedClassDetails.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
-                          <p className={`text-sm font-bold mt-0.5 ${selectedClassDetails.status === 'Realizada' ? 'text-emerald-600' : selectedClassDetails.status === 'Desmarcada' ? 'text-rose-600' : 'text-amber-600'}`}>{selectedClassDetails.status}</p>
+                          <p className={`text-sm font-bold mt-0.5 ${selectedClassDetails.status === 'Realizada' || selectedClassDetails.status === 'Reposição' ? 'text-emerald-600' : selectedClassDetails.status === 'Desmarcada' || selectedClassDetails.status === 'Falta' || selectedClassDetails.status === 'Falta Injustificada' ? 'text-rose-600' : selectedClassDetails.status === 'Crédito' || selectedClassDetails.status === 'Falta Justificada' ? 'text-purple-600' : selectedClassDetails.status === 'Ajuste de Saldo' ? 'text-slate-600' : 'text-amber-600'}`}>{selectedClassDetails.status}</p>
                       </div>
                   </div>
 
                   <div className="bg-white/60 border border-white/80 p-5 rounded-2xl shadow-sm">
                       <p className="text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-1"><span>✏️</span> Anotações do Professor</p>
                       <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">
-                          {selectedClassDetails.observacoes || "Nenhuma anotação registrada para esta aula."}
+                          {selectedClassDetails.observacoes || "Nenhuma anotação registrada para este lançamento."}
                       </p>
                   </div>
               </div>
