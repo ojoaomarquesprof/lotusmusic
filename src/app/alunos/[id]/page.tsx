@@ -133,10 +133,53 @@ export default function PerfilAluno() {
         return alert("Preencha modalidade, sala e professor de TODOS os horários de aula.");
       }
 
+      const conflitoNoFormulario = editAgendas.find((ag, index) =>
+        editAgendas.some((outraAgenda, outroIndex) =>
+          index !== outroIndex &&
+          ag.dia === outraAgenda.dia &&
+          (ag.professor_id === outraAgenda.professor_id || String(ag.sala_id) === String(outraAgenda.sala_id)) &&
+          ag.horario_inicio < outraAgenda.horario_fim &&
+          ag.horario_fim > outraAgenda.horario_inicio
+        )
+      );
+
+      if (conflitoNoFormulario) {
+        setIsSubmitting(false);
+        return alert(`🚨 CONFLITO DE AGENDA: O professor ou sala já está ocupado no dia ${conflitoNoFormulario.dia} às ${conflitoNoFormulario.horario_inicio}.`);
+      }
+
+      const { data: alunosAtivos, error: alunosAtivosError } = await supabase
+        .from('alunos_info')
+        .select('id')
+        .eq('status', 'Ativo')
+        .neq('id', String(id));
+
+      if (alunosAtivosError) {
+        console.error('Erro ao validar alunos ativos:', alunosAtivosError);
+        setIsSubmitting(false);
+        return alert('Não foi possível validar os conflitos de agenda. Tente novamente.');
+      }
+
+      const idsAlunosAtivos = (alunosAtivos || []).map(alunoAtivo => alunoAtivo.id);
+
       for (let ag of editAgendas) {
-        let query = supabase.from('agenda').select('id').eq('dia', ag.dia).or(`professor_id.eq.${ag.professor_id},sala_id.eq.${ag.sala_id}`).lt('horario_inicio', ag.horario_fim).gt('horario_fim', ag.horario_inicio); 
-        if (!String(ag.id).startsWith('new_')) query = query.neq('id', ag.id); 
-        const { data: conflitos } = await query; 
+        if (idsAlunosAtivos.length === 0) break;
+
+        const { data: conflitos, error: conflitosError } = await supabase
+          .from('agenda')
+          .select('id')
+          .in('aluno_id', idsAlunosAtivos)
+          .eq('dia', ag.dia)
+          .or(`professor_id.eq.${ag.professor_id},sala_id.eq.${ag.sala_id}`)
+          .lt('horario_inicio', ag.horario_fim)
+          .gt('horario_fim', ag.horario_inicio);
+
+        if (conflitosError) {
+          console.error('Erro ao validar conflitos de agenda:', conflitosError);
+          setIsSubmitting(false);
+          return alert('Não foi possível validar os conflitos de agenda. Tente novamente.');
+        }
+
         if (conflitos && conflitos.length > 0) { 
           setIsSubmitting(false); 
           return alert(`🚨 CONFLITO DE AGENDA: O professor ou sala já está ocupado no dia ${ag.dia} às ${ag.horario_inicio}.`) 
