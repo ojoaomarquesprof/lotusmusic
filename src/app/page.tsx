@@ -5,6 +5,14 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { useStyles } from '../lib/useStyles'
 import { motion, AnimatePresence } from 'framer-motion'
+import {
+  BellRing,
+  BookOpenCheck,
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  Mic2,
+} from 'lucide-react'
 
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }
 const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }
@@ -337,38 +345,39 @@ export default function Dashboard() {
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full">
       <motion.div variants={itemVariants} className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-6">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-800">Painel Central</h2>
-          <p className="text-slate-500 text-sm mt-1">Gestão de grade e controle em tempo real</p>
+          <div className="premium-kicker mb-2">Operação diária</div>
+          <h2 className="text-3xl font-semibold tracking-tight text-slate-900">Visão geral</h2>
+          <p className="text-slate-500 text-sm mt-1">Agenda, pendências e solicitações em um único painel.</p>
         </div>
 
         <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
           
           <div className="flex gap-2 w-full md:w-auto">
             <motion.button 
-              whileHover={{ scale: 1.05 }} 
-              whileTap={{ scale: 0.95 }} 
+              whileHover={{ y: -1 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => setIsSolicitacoesModalOpen(true)}
-              className={`relative flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2.5 rounded-2xl shadow-sm border transition-all font-black text-[10px] md:text-xs tracking-widest uppercase ${solicitacoes.length > 0 ? 'bg-indigo-100 border-indigo-300 text-indigo-800 hover:bg-indigo-200' : 'bg-white/60 border-white/80 text-slate-600 hover:bg-white'}`}
+              className={`relative flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2.5 rounded-xl border transition-all font-semibold text-xs ${solicitacoes.length > 0 ? 'bg-[#e7efe9] border-[#cbdad0] text-[#1f4a3a]' : 'bg-white border-[#dfded7] text-slate-600 hover:border-slate-300'}`}
             >
-              <span className="text-lg drop-shadow-sm">🛎️</span>
+              <BellRing size={16} strokeWidth={1.8} />
               <span className="hidden md:inline">Solicitações</span>
               {solicitacoes.length > 0 && (
-                <span className="absolute -top-2 -right-2 h-6 w-6 bg-indigo-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-bounce">
+                <span className="absolute -top-2 -right-2 h-6 w-6 bg-[#1f4a3a] text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm">
                   {solicitacoes.length}
                 </span>
               )}
             </motion.button>
 
             <motion.button 
-              whileHover={{ scale: 1.05 }} 
-              whileTap={{ scale: 0.95 }} 
+              whileHover={{ y: -1 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => setIsDiarioModalOpen(true)}
-              className={`relative flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2.5 rounded-2xl shadow-sm border transition-all font-black text-[10px] md:text-xs tracking-widest uppercase ${aulasPendentesBaixa.length > 0 ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200' : 'bg-white/60 border-white/80 text-slate-600 hover:bg-white'}`}
+              className={`relative flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2.5 rounded-xl border transition-all font-semibold text-xs ${aulasPendentesBaixa.length > 0 ? 'bg-[#f4eadc] border-[#e4cfb2] text-[#76562e]' : 'bg-white border-[#dfded7] text-slate-600 hover:border-slate-300'}`}
             >
-              <span className="text-lg drop-shadow-sm">📖</span>
+              <BookOpenCheck size={16} strokeWidth={1.8} />
               <span className="hidden md:inline">Diário de Aula</span>
               {aulasPendentesBaixa.length > 0 && (
-                <span className="absolute -top-2 -right-2 h-6 w-6 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-bounce">
+                <span className="absolute -top-2 -right-2 h-6 w-6 bg-[#b98b4f] text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm">
                   {aulasPendentesBaixa.length}
                 </span>
               )}
@@ -387,14 +396,14 @@ export default function Dashboard() {
           <AnimatePresence>
             {viewMode === 'semana' && (
               <motion.div initial={{ opacity: 0, scale: 0.9, x: 20 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 20 }} className={`flex items-center p-2 rounded-2xl bg-white/40 backdrop-blur-md border border-white/60 shadow-[0_4px_20px_rgba(0,0,0,0.05)] gap-2 w-full md:w-auto justify-center shrink-0`}>
-                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={semanaAnterior} className={`p-3 rounded-xl bg-white/50 border border-white/50 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all font-black shadow-sm`}>⬅</motion.button>
+                <motion.button aria-label="Semana anterior" whileTap={{ scale: 0.96 }} onClick={semanaAnterior} className="p-3 rounded-xl bg-white border border-[#dfded7] hover:border-[#1f4a3a]/40 hover:bg-[#e7efe9] transition-all text-[#1f4a3a]"><ChevronLeft size={17} /></motion.button>
                 <div className="w-40 text-center cursor-pointer" onClick={semanaAtual} title="Voltar para hoje">
                   <p className="font-bold text-slate-800 uppercase tracking-widest text-[10px] md:text-xs drop-shadow-sm whitespace-nowrap">
                     {diasVisuais[0].display} <span className="opacity-50 text-slate-500">até</span> {diasVisuais[5].display}
                   </p>
                   <p className={`text-slate-500 text-[8px] md:text-[9px] uppercase font-bold mt-0.5`}>Semana Selecionada</p>
                 </div>
-                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={proximaSemana} className={`p-3 rounded-xl bg-white/50 border border-white/50 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all font-black shadow-sm`}>➡</motion.button>
+                <motion.button aria-label="Próxima semana" whileTap={{ scale: 0.96 }} onClick={proximaSemana} className="p-3 rounded-xl bg-white border border-[#dfded7] hover:border-[#1f4a3a]/40 hover:bg-[#e7efe9] transition-all text-[#1f4a3a]"><ChevronRight size={17} /></motion.button>
               </motion.div>
             )}
           </AnimatePresence>
@@ -407,8 +416,8 @@ export default function Dashboard() {
         
         <motion.div variants={itemVariants} className="mt-4">
           <div className="mb-10 px-2">
-            <h1 className="text-4xl md:text-5xl font-black text-slate-800 tracking-tight leading-tight">
-              {saudacao}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500">{primeiroNome}</span>! 👋
+            <h1 className="text-3xl md:text-4xl font-semibold text-slate-900 tracking-tight leading-tight">
+              {saudacao}, <span className="text-[#1f4a3a]">{primeiroNome}</span>.
             </h1>
             <p className="text-slate-500 text-lg font-medium mt-3">
               {nomeDiaHoje === 'Domingo' 
@@ -470,9 +479,9 @@ export default function Dashboard() {
 
                     <div className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-slate-200/60">
                       <p className={`text-xs font-semibold flex items-center gap-2 ${aula.is_reposicao ? 'text-indigo-600' : 'text-slate-600'}`}>
-                        <span className={aula.is_reposicao ? 'text-indigo-400' : 'text-indigo-500'}>🎤</span> {aula.instrumento_aula}
+                        <Mic2 size={14} className={aula.is_reposicao ? 'text-indigo-400' : 'text-indigo-500'} /> {aula.instrumento_aula}
                       </p>
-                      <p className="text-xs font-semibold text-slate-600 flex items-center gap-2"><span className="text-indigo-500">📍</span> {aula.sala?.nome}</p>
+                      <p className="text-xs font-semibold text-slate-600 flex items-center gap-2"><MapPin size={14} className="text-indigo-500" /> {aula.sala?.nome}</p>
                     </div>
 
                     <div className="mt-4 flex gap-2">

@@ -8,6 +8,18 @@ import { motion, AnimatePresence } from 'framer-motion'
 import Cropper from 'react-easy-crop'
 import { BILLING_MODELS, BillingModel } from '../lib/billing'
 import {
+  CalendarDays,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Settings2,
+  UserPlus,
+  UsersRound,
+  WalletCards,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
+import {
   dateInputToISO,
   ensureBrazilianNinthDigit,
   formatBrazilianPhone,
@@ -306,49 +318,58 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     )
   }
 
-  const NavButton = ({ rota, icone, texto, corAtivo }: { rota: string, icone: string, texto: string, corAtivo: string }) => {
+  const NavButton = ({ rota, icone: Icon, texto }: { rota: string, icone: LucideIcon, texto: string }) => {
     const isActive = pathname === rota || (rota !== '/' && pathname.includes(rota))
     
     return (
       <motion.button 
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.95 }}
+        whileHover={{ x: 2 }}
+        whileTap={{ scale: 0.98 }}
         onClick={() => router.push(rota)} 
-        className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl uppercase text-xs transition-colors duration-300 w-full text-left
+        className={`group flex items-center gap-3 px-3.5 py-3 rounded-xl text-[13px] transition-all duration-200 w-full text-left
           ${isActive 
-            ? `bg-white/60 backdrop-blur-md border border-white shadow-[0_4px_20px_rgba(0,0,0,0.05)] ${corAtivo} font-black` 
-            : 'bg-white/10 border border-transparent hover:bg-white/40 hover:border-white/50 text-slate-600 font-bold hover:shadow-sm'
+            ? 'bg-white/[0.11] border border-white/[0.11] text-white font-semibold shadow-[0_8px_24px_rgba(0,0,0,0.13)]'
+            : 'border border-transparent text-white/60 font-medium hover:text-white hover:bg-white/[0.06]'
           }`}
       >
-        <span className="text-lg drop-shadow-sm">{icone}</span> {texto}
+        <span className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${isActive ? 'bg-[#c7a46d] text-[#18362b]' : 'bg-white/[0.05] text-white/55 group-hover:text-[#d3b47f]'}`}>
+          <Icon size={17} strokeWidth={1.8} />
+        </span>
+        <span>{texto}</span>
       </motion.button>
     )
   }
 
   const NavLinks = () => (
-    <div className="flex flex-col gap-3 w-full mt-6">
+    <div className="flex flex-col gap-1.5 w-full mt-7">
+      <p className="px-3 mb-2 text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">
+        Menu principal
+      </p>
       <motion.button 
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.95 }}
+        whileHover={{ y: -1 }}
+        whileTap={{ scale: 0.98 }}
         onClick={abrirModalMatricula} 
-        className="flex items-center justify-center gap-2 px-4 py-4 rounded-2xl text-white font-black uppercase text-xs transition-all shadow-md bg-gradient-to-r from-emerald-500 to-emerald-600 hover:shadow-lg mb-4"
+        className="flex items-center justify-center gap-2.5 px-4 py-3.5 rounded-xl text-[#173229] font-bold text-[13px] transition-all shadow-[0_10px_25px_rgba(0,0,0,0.16)] bg-[#c7a46d] hover:bg-[#d2b27f] mb-4"
       >
-        <span className="text-lg leading-none drop-shadow-sm">+</span> Nova Matrícula
+        <UserPlus size={17} strokeWidth={2} /> Nova matrícula
       </motion.button>
 
-      <NavButton rota="/" icone="🏠" texto="Painel Central" corAtivo="text-indigo-700" />
-      <NavButton rota="/alunos" icone="👥" texto="Gestão de Alunos" corAtivo="text-indigo-700" />
-      <NavButton rota="/financeiro" icone="📊" texto="Financeiro" corAtivo="text-emerald-700" />
-      <NavButton rota="/calendario" icone="📅" texto="Calendário" corAtivo="text-amber-700" />
-      <NavButton rota="/gerencia" icone="⚙️" texto="Gerência / Setup" corAtivo="text-indigo-700" />
+      <NavButton rota="/" icone={LayoutDashboard} texto="Visão geral" />
+      <NavButton rota="/alunos" icone={UsersRound} texto="Alunos" />
+      <NavButton rota="/financeiro" icone={WalletCards} texto="Financeiro" />
+      <NavButton rota="/calendario" icone={CalendarDays} texto="Calendário" />
+      <NavButton rota="/gerencia" icone={Settings2} texto="Central de gestão" />
       
       <motion.button 
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.95 }}
+        whileHover={{ x: 2 }}
+        whileTap={{ scale: 0.98 }}
         onClick={handleLogout} 
-        className="flex items-center gap-3 px-4 py-3.5 rounded-2xl text-rose-600 font-black uppercase text-xs hover:bg-rose-50/50 hover:backdrop-blur-md hover:border hover:border-rose-200 border border-transparent transition-colors text-left mt-4"
+        className="flex items-center gap-3 px-3.5 py-3 rounded-xl text-white/45 font-medium text-[13px] hover:bg-white/[0.05] hover:text-white border border-transparent transition-colors text-left mt-4"
       >
-        <span className="text-lg drop-shadow-sm">🚪</span> Sair do Sistema
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04]">
+          <LogOut size={17} strokeWidth={1.8} />
+        </span>
+        Sair
       </motion.button>
     </div>
   )
@@ -356,7 +377,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-bold focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400";
 
   return (
-    <div className={`min-h-screen w-full text-slate-900 font-sans flex flex-col xl:flex-row relative z-0`}>
+    <div className="lotus-admin min-h-screen w-full text-slate-900 font-sans flex flex-col xl:flex-row relative z-0">
       
       <AnimatePresence>
         {menuAberto && (
@@ -364,50 +385,55 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 xl:hidden" 
+            className="fixed inset-0 bg-[#0d1d17]/55 backdrop-blur-sm z-40 xl:hidden"
             onClick={() => setMenuAberto(false)} 
           />
         )}
       </AnimatePresence>
       
-      <aside className={`fixed inset-y-0 left-0 z-50 w-[280px] h-screen border-r border-white/50 bg-white/40 backdrop-blur-2xl p-6 flex flex-col justify-between shadow-[8px_0_30px_rgba(0,0,0,0.03)] overflow-y-auto custom-scrollbar transition-transform duration-300 ease-in-out xl:relative xl:translate-x-0 ${menuAberto ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[270px] h-screen border-r border-white/[0.06] bg-[#12271f] p-5 flex flex-col justify-between shadow-[16px_0_42px_rgba(16,35,28,0.12)] overflow-y-auto custom-scrollbar transition-transform duration-300 ease-in-out xl:relative xl:translate-x-0 ${menuAberto ? 'translate-x-0' : '-translate-x-full'}`}>
         <div>
-          <div className="flex justify-center px-2 relative">
-            <button className="xl:hidden absolute -right-2 top-0 p-2 text-slate-400 hover:text-rose-500 text-lg transition-colors" onClick={() => setMenuAberto(false)}>✕</button>
+          <div className="flex items-center justify-between gap-3 px-1 relative">
+            <button aria-label="Fechar menu" className="xl:hidden absolute -right-1 top-0 p-2 text-white/50 hover:text-white transition-colors" onClick={() => setMenuAberto(false)}>
+              <X size={20} />
+            </button>
             {configEscola?.logo_url ? (
-              <motion.img whileHover={{ scale: 1.05 }} src={configEscola.logo_url} alt="Logo" className="h-24 w-full max-w-[200px] object-contain drop-shadow-md cursor-pointer" />
+              <div className="w-full rounded-2xl bg-white px-4 py-3 border border-white/10">
+                <motion.img whileHover={{ scale: 1.02 }} src={configEscola.logo_url} alt="Logo" className="h-14 w-full max-w-[190px] object-contain cursor-pointer" />
+              </div>
             ) : (
-              <h1 className="text-center text-3xl font-black uppercase tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500 leading-none mt-2 drop-shadow-sm">{configEscola?.nome_escola || 'Lótus'}</h1>
+              <div className="py-3">
+                <p className="text-[9px] font-bold uppercase tracking-[0.24em] text-[#c7a46d] mb-1">Gestão musical</p>
+                <h1 className="text-2xl font-semibold tracking-[-0.04em] text-white">{configEscola?.nome_escola || 'Lótus Music'}</h1>
+              </div>
             )}
           </div>
           <NavLinks />
         </div>
         
-        <motion.div whileHover={{ y: -2 }} className={`p-4 bg-white/50 backdrop-blur-md shadow-sm hover:bg-white/70 transition-colors rounded-2xl flex items-center gap-3 border border-white/60 mt-4 cursor-default shrink-0`}>
+        <motion.div className="p-3.5 bg-white/[0.055] rounded-xl flex items-center gap-3 border border-white/[0.07] mt-5 cursor-default shrink-0">
           {perfil?.avatar_url ? (
-            <img src={perfil.avatar_url} alt="Perfil" className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm shrink-0" />
+            <img src={perfil.avatar_url} alt="Perfil" className="w-10 h-10 rounded-full object-cover border border-white/20 shrink-0" />
           ) : (
-            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center border-2 border-white shadow-sm shrink-0">
-              <span className="font-bold text-indigo-600">
+            <div className="w-10 h-10 rounded-full bg-[#c7a46d] flex items-center justify-center shrink-0">
+              <span className="font-bold text-[#18362b]">
                 {perfil?.nome_completo?.charAt(0) || 'U'}
               </span>
             </div>
           )}
           <div className="overflow-hidden pr-2 flex-1">
-            <p className="font-black text-xs uppercase text-slate-800 truncate" title={perfil?.nome_completo}>{perfil?.nome_completo || 'Carregando...'}</p>
-            <p className={`text-slate-500 text-[9px] uppercase font-bold mt-0.5`}>{perfil?.role}</p>
+            <p className="font-semibold text-xs text-white truncate" title={perfil?.nome_completo}>{perfil?.nome_completo || 'Carregando...'}</p>
+            <p className="text-white/35 text-[9px] uppercase font-bold tracking-[0.14em] mt-1">{perfil?.role}</p>
           </div>
         </motion.div>
       </aside>
 
-      <main className="flex-1 w-full p-4 md:p-8 overflow-x-hidden flex flex-col relative z-0">
-        <header className={`xl:hidden flex items-center justify-between mb-6 backdrop-blur-xl bg-white/40 p-4 rounded-[2rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.04)] relative z-10 transition-all`}>
-            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setMenuAberto(true)} className={`p-2 rounded-xl bg-white/30 backdrop-blur-sm border border-white/50 hover:bg-white/60 transition-colors flex flex-col gap-1.5 justify-center items-center w-10 h-10 shadow-sm`}>
-              <div className={`w-5 h-0.5 rounded-full bg-slate-700`}></div>
-              <div className={`w-5 h-0.5 rounded-full bg-slate-700`}></div>
-              <div className={`w-5 h-0.5 rounded-full bg-slate-700`}></div>
+      <main className="app-main flex-1 w-full p-4 md:p-7 xl:p-9 overflow-x-hidden flex flex-col relative z-0">
+        <header className="xl:hidden flex items-center justify-between mb-6 bg-[#12271f] p-3.5 rounded-2xl border border-white/[0.06] shadow-[0_12px_30px_rgba(18,39,31,0.16)] relative z-10">
+            <motion.button aria-label="Abrir menu" whileTap={{ scale: 0.94 }} onClick={() => setMenuAberto(true)} className="p-2 rounded-xl bg-white/[0.07] text-white hover:bg-white/[0.12] transition-colors flex justify-center items-center w-10 h-10">
+              <Menu size={20} strokeWidth={1.8} />
             </motion.button>
-            <div className="flex-1 flex justify-center px-4">{configEscola?.logo_url ? (<img src={configEscola.logo_url} alt="Logo" className="h-8 max-w-[140px] object-contain drop-shadow-sm" />) : (<h1 className="text-base font-black uppercase italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500 truncate max-w-[150px]">{configEscola?.nome_escola || 'Lótus'}</h1>)}</div>
+            <div className="flex-1 flex justify-center px-4">{configEscola?.logo_url ? (<div className="bg-white rounded-lg px-3 py-1"><img src={configEscola.logo_url} alt="Logo" className="h-7 max-w-[140px] object-contain" /></div>) : (<h1 className="text-base font-semibold text-white truncate max-w-[170px]">{configEscola?.nome_escola || 'Lótus Music'}</h1>)}</div>
             <div className="w-10"></div>
         </header>
         

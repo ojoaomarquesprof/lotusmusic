@@ -8,6 +8,19 @@ import Cropper from 'react-easy-crop'
 import { motion, AnimatePresence } from 'framer-motion'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import {
+  BarChart3,
+  Building2,
+  CalendarClock,
+  Download,
+  GraduationCap,
+  Landmark,
+  MapPin,
+  Settings2,
+  UserCheck,
+  UserX,
+  UsersRound,
+} from 'lucide-react'
 
 // --- FUNÇÕES DE MÁSCARA E CROPPER ---
 const formatPhone = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/g, '($1) $2').replace(/(\d)(\d{4})$/, '$1-$2').slice(0, 15)
@@ -28,7 +41,6 @@ export default function Gerencia() {
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const [activeTab, setActiveTab] = useState('Escola')
   const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
   // --- ESTADOS: ESCOLA ---
@@ -536,7 +548,7 @@ export default function Gerencia() {
     setGerandoRelatorio(false)
   }
 
-  const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
+  const inputClass = "w-full px-4 py-3.5 rounded-xl bg-white border border-[#deddd6] text-slate-800 font-medium focus:border-[#1f4a3a] focus:ring-4 focus:ring-[#1f4a3a]/10 transition-all outline-none placeholder:text-slate-400 mt-1";
 
   if (!isMounted) return null;
   if (loading) return <div className="flex justify-center items-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
@@ -544,38 +556,61 @@ export default function Gerencia() {
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="pb-12 w-full relative">
       
-      {/* CABEÇALHO */}
-      <motion.div variants={itemVariants} className="mb-8">
-        <h2 className="text-3xl font-bold tracking-tight text-slate-800">Gerência e Setup</h2>
-        <p className={`text-slate-500 text-sm mt-1`}>Configurações Avançadas do Sistema</p>
+      <motion.div variants={itemVariants} className="mb-7">
+        <div className="premium-kicker mb-3">Administração</div>
+        <div className="flex items-start gap-4">
+          <div className="hidden sm:flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e7efe9] text-[#1f4a3a]">
+            <Settings2 size={23} strokeWidth={1.7} />
+          </div>
+          <div>
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-slate-900">Central de gestão</h2>
+            <p className="text-slate-500 text-sm md:text-base mt-1.5 max-w-2xl">
+              Dados da escola, estrutura, equipe, disponibilidade e relatórios em um único lugar.
+            </p>
+          </div>
+        </div>
       </motion.div>
 
-      {/* ABAS COM EFEITO DE VIDRO/LINHA */}
-      <motion.div variants={itemVariants} className="flex gap-8 border-b border-slate-200/50 mb-8 overflow-x-auto custom-scrollbar">
-        {[
-          { id: 'Escola', icon: '🏫', label: 'Dados da Escola' },
-          { id: 'Estrutura', icon: '📍', label: 'Salas & Cursos' },
-          { id: 'Equipe', icon: '🧑‍🏫', label: 'Equipe & Profs' },
-          { id: 'Horarios', icon: '⏰', label: 'Motor de Horários' },
-          { id: 'Relatorios', icon: '📊', label: 'Relatórios' }
-        ].map(tab => (
-          <button 
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)} 
-            className={`pb-4 text-sm font-bold tracking-tight transition-all border-b-2 whitespace-nowrap ${activeTab === tab.id ? 'border-indigo-500 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-          >
-            {tab.icon} {tab.label}
-          </button>
-        ))}
-      </motion.div>
+      <motion.nav
+        variants={itemVariants}
+        aria-label="Seções da central de gestão"
+        className="sticky top-3 z-20 premium-panel !rounded-2xl p-2 mb-8 overflow-x-auto custom-scrollbar"
+      >
+        <div className="flex min-w-max gap-1">
+          {[
+            { id: 'identidade', icon: Building2, label: 'Escola' },
+            { id: 'estrutura', icon: MapPin, label: 'Estrutura' },
+            { id: 'equipe', icon: UsersRound, label: 'Equipe' },
+            { id: 'horarios', icon: CalendarClock, label: 'Disponibilidade' },
+            { id: 'relatorios', icon: BarChart3, label: 'Relatórios' },
+          ].map((item) => {
+            const Icon = item.icon
+            return (
+              <a
+                key={item.id}
+                href={`#${item.id}`}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-[#e7efe9] hover:text-[#1f4a3a] transition-colors"
+              >
+                <Icon size={15} strokeWidth={1.8} />
+                {item.label}
+              </a>
+            )
+          })}
+        </div>
+      </motion.nav>
 
-      <div>
-        
-        {/* ABA ESCOLA */}
-        <AnimatePresence mode="wait">
-          {activeTab === 'Escola' && (
-            <motion.div key="Escola" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-              <form onSubmit={handleSalvarConfig} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+      <div className="space-y-8">
+        <motion.section id="identidade" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <form onSubmit={handleSalvarConfig} className="premium-panel p-6 md:p-9">
+                <div className="flex items-center gap-3 mb-9 pb-5 border-b border-[#e5e3dc]">
+                  <div className="h-10 w-10 rounded-xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center">
+                    <Building2 size={19} strokeWidth={1.8} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold">Dados e identidade da escola</h3>
+                    <p className="text-sm text-slate-500 mt-0.5">Informações usadas no aplicativo, documentos e faturas.</p>
+                  </div>
+                </div>
                 
                 <div className="flex flex-col xl:flex-row gap-12 mb-10">
                   <div className="flex flex-col gap-6 shrink-0">
@@ -623,20 +658,17 @@ export default function Gerencia() {
                 </div>
 
                 <div className="pt-6 border-t border-white/60 flex justify-end">
-                  <motion.button whileTap={{ scale: 0.98 }} type="submit" disabled={isSubmitting} className="px-10 py-4 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white rounded-2xl font-bold text-sm shadow-md hover:shadow-lg transition-all disabled:opacity-50">
-                    {isSubmitting ? 'Salvando...' : '💾 Salvar Configurações da Escola'}
+                   <motion.button whileTap={{ scale: 0.98 }} type="submit" disabled={isSubmitting} className="px-8 py-3.5 bg-[#1f4a3a] text-white rounded-xl font-semibold text-sm shadow-[0_10px_24px_rgba(31,74,58,0.2)] hover:bg-[#173c2e] transition-all disabled:opacity-50">
+                    {isSubmitting ? 'Salvando...' : 'Salvar alterações'}
                   </motion.button>
                 </div>
               </form>
-            </motion.div>
-          )}
+        </motion.section>
 
-          {/* ABA ESTRUTURA */}
-          {activeTab === 'Estrutura' && (
-            <motion.div key="Estrutura" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <motion.section id="estrutura" className="premium-section-anchor grid grid-cols-1 lg:grid-cols-2 gap-8" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
-                <h3 className="text-xl font-bold tracking-tight text-slate-800 mb-8 flex items-center gap-3"><span className="text-rose-500 drop-shadow-sm">📍</span> Salas Físicas</h3>
+              <div className="premium-panel p-6 md:p-8">
+                <h3 className="text-xl font-semibold text-slate-800 mb-7 flex items-center gap-3"><MapPin size={20} className="text-[#1f4a3a]" strokeWidth={1.8} /> Salas físicas</h3>
                 <form onSubmit={handleAddSala} className="flex gap-4 mb-8">
                   <input value={novaSala} onChange={e => setNovaSala(e.target.value)} placeholder="Nova Sala (Ex: Sala 01)" className={`flex-1 ${inputClass} !mt-0`} />
                   <motion.button whileTap={{ scale: 0.9 }} type="submit" className="bg-rose-500 text-white px-8 rounded-xl font-bold text-xl shadow-md hover:bg-rose-600 transition-colors">+</motion.button>
@@ -651,8 +683,8 @@ export default function Gerencia() {
                 </div>
               </div>
 
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
-                <h3 className="text-xl font-bold tracking-tight text-slate-800 mb-8 flex items-center gap-3"><span className="text-emerald-500 drop-shadow-sm">🎸</span> Modalidades / Cursos</h3>
+              <div className="premium-panel p-6 md:p-8">
+                <h3 className="text-xl font-semibold text-slate-800 mb-7 flex items-center gap-3"><GraduationCap size={21} className="text-[#1f4a3a]" strokeWidth={1.8} /> Modalidades e cursos</h3>
                 <form onSubmit={handleAddModalidade} className="flex gap-4 mb-8">
                   <input value={novaModalidade} onChange={e => setNovaModalidade(e.target.value)} placeholder="Novo Curso (Ex: Piano)" className={`flex-1 ${inputClass} !mt-0`} />
                   <motion.button whileTap={{ scale: 0.9 }} type="submit" className="bg-emerald-500 text-white px-8 rounded-xl font-bold text-xl shadow-md hover:bg-emerald-600 transition-colors">+</motion.button>
@@ -667,21 +699,18 @@ export default function Gerencia() {
                 </div>
               </div>
 
-            </motion.div>
-          )}
+        </motion.section>
 
-          {/* ABA EQUIPE E PROFS */}
-          {activeTab === 'Equipe' && (
-            <motion.div key="Equipe" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+        <motion.section id="equipe" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <div className="premium-panel p-6 md:p-9">
                 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-white/60 pb-6">
                   <div>
-                    <h3 className="text-2xl font-bold tracking-tight text-slate-800 flex items-center gap-3"><span className="text-indigo-500 drop-shadow-sm">🧑‍🏫</span> Equipe Lótus</h3>
-                    <p className={`text-slate-500 text-sm mt-1`}>Gerencie os dados, fotos e acessos de Professores e Administradores.</p>
+                    <h3 className="text-2xl font-semibold text-slate-800 flex items-center gap-3"><UsersRound size={23} className="text-[#1f4a3a]" strokeWidth={1.8} /> Equipe</h3>
+                    <p className="text-slate-500 text-sm mt-1">Gerencie dados, acessos e modalidades de professores e administradores.</p>
                   </div>
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => abrirModalEquipe()} className="bg-gradient-to-r from-indigo-600 to-cyan-600 text-white px-6 py-4 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all whitespace-nowrap">
-                    + Adicionar Novo Membro
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => abrirModalEquipe()} className="bg-[#1f4a3a] text-white px-5 py-3.5 rounded-xl font-semibold text-sm shadow-[0_10px_24px_rgba(31,74,58,0.18)] hover:bg-[#173c2e] transition-all whitespace-nowrap">
+                    Adicionar membro
                   </motion.button>
                 </div>
 
@@ -718,17 +747,14 @@ export default function Gerencia() {
                 </div>
 
               </div>
-            </motion.div>
-          )}
+        </motion.section>
 
-          {/* ABA HORÁRIOS */}
-          {activeTab === 'Horarios' && (
-            <motion.div key="Horarios" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] border-t-8 border-t-amber-500 shadow-[0_8px_32px_rgba(0,0,0,0.04)] flex flex-col`}>
+        <motion.section id="horarios" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <div className="premium-panel p-6 md:p-9 flex flex-col">
                 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6 border-b border-white/60 pb-6">
                   <div>
-                    <h3 className="text-2xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><span className="text-amber-500 drop-shadow-sm">⏰</span> Motor de Disponibilidade</h3>
+                    <h3 className="text-2xl font-semibold text-slate-800 flex items-center gap-3"><CalendarClock size={23} className="text-[#1f4a3a]" strokeWidth={1.8} /> Disponibilidade da equipe</h3>
                     <p className={`text-slate-500 text-sm mt-2 max-w-2xl`}>Gere múltiplos horários de uma vez. O aplicativo cruza essas "vagas" com as matrículas ativas para mostrar o que está livre ou preenchido.</p>
                   </div>
                   <div className="w-full md:w-80">
@@ -863,22 +889,19 @@ export default function Gerencia() {
                   </div>
                 )}
               </div>
-            </motion.div>
-          )}
+        </motion.section>
 
-          {/* ABA RELATÓRIOS (NOVA) */}
-          {activeTab === 'Relatorios' && (
-            <motion.div key="Relatorios" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+        <motion.section id="relatorios" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <div className="premium-panel p-6 md:p-9">
                 
-                <h3 className="text-2xl font-bold tracking-tight text-slate-800 mb-8 flex items-center gap-3"><span className="text-indigo-500 drop-shadow-sm">📊</span> Emissão de Relatórios (PDF)</h3>
+                <h3 className="text-2xl font-semibold text-slate-800 mb-8 flex items-center gap-3"><BarChart3 size={23} className="text-[#1f4a3a]" strokeWidth={1.8} /> Relatórios e exportações</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                   
                   {/* CARD RELATÓRIO FINANCEIRO */}
                   <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-6 rounded-[2rem] shadow-sm flex flex-col justify-between">
                     <div>
-                      <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl mb-4 shadow-inner border border-indigo-200">💰</div>
+                      <div className="w-11 h-11 bg-[#e7efe9] text-[#1f4a3a] rounded-xl flex items-center justify-center mb-4 border border-[#d7e3da]"><Landmark size={20} strokeWidth={1.8} /></div>
                       <h4 className="font-bold text-lg text-slate-800 mb-2">Relatório Financeiro</h4>
                       <p className="text-xs text-slate-500 mb-6">Gera um PDF contendo entradas de mensalidades, saídas manuais e o saldo detalhado do caixa.</p>
 
@@ -906,16 +929,17 @@ export default function Gerencia() {
                       whileTap={{ scale: 0.95 }} 
                       onClick={handleGerarRelatorioFinanceiro} 
                       disabled={gerandoRelatorio}
-                      className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 transition-all disabled:opacity-50 mt-4"
+                      className="w-full py-3.5 bg-[#1f4a3a] text-white rounded-xl font-semibold text-sm shadow-sm hover:bg-[#173c2e] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-2"
                     >
-                      {gerandoRelatorio ? 'Gerando PDF...' : '⬇️ Baixar Relatório'}
+                      {!gerandoRelatorio && <Download size={16} />}
+                      {gerandoRelatorio ? 'Gerando PDF...' : 'Baixar relatório'}
                     </motion.button>
                   </div>
 
                   {/* CARD ALUNOS ATIVOS */}
                   <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-6 rounded-[2rem] shadow-sm flex flex-col justify-between">
                     <div>
-                      <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl mb-4 shadow-inner border border-emerald-200">✅</div>
+                      <div className="w-11 h-11 bg-emerald-50 text-emerald-700 rounded-xl flex items-center justify-center mb-4 border border-emerald-100"><UserCheck size={20} strokeWidth={1.8} /></div>
                       <h4 className="font-bold text-lg text-slate-800 mb-2">Alunos Ativos</h4>
                       <p className="text-xs text-slate-500 mb-6">Lista completa com nome, telefone, curso, data da matrícula e valor da mensalidade de todos os alunos que estão ativos na escola.</p>
                     </div>
@@ -924,16 +948,17 @@ export default function Gerencia() {
                       whileTap={{ scale: 0.95 }} 
                       onClick={() => handleGerarRelatorioAlunos('Ativo')} 
                       disabled={gerandoRelatorio}
-                      className="w-full py-4 bg-emerald-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-emerald-600 transition-all disabled:opacity-50 mt-4"
+                      className="w-full py-3.5 bg-[#1f4a3a] text-white rounded-xl font-semibold text-sm shadow-sm hover:bg-[#173c2e] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-2"
                     >
-                      {gerandoRelatorio ? 'Gerando PDF...' : '⬇️ Baixar Relatório'}
+                      {!gerandoRelatorio && <Download size={16} />}
+                      {gerandoRelatorio ? 'Gerando PDF...' : 'Baixar relatório'}
                     </motion.button>
                   </div>
 
                   {/* CARD ALUNOS INATIVOS */}
                   <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-6 rounded-[2rem] shadow-sm flex flex-col justify-between">
                     <div>
-                      <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center text-2xl mb-4 shadow-inner border border-rose-200">❌</div>
+                      <div className="w-11 h-11 bg-rose-50 text-rose-700 rounded-xl flex items-center justify-center mb-4 border border-rose-100"><UserX size={20} strokeWidth={1.8} /></div>
                       <h4 className="font-bold text-lg text-slate-800 mb-2">Alunos Inativos</h4>
                       <p className="text-xs text-slate-500 mb-6">Lista dos alunos que cancelaram ou foram trancados, informando os dados básicos e a exata data da inativação.</p>
                     </div>
@@ -942,19 +967,17 @@ export default function Gerencia() {
                       whileTap={{ scale: 0.95 }} 
                       onClick={() => handleGerarRelatorioAlunos('Inativo')} 
                       disabled={gerandoRelatorio}
-                      className="w-full py-4 bg-rose-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-rose-600 transition-all disabled:opacity-50 mt-4"
+                      className="w-full py-3.5 bg-[#1f4a3a] text-white rounded-xl font-semibold text-sm shadow-sm hover:bg-[#173c2e] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-2"
                     >
-                      {gerandoRelatorio ? 'Gerando PDF...' : '⬇️ Baixar Relatório'}
+                      {!gerandoRelatorio && <Download size={16} />}
+                      {gerandoRelatorio ? 'Gerando PDF...' : 'Baixar relatório'}
                     </motion.button>
                   </div>
 
                 </div>
 
               </div>
-            </motion.div>
-          )}
-
-        </AnimatePresence>
+        </motion.section>
 
       </div>
 
