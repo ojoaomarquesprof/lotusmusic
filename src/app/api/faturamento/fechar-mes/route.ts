@@ -133,6 +133,7 @@ async function closeMonth(request: NextRequest) {
       .eq('competencia', startDate)
       .eq('modelo_faturamento', 'MENSAL_FECHADO')
       .eq('tipo_emissao', 'AUTOMATICA')
+      .neq('status', 'CANCELADO')
       .maybeSingle()
 
     if (existingInvoice) {

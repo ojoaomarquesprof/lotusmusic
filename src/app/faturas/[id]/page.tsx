@@ -31,6 +31,8 @@ export default function InvoicePage() {
   const [invoice, setInvoice] = useState<any>(null)
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [viewerRole, setViewerRole] = useState('')
+  const [isCancelling, setIsCancelling] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export default function InvoicePage() {
       return
     }
 
-    const [{ data: invoiceItems }, { data: student }, { data: settings }] =
+    const [{ data: invoiceItems }, { data: student }, { data: settings }, { data: viewer }] =
       await Promise.all([
         supabase
           .from('fatura_itens')
@@ -79,6 +81,11 @@ export default function InvoicePage() {
             'escola_nome, escola_documento, escola_email, escola_telefone, escola_cep, escola_endereco, escola_numero, escola_complemento, escola_bairro, escola_cidade, escola_estado, chave_pix',
           )
           .eq('id', 1)
+          .maybeSingle(),
+        supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', session.user.id)
           .maybeSingle(),
       ])
 
@@ -109,7 +116,55 @@ export default function InvoicePage() {
       chave_pix: settings?.chave_pix,
     })
     setItems(invoiceItems || [])
+    setViewerRole(viewer?.role || '')
     setLoading(false)
+  }
+
+  async function cancelInvoice() {
+    if (!window.confirm('Cancelar esta fatura? As aulas voltarão para as pendências e poderão ser faturadas novamente.')) {
+      return
+    }
+
+    setIsCancelling(true)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session) throw new Error('Sua sessão expirou. Entre novamente.')
+
+      const response = await fetch(`/api/faturamento/faturas/${id}/cancelar`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      })
+      const responseText = await response.text()
+      let result: any = {}
+      try {
+        result = responseText ? JSON.parse(responseText) : {}
+      } catch {
+        result = {}
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          result.message ||
+          `Não foi possível cancelar a fatura (erro ${response.status}).`,
+        )
+      }
+
+      await loadInvoice()
+      alert('Fatura cancelada. As aulas voltaram para as pendências.')
+    } catch (cancelError) {
+      alert(
+        cancelError instanceof Error
+          ? cancelError.message
+          : 'Não foi possível cancelar a fatura.',
+      )
+    } finally {
+      setIsCancelling(false)
+    }
   }
 
   if (loading) {
@@ -135,9 +190,18 @@ export default function InvoicePage() {
   }
 
   const invoiceNumber = formatInvoiceNumber(invoice.numero, invoice.id)
+  const canCancel =
+    viewerRole === 'ADMIN' &&
+    !['PAGO', 'CANCELADO', 'SEM_MOVIMENTO'].includes(invoice.status)
+  const densityClass =
+    items.length > 12
+      ? 'invoice-density-high'
+      : items.length > 8
+        ? 'invoice-density-medium'
+        : ''
 
   return (
-    <div className="max-w-5xl mx-auto pb-12 print:p-0 print:max-w-none">
+    <div className="invoice-page max-w-5xl mx-auto pb-12 print:p-0 print:max-w-none">
       <div className="flex flex-wrap justify-between items-center gap-3 mb-6 print:hidden">
         <button
           onClick={() => router.back()}
@@ -146,6 +210,15 @@ export default function InvoicePage() {
           ← Voltar
         </button>
         <div className="flex gap-3">
+          {canCancel && (
+            <button
+              onClick={cancelInvoice}
+              disabled={isCancelling}
+              className="px-5 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-bold text-sm disabled:opacity-50"
+            >
+              {isCancelling ? 'Cancelando...' : 'Cancelar fatura'}
+            </button>
+          )}
           {invoice.invoice_url && (
             <button
               onClick={() => window.open(invoice.invoice_url, '_blank')}
@@ -163,8 +236,8 @@ export default function InvoicePage() {
         </div>
       </div>
 
-      <article className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden print:shadow-none print:border-0 print:rounded-none">
-        <header className="p-8 md:p-10 border-b border-slate-200 bg-gradient-to-br from-slate-950 to-cyan-950 text-white print:bg-white print:text-slate-900">
+      <article className={`invoice-sheet ${densityClass} bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden print:shadow-none print:border-0 print:rounded-none`}>
+        <header className="invoice-header p-8 md:p-10 border-b border-slate-200 bg-gradient-to-br from-slate-950 to-cyan-950 text-white print:bg-white print:text-slate-900">
           <div className="flex flex-col md:flex-row justify-between gap-8">
             <div>
               <p className="text-xs uppercase tracking-[0.25em] font-bold text-cyan-300 print:text-cyan-700">
@@ -204,8 +277,8 @@ export default function InvoicePage() {
           </div>
         </header>
 
-        <div className="p-8 md:p-10">
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-8 border-b border-slate-200">
+        <div className="invoice-content p-8 md:p-10">
+          <section className="invoice-recipient grid grid-cols-1 md:grid-cols-2 gap-8 pb-8 border-b border-slate-200">
             <div>
               <p className="text-xs uppercase tracking-wider font-bold text-slate-400">
                 Faturado para
@@ -256,12 +329,18 @@ export default function InvoicePage() {
             </dl>
           </section>
 
-          <section className="py-8">
+          {invoice.status === 'CANCELADO' && (
+            <div className="invoice-cancelled mt-5 p-4 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-sm font-bold">
+              Fatura cancelada em {formatDate(invoice.cancelada_em)}. As aulas foram liberadas para um novo faturamento.
+            </div>
+          )}
+
+          <section className="invoice-lessons py-8">
             <h2 className="text-lg font-bold text-slate-800 mb-4">
               Aulas realizadas
             </h2>
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+              <table className="invoice-table w-full border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-y border-slate-200">
                     <th className="text-left p-3 text-xs uppercase text-slate-500">Data</th>
@@ -309,7 +388,7 @@ export default function InvoicePage() {
             </div>
           </section>
 
-          <section className="border-t border-slate-200 pt-6 flex flex-col md:flex-row justify-between gap-6">
+          <section className="invoice-summary border-t border-slate-200 pt-6 flex flex-col md:flex-row justify-between gap-6">
             <div className="max-w-xl">
               {invoice.observacoes && (
                 <>
@@ -331,7 +410,7 @@ export default function InvoicePage() {
               <p className="text-xs uppercase font-bold text-slate-400">
                 Total da fatura
               </p>
-              <p className="text-4xl font-bold text-slate-900 mt-2">
+              <p className="invoice-total-amount text-4xl font-bold text-slate-900 mt-2">
                 {formatCurrencyBR(invoice.valor_total)}
               </p>
               <p className="text-xs text-slate-500 mt-2">

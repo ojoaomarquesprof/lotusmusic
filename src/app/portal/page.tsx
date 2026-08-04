@@ -235,6 +235,7 @@ export default function PortalAluno() {
       .from('faturas')
       .select('*')
       .eq('aluno_id', session.user.id)
+      .neq('status', 'CANCELADO')
       .order('data_emissao', { ascending: false })
       .limit(1)
     setFaturaAtual(invoices?.[0] || null)

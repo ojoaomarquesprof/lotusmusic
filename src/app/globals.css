@@ -19,3 +19,156 @@ body {
   /* Transição suave global */
   transition: background-color 0.5s ease;
 }
+
+@page {
+  size: A4 portrait;
+  margin: 7mm;
+}
+
+@media print {
+  html,
+  body {
+    width: 210mm;
+    min-height: 0 !important;
+    background: #ffffff !important;
+  }
+
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .invoice-page {
+    width: 196mm !important;
+    max-width: 196mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
+  .invoice-sheet {
+    width: 100% !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    font-size: 10px !important;
+  }
+
+  .invoice-header {
+    padding: 5mm 6mm !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .invoice-header > div {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    gap: 6mm !important;
+  }
+
+  .invoice-header h1 {
+    margin-top: 1.5mm !important;
+    font-size: 20px !important;
+    line-height: 1.1 !important;
+  }
+
+  .invoice-header p {
+    margin-top: 1mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .invoice-content {
+    padding: 5mm 6mm !important;
+  }
+
+  .invoice-recipient {
+    grid-template-columns: 1.15fr 0.85fr !important;
+    gap: 5mm !important;
+    padding-bottom: 4mm !important;
+  }
+
+  .invoice-recipient p,
+  .invoice-recipient dt,
+  .invoice-recipient dd {
+    margin-top: 1mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .invoice-recipient .text-xl {
+    font-size: 14px !important;
+  }
+
+  .invoice-cancelled {
+    margin-top: 3mm !important;
+    padding: 3mm !important;
+    font-size: 9.5px !important;
+  }
+
+  .invoice-lessons {
+    padding: 4mm 0 !important;
+  }
+
+  .invoice-lessons h2 {
+    margin-bottom: 2mm !important;
+    font-size: 14px !important;
+  }
+
+  .invoice-table th,
+  .invoice-table td {
+    padding: 2mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.15 !important;
+  }
+
+  .invoice-table tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .invoice-summary {
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    gap: 5mm !important;
+    padding-top: 4mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .invoice-summary p {
+    margin-top: 1mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .invoice-summary .invoice-total-amount {
+    font-size: 26px !important;
+    line-height: 1 !important;
+  }
+
+  .invoice-density-medium .invoice-table th,
+  .invoice-density-medium .invoice-table td {
+    padding: 1.4mm 2mm !important;
+    font-size: 8.5px !important;
+  }
+
+  .invoice-density-high .invoice-header {
+    padding-top: 3.5mm !important;
+    padding-bottom: 3.5mm !important;
+  }
+
+  .invoice-density-high .invoice-content {
+    padding-top: 3.5mm !important;
+    padding-bottom: 3.5mm !important;
+  }
+
+  .invoice-density-high .invoice-lessons {
+    padding: 2.5mm 0 !important;
+  }
+
+  .invoice-density-high .invoice-table th,
+  .invoice-density-high .invoice-table td {
+    padding: 0.9mm 1.5mm !important;
+    font-size: 7.5px !important;
+  }
+}

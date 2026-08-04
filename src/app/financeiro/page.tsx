@@ -168,7 +168,9 @@ export default function RelatorioFinanceiro() {
         }
       } else {
         const faturaCompetencia = (allFaturas || []).find(f =>
-          f.aluno_id === aluno.id && String(f.competencia).startsWith(prefixoMesAtual)
+          f.aluno_id === aluno.id &&
+          f.status !== 'CANCELADO' &&
+          String(f.competencia).startsWith(prefixoMesAtual)
         )
         const aulas = (historicoMes || []).filter(h =>
           h.aluno_id === aluno.id && isBillableClass(h.status)
