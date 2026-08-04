@@ -77,3 +77,6 @@ $$;
 
 revoke all on function public.cancelar_fatura(uuid) from public;
 grant execute on function public.cancelar_fatura(uuid) to authenticated;
+
+-- Garante que a API do Supabase reconheça a função imediatamente.
+notify pgrst, 'reload schema';

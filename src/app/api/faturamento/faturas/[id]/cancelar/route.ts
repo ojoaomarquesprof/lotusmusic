@@ -69,6 +69,21 @@ export async function POST(
 
     if (error) {
       const message = getErrorMessage(error)
+      const missingDatabaseUpdate =
+        error.code === 'PGRST202' ||
+        message.includes('schema cache') ||
+        message.includes('cancelar_fatura')
+
+      if (missingDatabaseUpdate) {
+        return Response.json(
+          {
+            error:
+              'O cancelamento ainda não foi instalado no Supabase. Execute a migração 202608040003_cancelamento_faturas.sql e tente novamente.',
+          },
+          { status: 503 },
+        )
+      }
+
       const conflict =
         message.includes('paga') ||
         message.includes('cobrança externa') ||
