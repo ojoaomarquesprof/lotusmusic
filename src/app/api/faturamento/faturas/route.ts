@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import {
   buildAddress,
   InvoiceLesson,
@@ -22,21 +22,38 @@ function getRelation<T>(value: T | T[] | null | undefined): T | null {
   return value || null
 }
 
-async function requireAdmin(request: Request, admin: ReturnType<typeof getSupabaseAdmin>) {
+function getAuthenticatedClient(request: Request) {
   const authorization = request.headers.get('authorization')
   const token = authorization?.startsWith('Bearer ')
     ? authorization.slice('Bearer '.length)
     : null
 
-  if (!token) return null
+  if (!token) throw new Error('Sua sessão expirou. Entre novamente.')
 
-  const {
-    data: { user },
-    error,
-  } = await admin.auth.getUser(token)
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !anonKey) {
+    throw new Error('A conexão pública com o Supabase não está configurada.')
+  }
+
+  const database = createClient(url, anonKey, {
+    global: {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+
+  return { database, token }
+}
+
+async function requireAdmin(database: SupabaseClient, token: string) {
+  const { data: { user }, error } = await database.auth.getUser(token)
   if (error || !user) return null
 
-  const { data: profile } = await admin
+  const { data: profile } = await database
     .from('profiles')
     .select('id, role')
     .eq('id', user.id)
@@ -45,9 +62,27 @@ async function requireAdmin(request: Request, admin: ReturnType<typeof getSupaba
   return profile?.role === 'ADMIN' ? profile : null
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message?: unknown }).message || 'Erro desconhecido.')
+  }
+  return 'Não foi possível emitir a fatura.'
+}
+
 export async function POST(request: Request) {
-  const admin = getSupabaseAdmin()
-  const requester = await requireAdmin(request, admin)
+  let database: SupabaseClient
+  let token: string
+
+  try {
+    const authenticated = getAuthenticatedClient(request)
+    database = authenticated.database
+    token = authenticated.token
+  } catch (error) {
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
+  }
+
+  const requester = await requireAdmin(database, token)
   if (!requester) {
     return Response.json(
       { error: 'Somente administradores podem emitir faturas.' },
@@ -83,7 +118,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Informe um valor por aula maior que zero.' }, { status: 400 })
     }
 
-    const { data: student, error: studentError } = await admin
+    const { data: student, error: studentError } = await database
       .from('profiles')
       .select(
         'id, nome_completo, email, telefone, cpf, cep, endereco, numero, complemento, bairro, cidade, estado, alunos_info(*)',
@@ -96,7 +131,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Aluno não encontrado.' }, { status: 404 })
     }
 
-    const { data: lessons, error: lessonsError } = await admin
+    const { data: lessons, error: lessonsError } = await database
       .from('historico_aulas')
       .select(
         'id, aluno_id, data_aula, horario_inicio, horario_fim, status, professor_id, modalidade, fatura_id',
@@ -118,7 +153,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: schedules, error: schedulesError } = await admin
+    const { data: schedules, error: schedulesError } = await database
       .from('agenda')
       .select(
         'dia, horario_inicio, professor_id, instrumento_aula, professor:profiles!professor_id(nome_completo)',
@@ -139,7 +174,7 @@ export async function POST(request: Request) {
     const professorNames: Record<string, string> = {}
 
     if (professorIds.length > 0) {
-      const { data: professors, error: professorsError } = await admin
+      const { data: professors, error: professorsError } = await database
         .from('profiles')
         .select('id, nome_completo')
         .in('id', professorIds)
@@ -149,7 +184,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const { data: schoolSettings } = await admin
+    const { data: schoolSettings } = await database
       .from('configuracoes')
       .select(
         'escola_nome, escola_documento, escola_email, escola_telefone, escola_cep, escola_endereco, escola_numero, escola_complemento, escola_bairro, escola_cidade, escola_estado',
@@ -164,7 +199,7 @@ export async function POST(request: Request) {
     const total = Number((lessons.length * unitValue).toFixed(2))
     const competence = `${periodStart.slice(0, 7)}-01`
 
-    const { data: invoice, error: invoiceError } = await admin
+    const { data: invoice, error: invoiceError } = await database
       .from('faturas')
       .insert({
         aluno_id: alunoId,
@@ -231,10 +266,10 @@ export async function POST(request: Request) {
       }
     })
 
-    const { error: itemsError } = await admin.from('fatura_itens').insert(items)
+    const { error: itemsError } = await database.from('fatura_itens').insert(items)
     if (itemsError) throw itemsError
 
-    const { data: linkedLessons, error: linkError } = await admin
+    const { data: linkedLessons, error: linkError } = await database
       .from('historico_aulas')
       .update({
         fatura_id: invoice.id,
@@ -252,15 +287,13 @@ export async function POST(request: Request) {
     return Response.json({ success: true, invoice })
   } catch (error) {
     if (invoiceId) {
-      await admin.from('historico_aulas').update({
+      await database.from('historico_aulas').update({
         fatura_id: null,
         faturado_em: null,
       }).eq('fatura_id', invoiceId)
-      await admin.from('faturas').delete().eq('id', invoiceId)
+      await database.from('faturas').delete().eq('id', invoiceId)
     }
 
-    const message =
-      error instanceof Error ? error.message : 'Não foi possível emitir a fatura.'
-    return Response.json({ error: message }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

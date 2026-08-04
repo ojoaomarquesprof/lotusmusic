@@ -119,8 +119,20 @@ export function CreateInvoiceModal({
           observacoes: notes,
         }),
       })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Não foi possível emitir a fatura.')
+      const responseText = await response.text()
+      let result: any = {}
+      try {
+        result = responseText ? JSON.parse(responseText) : {}
+      } catch {
+        result = {}
+      }
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          result.message ||
+          `Não foi possível emitir a fatura (erro ${response.status}).`,
+        )
+      }
 
       setIsOpen(false)
       await onCreated()
