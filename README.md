@@ -110,9 +110,43 @@ Exemplo:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+CRON_SECRET=
+
+# Opcionais: emissão automática pelo Asaas
+ASAAS_ENVIRONMENT=sandbox
+ASAAS_API_KEY=
+ASAAS_WEBHOOK_TOKEN=
 ```
 
 As chaves reais não devem ser versionadas no repositório.
+
+---
+
+## Modelos de faturamento
+
+O cadastro do aluno permite escolher entre:
+
+- **Créditos:** cada pagamento confirmado libera 4 créditos e cada aula realizada consome 1.
+- **Mês fechado:** soma as aulas realizadas no mês, fecha no último dia e gera uma fatura com vencimento em 7 dias corridos.
+- **Vencimento fixo:** mantém a mensalidade convencional e créditos de reposição válidos por 30 dias.
+
+Antes de publicar essa funcionalidade, execute no Supabase a migração:
+
+```text
+supabase/migrations/202608040001_modelos_faturamento.sql
+```
+
+A rotina de fechamento roda diariamente pela Vercel e processa o mês anterior logo após a virada para o primeiro dia. Assim, inclui todas as aulas do último dia; a fatura mantém a data de emissão do mês encerrado e vence 7 dias depois. A rotina é protegida por `CRON_SECRET` e não duplica faturas em reexecuções.
+
+Para emissão automática:
+
+1. crie uma conta e uma chave no sandbox do Asaas;
+2. configure as variáveis `ASAAS_*` na Vercel;
+3. cadastre o webhook `https://SEU-DOMINIO/api/webhooks/asaas`;
+4. assine os eventos `PAYMENT_RECEIVED`, `PAYMENT_CONFIRMED`, `PAYMENT_OVERDUE`, `PAYMENT_DELETED` e `PAYMENT_REFUNDED`.
+
+Sem credenciais do Asaas, o sistema cria a fatura interna e permite a cobrança manual por PIX/WhatsApp.
 
 ---
 

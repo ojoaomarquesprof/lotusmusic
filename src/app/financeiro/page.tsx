@@ -6,14 +6,15 @@ import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import { motion, AnimatePresence } from 'framer-motion'
+import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../lib/billing'
 
-const DEFAULT_PENDENTE = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Direto ao Canto*, passando para fazer um lembrete amigável que a sua mensalidade vence no próximo dia {{vencimento}}.\n\nO valor é de *R$ {{valor}}*.\nNossa chave PIX é: *{{pix}}*\n\nMuito obrigado! 🎶"
-const DEFAULT_ATRASADO = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Direto ao Canto*, passando para avisar que a sua mensalidade (vencimento dia {{vencimento}}) consta como pendente no nosso sistema.\n\nO valor é de *R$ {{valor}}*.\nNossa chave PIX é: *{{pix}}*\n\nQualquer dúvida, é só avisar por aqui. Muito obrigado! 🎶"
+const DEFAULT_PENDENTE = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Lotus Music*. Sua cobrança de *{{modelo}}* no valor de *{{valor}}* vence em {{vencimento}}.\n\n{{link}}\nChave PIX: *{{pix}}*\n\nMuito obrigado! 🎶"
+const DEFAULT_ATRASADO = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Lotus Music*. A cobrança de *{{modelo}}* no valor de *{{valor}}*, com vencimento em {{vencimento}}, está pendente.\n\n{{link}}\nChave PIX: *{{pix}}*\n\nSe precisar, fale com a gente. 🎶"
 
 const PIE_COLORS = ['#10b981', '#f43f5e', '#3b82f6', '#8b5cf6', '#f59e0b', '#f97316', '#64748b']
 
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
-const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }
+const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } } as const
 
 export default function RelatorioFinanceiro() {
   const { s } = useStyles()
@@ -25,6 +26,7 @@ export default function RelatorioFinanceiro() {
   const [resumo, setResumo] = useState({ saldoCaixa: 0, previsaoFaturamento: 0, entradasMes: 0, saidasMes: 0, inadimplencia: 0 })
   const [alunosPendentes, setAlunosPendentes] = useState<any[]>([])
   const [extratoUnificado, setExtratoUnificado] = useState<any[]>([])
+  const [modelCounts, setModelCounts] = useState({ CREDITOS: 0, MENSAL_FECHADO: 0, VENCIMENTO_FIXO: 0 })
 
   const [dadosGraficoBarra, setDadosGraficoBarra] = useState<any[]>([])
   const [dadosGraficoPizza, setDadosGraficoPizza] = useState<any[]>([])
@@ -60,6 +62,7 @@ export default function RelatorioFinanceiro() {
 
     const { data: allPagamentos } = await supabase.from('pagamentos').select('*')
     const { data: allTransacoes } = await supabase.from('transacoes').select('*')
+    const { data: allFaturas } = await supabase.from('faturas').select('*').order('data_emissao', { ascending: false })
     
     let caixaTotal = 0; 
     allPagamentos?.forEach(p => caixaTotal += Number(p.valor)); 
@@ -68,22 +71,34 @@ export default function RelatorioFinanceiro() {
     // FIX: Filtragem por prefixo string para evitar bugs de fuso horário em dias 01 ou 31.
     const prefixoMesAtual = `${anoAtual}-${String(mesAtual).padStart(2, '0')}`;
     
-    const { data: alunos } = await supabase.from('profiles').select('id, nome_completo, telefone, alunos_info(valor_mensalidade, data_vencimento, status)').eq('role', 'ALUNO')
+    const { data: alunos } = await supabase.from('profiles').select('id, nome_completo, telefone, alunos_info(*)').eq('role', 'ALUNO')
+    const inicioMes = `${prefixoMesAtual}-01`
+    const fimMes = new Date(anoAtual, mesAtual, 0).getDate()
+    const { data: historicoMes } = await supabase
+      .from('historico_aulas')
+      .select('aluno_id, data_aula, status')
+      .gte('data_aula', inicioMes)
+      .lte('data_aula', `${prefixoMesAtual}-${String(fimMes).padStart(2, '0')}T23:59:59`)
     
     const pgsMes = allPagamentos?.filter(p => p.data_pagamento.startsWith(prefixoMesAtual)) || []
     const transMes = allTransacoes?.filter(t => t.data_transacao.startsWith(prefixoMesAtual)) || []
 
     let entradasM = 0; let saidasM = 0; let pendentesTemp: any[] = []; let previsaoTotal = 0;
+    const counts = { CREDITOS: 0, MENSAL_FECHADO: 0, VENCIMENTO_FIXO: 0 }
     pgsMes.forEach(pg => entradasM += Number(pg.valor))
 
     let inadimplenciaM = 0
     alunos?.forEach(aluno => {
       const info = Array.isArray(aluno.alunos_info) ? aluno.alunos_info[0] : aluno.alunos_info; 
       if (!info || !info.valor_mensalidade || info.status === 'Inativo') return
-      
-      previsaoTotal += Number(info.valor_mensalidade)
-      
-      if (!pgsMes.some(pg => pg.aluno_id === aluno.id)) {
+
+      const modelo = getBillingModel(info)
+      counts[modelo] += 1
+
+      if (modelo === 'VENCIMENTO_FIXO') {
+        previsaoTotal += Number(info.valor_mensalidade)
+        if (pgsMes.some(pg => pg.aluno_id === aluno.id)) return
+
         const venc = info.data_vencimento || 10; 
         const status = diaAtual > venc ? 'Atrasado' : 'A Vencer'
         
@@ -96,16 +111,70 @@ export default function RelatorioFinanceiro() {
            nome: aluno.nome_completo, 
            telefone: aluno.telefone, 
            valor: info.valor_mensalidade, 
-           vencimento: venc, 
-           status: status 
-        })
+           vencimento: `dia ${venc}`,
+           vencimentoOrdem: venc,
+           status,
+           modelo: getBillingModelLabel(modelo),
+           alunoId: aluno.id,
+           invoiceUrl: null,
+         })
+      } else if (modelo === 'CREDITOS') {
+        const saldo = Number(info.saldo_creditos_faturamento || 0)
+        if (saldo <= 0) {
+          previsaoTotal += Number(info.valor_mensalidade)
+          pendentesTemp.push({
+            id: `creditos-${aluno.id}`,
+            nome: aluno.nome_completo,
+            telefone: aluno.telefone,
+            valor: info.valor_mensalidade,
+            vencimento: 'agora',
+            vencimentoOrdem: 0,
+            status: saldo < 0 ? 'Créditos em débito' : 'Sem créditos',
+            modelo: getBillingModelLabel(modelo),
+            alunoId: aluno.id,
+            invoiceUrl: null,
+            saldo,
+          })
+        }
+      } else {
+        const faturaCompetencia = (allFaturas || []).find(f =>
+          f.aluno_id === aluno.id && String(f.competencia).startsWith(prefixoMesAtual)
+        )
+        const aulas = (historicoMes || []).filter(h =>
+          h.aluno_id === aluno.id && isBillableClass(h.status)
+        ).length
+        previsaoTotal += Number(faturaCompetencia?.valor_total || aulas * Number(info.valor_por_aula || 0))
       }
     })
+
+    ;(allFaturas || [])
+      .filter(fatura => ['PENDENTE', 'VENCIDO', 'ERRO'].includes(fatura.status))
+      .forEach(fatura => {
+        const aluno = alunos?.find(item => item.id === fatura.aluno_id)
+        if (!aluno) return
+        const dueDate = fatura.data_vencimento
+          ? new Date(`${String(fatura.data_vencimento).slice(0, 10)}T12:00:00`)
+          : null
+        const estaAtrasada = fatura.status === 'VENCIDO' || (dueDate ? dueDate < new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()) : false)
+        if (estaAtrasada) inadimplenciaM += Number(fatura.valor_total)
+        pendentesTemp.push({
+          id: `fatura-${fatura.id}`,
+          nome: aluno.nome_completo,
+          telefone: aluno.telefone,
+          valor: fatura.valor_total,
+          vencimento: dueDate ? dueDate.toLocaleDateString('pt-BR') : 'a definir',
+          vencimentoOrdem: dueDate?.getTime() || Number.MAX_SAFE_INTEGER,
+          status: fatura.status === 'ERRO' ? 'Erro na emissão' : estaAtrasada ? 'Atrasado' : 'A Vencer',
+          modelo: getBillingModelLabel(fatura.modelo_faturamento),
+          alunoId: aluno.id,
+          invoiceUrl: fatura.invoice_url,
+        })
+      })
 
     pendentesTemp.sort((a, b) => {
        if (a.status === 'Atrasado' && b.status !== 'Atrasado') return -1;
        if (a.status !== 'Atrasado' && b.status === 'Atrasado') return 1;
-       return a.vencimento - b.vencimento;
+       return a.vencimentoOrdem - b.vencimentoOrdem;
     })
 
     transMes.forEach(t => { if (t.tipo === 'Entrada') entradasM += Number(t.valor); if (t.tipo === 'Saída') saidasM += Number(t.valor) })
@@ -157,6 +226,7 @@ export default function RelatorioFinanceiro() {
     setDadosGraficoBarra(historicoGrafico)
     setDadosGraficoPizza(pizzaData)
     setResumo({ saldoCaixa: caixaTotal, previsaoFaturamento: previsaoTotal, entradasMes: entradasM, saidasMes: saidasM, inadimplencia: inadimplenciaM })
+    setModelCounts(counts)
     setAlunosPendentes(pendentesTemp); setExtratoUnificado(extrato); setLoading(false)
   }
 
@@ -221,7 +291,14 @@ export default function RelatorioFinanceiro() {
   const enviarCobrancaWhatsApp = (aluno: any) => {
     if (!aluno.telefone) return alert("Sem WhatsApp cadastrado.")
     let numero = aluno.telefone.replace(/\D/g, ''); if (numero.length === 10 || numero.length === 11) numero = `55${numero}`
-    const msgFinal = (aluno.status === 'Atrasado' ? msgAtrasado : msgPendente).replace(/\{\{nome\}\}/g, aluno.nome.split(' ')[0]).replace(/\{\{valor\}\}/g, aluno.valor.toString()).replace(/\{\{vencimento\}\}/g, aluno.vencimento.toString()).replace(/\{\{pix\}\}/g, chavePix || 'Chave Não Informada')
+    const link = aluno.invoiceUrl ? `Pague por aqui: ${aluno.invoiceUrl}` : ''
+    const msgFinal = (aluno.status === 'Atrasado' ? msgAtrasado : msgPendente)
+      .replace(/\{\{nome\}\}/g, aluno.nome.split(' ')[0])
+      .replace(/\{\{valor\}\}/g, formatCurrencyBR(aluno.valor))
+      .replace(/\{\{vencimento\}\}/g, aluno.vencimento.toString())
+      .replace(/\{\{modelo\}\}/g, aluno.modelo)
+      .replace(/\{\{link\}\}/g, link)
+      .replace(/\{\{pix\}\}/g, chavePix || 'Chave não informada')
     window.open(`https://wa.me/${numero}?text=${encodeURIComponent(msgFinal)}`, '_blank')
   }
 
@@ -242,6 +319,11 @@ export default function RelatorioFinanceiro() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-slate-800">Financeiro</h2>
           <p className="text-slate-500 text-sm mt-1">Balanço de {mesFormatado}</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <span className="px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200 text-[10px] font-bold text-violet-700">{modelCounts.CREDITOS} em Créditos</span>
+            <span className="px-2.5 py-1 rounded-lg bg-cyan-50 border border-cyan-200 text-[10px] font-bold text-cyan-700">{modelCounts.MENSAL_FECHADO} em Mês fechado</span>
+            <span className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-[10px] font-bold text-indigo-700">{modelCounts.VENCIMENTO_FIXO} em Vencimento fixo</span>
+          </div>
         </div>
         <div className="flex gap-3">
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={() => setIsConfigModalOpen(true)} className={`px-4 py-3 rounded-xl bg-white/40 backdrop-blur-md border border-white/60 font-bold text-sm text-slate-700 hover:bg-white/60 shadow-sm transition-all flex items-center gap-2`}>
@@ -375,17 +457,19 @@ export default function RelatorioFinanceiro() {
               <motion.div whileHover={{ scale: 1.01 }} key={aluno.id} className={`bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/80 shadow-sm flex items-center justify-between gap-4 group hover:shadow-md transition-all`}>
                 <div>
                   <p className="font-bold text-sm text-slate-800">{aluno.nome}</p>
-                  <p className={`text-slate-500 text-[11px] font-medium`}>Vencimento: Dia {aluno.vencimento}</p>
+                  <p className="text-slate-500 text-[11px] font-medium">{aluno.modelo} • Vencimento: {aluno.vencimento}</p>
+                  {typeof aluno.saldo === 'number' && <p className="text-[10px] font-semibold text-violet-600 mt-1">Saldo atual: {aluno.saldo} créditos</p>}
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="text-right hidden sm:block mr-2">
-                    <p className="font-bold text-lg tracking-tight text-slate-800">R$ {aluno.valor}</p>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border backdrop-blur-md shadow-sm ${aluno.status === 'Atrasado' ? 'bg-rose-500/10 text-rose-600 border-rose-200' : 'bg-amber-400/20 text-amber-700 border-amber-200'}`}>
+                    <p className="font-bold text-lg tracking-tight text-slate-800">{formatCurrencyBR(aluno.valor)}</p>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border backdrop-blur-md shadow-sm ${aluno.status === 'Atrasado' || aluno.status === 'Créditos em débito' || aluno.status === 'Erro na emissão' ? 'bg-rose-500/10 text-rose-600 border-rose-200' : 'bg-amber-400/20 text-amber-700 border-amber-200'}`}>
                       {aluno.status}
                     </span>
                   </div>
+                  {aluno.invoiceUrl && <motion.button whileTap={{ scale: 0.9 }} onClick={() => window.open(aluno.invoiceUrl, '_blank')} className="h-10 w-10 rounded-xl bg-cyan-100 text-cyan-700 border border-cyan-200 hover:bg-cyan-500 hover:text-white transition-all flex items-center justify-center text-lg shadow-sm" title="Abrir fatura">📄</motion.button>}
                   <motion.button whileTap={{ scale: 0.9 }} onClick={() => enviarCobrancaWhatsApp(aluno)} className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-600 border border-emerald-200 hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center text-lg shadow-sm" title="Lembrar via WhatsApp">💬</motion.button>
-                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => router.push(`/alunos/${aluno.id}`)} className="h-10 w-10 rounded-xl bg-indigo-100 text-indigo-600 border border-indigo-200 hover:bg-indigo-500 hover:text-white transition-all flex items-center justify-center font-bold shadow-sm" title="Ir para o perfil e dar baixa">$</motion.button>
+                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => router.push(`/alunos/${aluno.alunoId}`)} className="h-10 w-10 rounded-xl bg-indigo-100 text-indigo-600 border border-indigo-200 hover:bg-indigo-500 hover:text-white transition-all flex items-center justify-center font-bold shadow-sm" title="Ir para o perfil e dar baixa">$</motion.button>
                 </div>
               </motion.div>
             ))}
@@ -420,6 +504,8 @@ export default function RelatorioFinanceiro() {
                     <span className={`bg-white border border-indigo-100 px-2 py-1 rounded text-[11px] font-medium text-indigo-800 shadow-sm`}>{`{{nome}}`} = Nome</span>
                     <span className={`bg-white border border-indigo-100 px-2 py-1 rounded text-[11px] font-medium text-indigo-800 shadow-sm`}>{`{{valor}}`} = Valor R$</span>
                     <span className={`bg-white border border-indigo-100 px-2 py-1 rounded text-[11px] font-medium text-indigo-800 shadow-sm`}>{`{{vencimento}}`} = Dia</span>
+                    <span className={`bg-white border border-indigo-100 px-2 py-1 rounded text-[11px] font-medium text-indigo-800 shadow-sm`}>{`{{modelo}}`} = Modelo</span>
+                    <span className={`bg-white border border-indigo-100 px-2 py-1 rounded text-[11px] font-medium text-indigo-800 shadow-sm`}>{`{{link}}`} = Link da fatura</span>
                     <span className={`bg-white border border-indigo-100 px-2 py-1 rounded text-[11px] font-medium text-indigo-800 shadow-sm`}>{`{{pix}}`} = Chave</span>
                   </div>
                 </div>

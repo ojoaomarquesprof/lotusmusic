@@ -6,12 +6,20 @@ import { supabase } from '../lib/supabase'
 import { useStyles } from '../lib/useStyles'
 import { motion, AnimatePresence } from 'framer-motion'
 import Cropper from 'react-easy-crop'
+import { BILLING_MODELS, BillingModel } from '../lib/billing'
+import {
+  dateInputToISO,
+  ensureBrazilianNinthDigit,
+  formatBrazilianPhone,
+  formatCEP,
+  formatCNPJ,
+  formatCPF,
+  formatDateInput,
+  normalizeEmail,
+  normalizeName,
+} from '../lib/formatters'
 
-// --- FUNÇÕES DE MÁSCARA E CROPPER ---
-const formatPhone = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/g, '($1) $2').replace(/(\d)(\d{4})$/, '$1-$2').slice(0, 15)
-const formatCPF = (v: string) => v.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2').slice(0, 14)
-const formatCNPJ = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2').slice(0, 18)
-const formatCEP = (v: string) => v.replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2').slice(0, 9)
+// --- FUNÇÕES DE CROPPER ---
 const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<File | null> => { const image = await createImage(imageSrc); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); if (!ctx) return null; canvas.width = 256; canvas.height = 256; ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, 256, 256); return new Promise(resolve => canvas.toBlob(blob => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.9)) }
 
@@ -49,6 +57,8 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [indicacaoNome, setIndicacaoNome] = useState(''); 
   const [valorMensalidade, setValorMensalidade] = useState('250'); 
   const [vencimento, setVencimento] = useState('10');
+  const [modeloFaturamento, setModeloFaturamento] = useState<BillingModel>('VENCIMENTO_FIXO');
+  const [valorPorAula, setValorPorAula] = useState('62.50');
   const [dataPrimeiroPagamento, setDataPrimeiroPagamento] = useState(new Date().toISOString().split('T')[0]);
   
   const [fotoArquivo, setFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null)
@@ -134,7 +144,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const fecharModalMatricula = () => { 
     setIsModalOpen(false); setTipoCadastro('PF'); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setDocumento(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
-    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
+    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setModeloFaturamento('VENCIMENTO_FIXO'); setValorPorAula('62.50'); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
     setFotoArquivo(null); setFotoPreview(null); 
     setAgendas([{ id: 'new_1', dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
   }
@@ -159,6 +169,20 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const handleMatricular = async (e: React.FormEvent) => {
     e.preventDefault(); 
+    const dataNascimentoISO = tipoCadastro === 'PF' ? dateInputToISO(dataNascimento) : null;
+    if (tipoCadastro === 'PF' && !dataNascimentoISO) {
+      return alert("Informe uma data de nascimento válida no formato DD/MM/AAAA.")
+    }
+    if (modeloFaturamento === 'MENSAL_FECHADO' && Number(valorPorAula) <= 0) {
+      return alert("Informe o valor cobrado por aula.")
+    }
+    const documentoNumeros = documento.replace(/\D/g, '');
+    if (tipoCadastro === 'PF' && documentoNumeros.length !== 11) {
+      return alert("Informe um CPF com 11 dígitos.")
+    }
+    if (tipoCadastro === 'PJ' && modeloFaturamento === 'MENSAL_FECHADO' && documentoNumeros.length !== 14) {
+      return alert("O CNPJ é obrigatório para emitir as faturas automáticas da turma.")
+    }
     if (agendas.some(ag => !ag.professor_id || !ag.sala_id || !ag.instrumento_aula)) {
       return alert("Preencha modalidade, sala e professor de TODOS os horários escolhidos.")
     }
@@ -216,16 +240,35 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       id: alunoId, 
       nome_completo: nomeAluno, 
       email: emailFinal, // Salva o e-mail (real ou fictício)
-      telefone: telAluno, 
+      telefone: ensureBrazilianNinthDigit(telAluno),
       cpf: documento, 
-      data_nascimento: dataNascimento || null, 
+      data_nascimento: dataNascimentoISO,
       cep, endereco, numero, complemento, bairro, cidade, estado, 
       avatar_url: avatarPublicUrl, 
       role: 'ALUNO' 
     }])
     if (err1) { setIsSubmitting(false); return alert("Erro ao criar perfil: " + err1.message) }
     
-    await supabase.from('alunos_info').insert([{ id: alunoId, valor_mensalidade: parseFloat(valorMensalidade), data_vencimento: parseInt(vencimento), como_conheceu: comoConheceu, indicacao_nome: comoConheceu === 'Indicação' ? indicacaoNome : null, status: 'Ativo' }])
+    const valorBase = modeloFaturamento === 'MENSAL_FECHADO'
+      ? Number((parseFloat(valorPorAula) * 4).toFixed(2))
+      : parseFloat(valorMensalidade);
+    const { error: errInfo } = await supabase.from('alunos_info').insert([{
+      id: alunoId,
+      valor_mensalidade: valorBase,
+      data_vencimento: modeloFaturamento === 'VENCIMENTO_FIXO' ? parseInt(vencimento) : null,
+      modelo_faturamento: modeloFaturamento,
+      creditos_por_pagamento: 4,
+      saldo_creditos_faturamento: 0,
+      valor_por_aula: modeloFaturamento === 'MENSAL_FECHADO' ? parseFloat(valorPorAula) : null,
+      prazo_vencimento_dias: 7,
+      como_conheceu: comoConheceu,
+      indicacao_nome: comoConheceu === 'Indicação' ? indicacaoNome : null,
+      status: 'Ativo'
+    }])
+    if (errInfo) {
+      setIsSubmitting(false);
+      return alert("Erro ao salvar o modelo de faturamento: " + errInfo.message)
+    }
     
     // Inserir todas as agendas
     const agendaInserts = agendas.map(ag => ({
@@ -241,10 +284,11 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     
     const hojeStr = new Date().toISOString().split('T')[0];
     
-    if (dataPrimeiroPagamento <= hojeStr) {
+    if (modeloFaturamento !== 'MENSAL_FECHADO' && dataPrimeiroPagamento <= hojeStr) {
       const { error: errPg } = await supabase.from('pagamentos').insert([{
         aluno_id: alunoId,
-        valor: parseFloat(valorMensalidade),
+        valor: valorBase,
+        status: 'Pago',
         data_pagamento: dataPrimeiroPagamento,
         metodo_pagamento: 'Pix/Dinheiro (Matrícula)'
       }]);
@@ -420,7 +464,9 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                       type="email" 
                       required={tipoCadastro === 'PF'} 
                       value={emailAluno} 
-                      onChange={e => setEmailAluno(e.target.value)} 
+                      onChange={e => setEmailAluno(e.target.value)}
+                      onBlur={() => setEmailAluno(normalizeEmail(emailAluno))}
+                      autoComplete="email"
                       className={inputClass} 
                     />
                     <input 
@@ -453,43 +499,98 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                    <input placeholder={tipoCadastro === 'PF' ? "Nome Completo" : "Nome da Igreja / Instituição / Turma"} required value={nomeAluno} onChange={e => setNomeAluno(e.target.value)} className={`md:col-span-2 ${inputClass}`} />
-                    
+                    <input placeholder={tipoCadastro === 'PF' ? "Nome Completo" : "Nome da Igreja / Instituição / Turma"} required value={nomeAluno} onChange={e => setNomeAluno(e.target.value)} onBlur={() => setNomeAluno(normalizeName(nomeAluno))} autoComplete="name" className={`md:col-span-2 ${inputClass}`} />
+
                     {tipoCadastro === 'PF' && (
-                      <div><label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data Nasc.</label><input type="date" required value={dataNascimento} onChange={e => setDataNascimento(e.target.value)} className={inputClass} /></div>
+                      <div><label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data Nasc.</label><input type="text" inputMode="numeric" placeholder="DD/MM/AAAA" maxLength={10} required value={dataNascimento} onChange={e => setDataNascimento(formatDateInput(e.target.value))} autoComplete="bday" className={inputClass} /></div>
                     )}
                     
                     <input 
-                      placeholder={tipoCadastro === 'PF' ? "CPF" : "CNPJ (Opcional)"} 
-                      required={tipoCadastro === 'PF'} 
+                      placeholder={tipoCadastro === 'PF' ? "CPF" : modeloFaturamento === 'MENSAL_FECHADO' ? "CNPJ" : "CNPJ (Opcional)"}
+                      inputMode="numeric"
+                      required={tipoCadastro === 'PF' || modeloFaturamento === 'MENSAL_FECHADO'}
                       value={documento} 
                       onChange={e => setDocumento(tipoCadastro === 'PF' ? formatCPF(e.target.value) : formatCNPJ(e.target.value))} 
                       maxLength={tipoCadastro === 'PF' ? 14 : 18} 
                       className={inputClass} 
                     />
                     
-                    <input placeholder={tipoCadastro === 'PF' ? "WhatsApp" : "WhatsApp do Responsável"} required value={telAluno} onChange={e => setTelAluno(formatPhone(e.target.value))} maxLength={15} className={`${tipoCadastro === 'PJ' ? 'md:col-span-2' : ''} ${inputClass}`} />
+                    <input placeholder={tipoCadastro === 'PF' ? "WhatsApp" : "WhatsApp do Responsável"} inputMode="tel" required value={telAluno} onChange={e => setTelAluno(formatBrazilianPhone(e.target.value))} onBlur={() => setTelAluno(ensureBrazilianNinthDigit(telAluno))} maxLength={15} autoComplete="tel" className={`${tipoCadastro === 'PJ' ? 'md:col-span-2' : ''} ${inputClass}`} />
                   </div>
                 </div>
 
-                <div className="space-y-4"><p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Endereço</p><div className="grid grid-cols-2 md:grid-cols-4 gap-4"><input placeholder="CEP" required value={cep} onChange={handleCepChange} maxLength={9} className={`col-span-2 md:col-span-1 ${inputClass}`} /><input placeholder="Endereço / Rua" required value={endereco} onChange={e => setEndereco(e.target.value)} className={`col-span-2 md:col-span-2 ${inputClass}`} /><input id="input-numero" placeholder="Número" required value={numero} onChange={e => setNumero(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass}`} /></div></div>
-                
+                <div className="space-y-4">
+                  <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Endereço</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <input placeholder="CEP" inputMode="numeric" required value={cep} onChange={handleCepChange} maxLength={9} autoComplete="postal-code" className={`col-span-2 md:col-span-1 ${inputClass}`} />
+                    <input placeholder="Endereço / Rua" required value={endereco} onChange={e => setEndereco(e.target.value)} autoComplete="address-line1" className={`col-span-2 md:col-span-2 ${inputClass}`} />
+                    <input id="input-numero" placeholder="Número" required value={numero} onChange={e => setNumero(e.target.value.toUpperCase())} className={`col-span-2 md:col-span-1 ${inputClass}`} />
+                    <input placeholder="Complemento" value={complemento} onChange={e => setComplemento(e.target.value)} autoComplete="address-line2" className={`col-span-2 md:col-span-1 ${inputClass}`} />
+                    <input placeholder="Bairro" required value={bairro} onChange={e => setBairro(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass}`} />
+                    <input placeholder="Cidade" required value={cidade} onChange={e => setCidade(e.target.value)} autoComplete="address-level2" className={`col-span-2 md:col-span-1 ${inputClass}`} />
+                    <input placeholder="UF" required value={estado} maxLength={2} onChange={e => setEstado(e.target.value.replace(/[^a-z]/gi, '').toUpperCase())} autoComplete="address-level1" className={`col-span-2 md:col-span-1 ${inputClass}`} />
+                  </div>
+                </div>
+
                 <div className="space-y-4">
                   <p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest border-b border-emerald-500/20 pb-2">Financeiro & Marketing</p>
-                  
+
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-2">MODELO DE FATURAMENTO</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {BILLING_MODELS.map(model => (
+                        <button
+                          key={model.value}
+                          type="button"
+                          onClick={() => {
+                            setModeloFaturamento(model.value)
+                            if (model.value === 'MENSAL_FECHADO' && !valorPorAula) {
+                              setValorPorAula((Number(valorMensalidade || 0) / 4).toFixed(2))
+                            }
+                          }}
+                          className={`p-4 rounded-2xl border text-left transition-all ${modeloFaturamento === model.value ? 'bg-emerald-50 border-emerald-400 shadow-md ring-2 ring-emerald-500/10' : 'bg-white/40 border-white/70 hover:bg-white/70'}`}
+                        >
+                          <span className={`text-xs font-black block mb-1 ${modeloFaturamento === model.value ? 'text-emerald-700' : 'text-slate-700'}`}>{modeloFaturamento === model.value ? '✓ ' : ''}{model.label}</span>
+                          <span className="text-[10px] text-slate-500 font-medium leading-relaxed block">{model.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Valor Vigente (R$)</label>
-                      <input type="number" placeholder="Ex: 250" required value={valorMensalidade} onChange={e => setValorMensalidade(e.target.value)} className={inputClass} />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Dia Vencimento</label>
-                      <input type="number" min="1" max="31" placeholder="Ex: 10" required value={vencimento} onChange={e => setVencimento(e.target.value)} className={inputClass} />
-                    </div>
-                    <div className="col-span-2 md:col-span-1">
-                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data do 1º Pagamento</label>
-                      <input type="date" required value={dataPrimeiroPagamento} onChange={e => setDataPrimeiroPagamento(e.target.value)} className={inputClass} />
-                    </div>
+                    {modeloFaturamento === 'MENSAL_FECHADO' ? (
+                      <>
+                        <div className="col-span-2 md:col-span-1">
+                          <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Valor por Aula (R$)</label>
+                          <input type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="Ex: 70,00" required value={valorPorAula} onChange={e => setValorPorAula(e.target.value)} className={inputClass} />
+                        </div>
+                        <div className="col-span-2 md:col-span-2 p-3.5 rounded-xl bg-cyan-50/70 border border-cyan-200 text-xs text-cyan-800 font-semibold">
+                          Fecha no último dia do mês e vence 7 dias corridos depois. Somente aulas realizadas entram na fatura.
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">{modeloFaturamento === 'CREDITOS' ? 'Valor do Pacote (R$)' : 'Mensalidade (R$)'}</label>
+                          <input type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="Ex: 250" required value={valorMensalidade} onChange={e => setValorMensalidade(e.target.value)} className={inputClass} />
+                        </div>
+                        {modeloFaturamento === 'VENCIMENTO_FIXO' && (
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Dia Vencimento</label>
+                            <input type="number" inputMode="numeric" min="1" max="31" placeholder="Ex: 10" required value={vencimento} onChange={e => setVencimento(e.target.value.replace(/\D/g, '').slice(0, 2))} className={inputClass} />
+                          </div>
+                        )}
+                        <div className="col-span-2 md:col-span-1">
+                          <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data do 1º Pagamento</label>
+                          <input type="date" required value={dataPrimeiroPagamento} onChange={e => setDataPrimeiroPagamento(e.target.value)} className={inputClass} />
+                        </div>
+                        {modeloFaturamento === 'CREDITOS' && (
+                          <div className="col-span-2 md:col-span-3 p-3.5 rounded-xl bg-violet-50/70 border border-violet-200 text-xs text-violet-800 font-semibold">
+                            Cada pagamento confirmado adiciona 4 créditos. Cada aula realizada consome 1.
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">

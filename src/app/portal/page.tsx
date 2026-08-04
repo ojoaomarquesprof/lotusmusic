@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
 import { motion, AnimatePresence } from 'framer-motion'
+import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../lib/billing'
 
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
-const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }
+const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } } as const
 
 export default function PortalAluno() {
   const { s, toggleTheme } = useStyles()
@@ -25,6 +26,8 @@ export default function PortalAluno() {
   const [todasReposicoes, setTodasReposicoes] = useState<any[]>([]) 
   const [statusMensalidade, setStatusMensalidade] = useState({ pago: false, diasRestantes: 0, dataVencimentoStr: '' })
   const [historicoPagamentos, setHistoricoPagamentos] = useState<any[]>([])
+  const [faturaAtual, setFaturaAtual] = useState<any>(null)
+  const [apuracaoMes, setApuracaoMes] = useState({ aulas: 0, valor: 0 })
   
   const [isPayHistoryModalOpen, setIsPayHistoryModalOpen] = useState(false)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
@@ -188,17 +191,57 @@ export default function PortalAluno() {
     const { data: hist } = await supabase.from('historico_aulas').select('*').eq('aluno_id', session.user.id).order('data_aula', { ascending: false }).limit(10)
     setHistorico(hist || [])
 
-    // CÁLCULO INTELIGENTE DE CRÉDITOS (Desmarcadas + Falta Justificada + Créditos Manuais)
+    const info = Array.isArray(perfil?.alunos_info) ? perfil?.alunos_info[0] : perfil?.alunos_info
+    const modeloFaturamento = getBillingModel(info)
+
+    // Reposições só existem no modelo de vencimento fixo e expiram em 30 dias.
     const { data: histAll } = await supabase.from('historico_aulas').select('*').eq('aluno_id', session.user.id).order('data_aula', { ascending: false }).limit(200)
-    const qtdDesmarcadas = (histAll || []).filter(h => h.status === 'Desmarcada' || h.status === 'Crédito' || h.status === 'Falta Justificada').length;
-    const qtdUsadasPortal = (rep || []).filter((r: any) => r.status !== 'Negada').length; 
-    const qtdUsadasManual = (histAll || []).filter(h => h.status === 'Reposição' || h.status === 'Ajuste de Saldo').length;
-    setCreditos(Math.max(0, qtdDesmarcadas - (qtdUsadasPortal + qtdUsadasManual)));
+    if (modeloFaturamento === 'VENCIMENTO_FIXO') {
+      const { data: creditosValidos, error: creditosError } = await supabase
+        .from('creditos_reposicao')
+        .select('id')
+        .eq('aluno_id', session.user.id)
+        .is('usado_em', null)
+        .gte('expira_em', new Date().toISOString().slice(0, 10))
+
+      if (!creditosError) {
+        setCreditos(creditosValidos?.length || 0)
+      } else {
+        const limiteReposicao = new Date()
+        limiteReposicao.setDate(limiteReposicao.getDate() - 30)
+        const limiteStr = limiteReposicao.toISOString().slice(0, 10)
+        const qtdDesmarcadas = (histAll || []).filter(h =>
+          (h.status === 'Desmarcada' || h.status === 'Crédito' || h.status === 'Falta Justificada') &&
+          String(h.data_aula).slice(0, 10) >= limiteStr
+        ).length;
+        const qtdUsadasPortal = (rep || []).filter((r: any) => r.status !== 'Negada').length;
+        const qtdUsadasManual = (histAll || []).filter(h => h.status === 'Reposição' || h.status === 'Ajuste de Saldo').length;
+        setCreditos(Math.max(0, qtdDesmarcadas - (qtdUsadasPortal + qtdUsadasManual)));
+      }
+    } else {
+      setCreditos(0)
+    }
+
+    const prefixoMes = new Date().toISOString().slice(0, 7)
+    const aulasMes = (histAll || []).filter(h =>
+      String(h.data_aula).startsWith(prefixoMes) && isBillableClass(h.status)
+    ).length
+    setApuracaoMes({
+      aulas: aulasMes,
+      valor: aulasMes * Number(info?.valor_por_aula || 0),
+    })
+
+    const { data: invoices } = await supabase
+      .from('faturas')
+      .select('*')
+      .eq('aluno_id', session.user.id)
+      .order('data_emissao', { ascending: false })
+      .limit(1)
+    setFaturaAtual(invoices?.[0] || null)
 
     const { data: allPgs } = await supabase.from('pagamentos').select('*').eq('aluno_id', session.user.id).order('data_pagamento', { ascending: false })
     setHistoricoPagamentos(allPgs || [])
 
-    const info = Array.isArray(perfil?.alunos_info) ? perfil?.alunos_info[0] : perfil?.alunos_info
     const diaVenc = info?.data_vencimento || 10
     const hoje = new Date(); const ano = hoje.getFullYear(); const mes = hoje.getMonth()
     const getDataVenc = (a: number, m: number, d: number) => { const ultimo = new Date(a, m + 1, 0).getDate(); return new Date(a, m, Math.min(d, ultimo)) }
@@ -274,6 +317,7 @@ export default function PortalAluno() {
       nova_data: selectedDateObj.dataString, 
       novo_horario_inicio: selectedSlot.hora_inicio, 
       novo_horario_fim: selectedSlot.hora_fim,
+      data_aula_original: aulaParaMudar.data_original_desmarcada || null,
       status: 'Pendente',
       lida_aluno: false 
     }])
@@ -292,7 +336,7 @@ export default function PortalAluno() {
 
   const calcularDataProximaAula = (diaStr: string, horaInicio: string) => {
     const mapa: any = { 'Domingo': 0, 'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6 }
-    const hoje = new Date(); const diaAlvo = mapa[diaStr]; if (diaAlvo === undefined) return '--'
+    const hoje = new Date(); const diaAlvo = mapa[diaStr]; if (diaAlvo === undefined) return { dataFormatada: '--', dataBaseString: '' }
     let diff = diaAlvo - hoje.getDay()
     if (diff < 0 || (diff === 0 && hoje.getHours() > parseInt(horaInicio.split(':')[0]))) diff += 7
     const d = new Date(); d.setDate(hoje.getDate() + diff)
@@ -324,8 +368,9 @@ export default function PortalAluno() {
 
   if (!isMounted) return null;
   if (loading && !aluno) return <div className={`min-h-screen bg-slate-50 flex justify-center items-center`}><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
-  
+
   const infoFinanceira = Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info
+  const modeloFaturamentoPortal = getBillingModel(infoFinanceira)
   
   const notificacoesNaoLidas = todasNotificacoes.filter(n => !n.is_read)
   const notificacoesLidas = todasNotificacoes.filter(n => n.is_read)
@@ -379,7 +424,7 @@ export default function PortalAluno() {
         )}
 
         {/* --- BANNER DE CRÉDITOS --- */}
-        {creditos > 0 && !solicitacaoPendente && (
+        {getBillingModel(Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info) === 'VENCIMENTO_FIXO' && creditos > 0 && !solicitacaoPendente && (
           <motion.div variants={itemVariants} className="bg-gradient-to-r from-indigo-500 to-cyan-500 p-[1px] rounded-[2rem] shadow-lg mb-6">
             <div className="bg-white/10 backdrop-blur-md rounded-[31px] p-6 flex flex-col md:flex-row items-center justify-between gap-4">
                <div className="flex items-center gap-4">
@@ -428,7 +473,8 @@ export default function PortalAluno() {
               const canRescheduleInTime = checkCanReschedule(dadosData.dataBaseString, aula.horario_inicio);
               
               // Se a aula já for reposição ou já foi cancelada, escondemos o botão.
-              const deveMostrarBotaoReagendar = !solicitacaoPendente && !isDesmarcada && canRescheduleInTime && !aula.is_reposicao;
+              const infoPortal = Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info;
+              const deveMostrarBotaoReagendar = getBillingModel(infoPortal) === 'VENCIMENTO_FIXO' && !solicitacaoPendente && !isDesmarcada && canRescheduleInTime && !aula.is_reposicao;
 
               return (
                 <motion.div whileHover={{ y: -4 }} key={aula.id} className={`bg-white/50 backdrop-blur-xl p-6 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border relative overflow-hidden group mb-4 transition-all ${isDesmarcada ? 'border-rose-400 opacity-90' : aula.is_reposicao ? 'border-amber-400' : 'border-white/60'}`}>
@@ -479,7 +525,36 @@ export default function PortalAluno() {
         <motion.section variants={itemVariants}>
           <h3 className="text-sm font-semibold text-slate-500 mb-3 ml-2 flex items-center gap-2 drop-shadow-sm"><span className="text-lg">💳</span> Painel Financeiro</h3>
           <div className="bg-white/50 backdrop-blur-xl p-6 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border border-white/60 relative overflow-hidden">
-            {statusMensalidade.pago ? (
+            {modeloFaturamentoPortal === 'CREDITOS' ? (
+              Number(infoFinanceira?.saldo_creditos_faturamento || 0) > 0 ? (
+                <div className="bg-violet-50/80 backdrop-blur-sm border border-violet-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
+                  <div className="h-12 w-12 rounded-full bg-violet-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">🎟️</div>
+                  <div><p className="font-bold text-sm text-violet-800 tracking-tight">{infoFinanceira.saldo_creditos_faturamento} créditos disponíveis</p><p className="text-xs font-medium text-violet-600 mt-0.5">O próximo pagamento será necessário quando o saldo acabar.</p></div>
+                </div>
+              ) : (
+                <div className="bg-rose-50/80 backdrop-blur-sm border border-rose-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
+                  <div className="h-12 w-12 rounded-full bg-rose-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">!</div>
+                  <div><p className="font-bold text-sm text-rose-800 tracking-tight">Renovação necessária</p><p className="text-xs font-medium text-rose-600 mt-0.5">Seu saldo de aulas chegou a {infoFinanceira?.saldo_creditos_faturamento || 0}.</p></div>
+                </div>
+              )
+            ) : modeloFaturamentoPortal === 'MENSAL_FECHADO' ? (
+              faturaAtual?.status === 'PAGO' ? (
+                <div className="bg-emerald-50/80 backdrop-blur-sm border border-emerald-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
+                  <div className="h-12 w-12 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">✓</div>
+                  <div><p className="font-bold text-sm text-emerald-800 tracking-tight">Última fatura paga</p><p className="text-xs font-medium text-emerald-600 mt-0.5">{faturaAtual.quantidade_aulas} aula(s) — {formatCurrencyBR(faturaAtual.valor_total)}</p></div>
+                </div>
+              ) : faturaAtual && ['PENDENTE', 'VENCIDO', 'ERRO'].includes(faturaAtual.status) ? (
+                <div className={`${faturaAtual.status === 'VENCIDO' ? 'bg-rose-50/80 border-rose-200/50' : 'bg-amber-50/80 border-amber-200/50'} backdrop-blur-sm border p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm`}>
+                  <div className={`h-12 w-12 rounded-full ${faturaAtual.status === 'VENCIDO' ? 'bg-rose-500' : 'bg-amber-500'} text-white flex items-center justify-center text-xl shadow-md flex-shrink-0`}>📄</div>
+                  <div><p className={`font-bold text-sm ${faturaAtual.status === 'VENCIDO' ? 'text-rose-800' : 'text-amber-800'} tracking-tight`}>{faturaAtual.status === 'VENCIDO' ? 'Fatura vencida' : 'Fatura disponível'}</p><p className={`text-xs font-medium ${faturaAtual.status === 'VENCIDO' ? 'text-rose-600' : 'text-amber-700'} mt-0.5`}>{faturaAtual.quantidade_aulas} aula(s) — {formatCurrencyBR(faturaAtual.valor_total)}</p></div>
+                </div>
+              ) : (
+                <div className="bg-cyan-50/80 backdrop-blur-sm border border-cyan-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
+                  <div className="h-12 w-12 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">🧮</div>
+                  <div><p className="font-bold text-sm text-cyan-800 tracking-tight">Mês em apuração</p><p className="text-xs font-medium text-cyan-600 mt-0.5">{apuracaoMes.aulas} aula(s) realizada(s) até agora.</p></div>
+                </div>
+              )
+            ) : statusMensalidade.pago ? (
               <div className="bg-emerald-50/80 backdrop-blur-sm border border-emerald-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
                 <div className="h-12 w-12 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">✓</div>
                 <div><p className="font-bold text-sm text-emerald-800 tracking-tight">Mensalidade Paga</p><p className="text-xs font-medium text-emerald-600 mt-0.5">Tudo certo. Próxima: {statusMensalidade.dataVencimentoStr}</p></div>
@@ -498,16 +573,19 @@ export default function PortalAluno() {
             
             <div className="flex justify-between items-end mb-6 bg-white/40 border border-white/60 p-4 rounded-2xl shadow-inner">
               <div>
-                <p className="text-xs text-slate-500 font-semibold mb-1">Valor Vigente</p>
-                <p className="text-3xl font-bold tracking-tight text-slate-800 leading-none">R$ {infoFinanceira?.valor_mensalidade || '0,00'}</p>
+                <p className="text-xs text-slate-500 font-semibold mb-1">{modeloFaturamentoPortal === 'MENSAL_FECHADO' ? (faturaAtual && ['PENDENTE', 'VENCIDO', 'PAGO'].includes(faturaAtual.status) ? 'Última fatura' : 'Parcial do mês') : modeloFaturamentoPortal === 'CREDITOS' ? 'Pacote com 4 créditos' : 'Valor vigente'}</p>
+                <p className="text-3xl font-bold tracking-tight text-slate-800 leading-none">{formatCurrencyBR(modeloFaturamentoPortal === 'MENSAL_FECHADO' ? (faturaAtual && ['PENDENTE', 'VENCIDO', 'PAGO'].includes(faturaAtual.status) ? faturaAtual.valor_total : apuracaoMes.valor) : infoFinanceira?.valor_mensalidade)}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-slate-500 font-semibold mb-1">Vencimento</p>
-                <p className="font-bold text-sm text-slate-700 bg-white/80 px-2 py-1 rounded-lg shadow-sm border border-white">Dia {infoFinanceira?.data_vencimento || 10}</p>
+                <p className="text-xs text-slate-500 font-semibold mb-1">Modelo</p>
+                <p className="font-bold text-xs text-slate-700 bg-white/80 px-2 py-1 rounded-lg shadow-sm border border-white">{getBillingModelLabel(modeloFaturamentoPortal)}</p>
               </div>
             </div>
-            
-            {!statusMensalidade.pago && (
+
+            {modeloFaturamentoPortal === 'MENSAL_FECHADO' && faturaAtual?.invoice_url && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && (
+              <motion.button whileTap={{ scale: 0.98 }} onClick={() => window.open(faturaAtual.invoice_url, '_blank')} className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-bold text-sm mb-3 shadow-md hover:shadow-lg transition-all">📄 Abrir e pagar fatura</motion.button>
+            )}
+            {((modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && !statusMensalidade.pago) || (modeloFaturamentoPortal === 'CREDITOS' && Number(infoFinanceira?.saldo_creditos_faturamento || 0) <= 0) || (modeloFaturamentoPortal === 'MENSAL_FECHADO' && faturaAtual && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && !faturaAtual.invoice_url)) && (
               <motion.button whileTap={{ scale: 0.98 }} onClick={copiarPix} className="w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-cyan-500 text-white font-bold text-sm mb-3 shadow-md hover:shadow-lg transition-all">🔗 Copiar Chave PIX</motion.button>
             )}
             <motion.button whileTap={{ scale: 0.98 }} onClick={() => setIsPayHistoryModalOpen(true)} className="w-full py-4 rounded-2xl font-bold text-sm text-slate-600 bg-white/60 border border-white/80 hover:bg-white shadow-sm transition-all">📄 Ver Recibos</motion.button>

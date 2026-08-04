@@ -8,10 +8,9 @@ import Cropper from 'react-easy-crop'
 import { motion, AnimatePresence } from 'framer-motion'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { BILLING_MODELS, BillingModel, formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../../lib/billing'
+import { dateInputToISO, ensureBrazilianNinthDigit, formatBrazilianPhone, formatCEP, formatCPFOrCNPJ, formatDateInput, isoToDateInput, normalizeEmail, normalizeName } from '../../../lib/formatters'
 
-const formatPhone = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/g, '($1) $2').replace(/(\d)(\d{4})$/, '$1-$2').slice(0, 15)
-const formatCPF = (v: string) => v.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2').slice(0, 14)
-const formatCEP = (v: string) => v.replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2').slice(0, 9)
 const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<File | null> => { const image = await createImage(imageSrc); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); if (!ctx) return null; canvas.width = 256; canvas.height = 256; ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, 256, 256); return new Promise(resolve => canvas.toBlob(blob => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.9)) }
 
@@ -21,7 +20,7 @@ const HORARIOS_DISPONIVEIS = Array.from({ length: 16 }, (_, i) => {
 });
 
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
-const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }
+const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } } as const
 
 export default function PerfilAluno() {
   const { s } = useStyles(); const { id } = useParams(); const router = useRouter()
@@ -40,6 +39,7 @@ export default function PerfilAluno() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false); const [editStatus, setEditStatus] = useState('Ativo'); const [editNome, setEditNome] = useState(''); const [editEmail, setEditEmail] = useState(''); const [editTel, setEditTel] = useState(''); const [editCpf, setEditCpf] = useState(''); const [editDataNascimento, setEditDataNascimento] = useState('')
   const [editCep, setEditCep] = useState(''); const [editEndereco, setEditEndereco] = useState(''); const [editNumero, setEditNumero] = useState(''); const [editComplemento, setEditComplemento] = useState(''); const [editBairro, setEditBairro] = useState(''); const [editCidade, setEditCidade] = useState(''); const [editEstado, setEditEstado] = useState('')
   const [editComoConheceu, setEditComoConheceu] = useState(''); const [editIndicacaoNome, setEditIndicacaoNome] = useState(''); const [editValor, setEditValor] = useState(''); const [editVencimento, setEditVencimento] = useState('')
+  const [editModeloFaturamento, setEditModeloFaturamento] = useState<BillingModel>('VENCIMENTO_FIXO'); const [editValorPorAula, setEditValorPorAula] = useState('')
   const [editAvatarUrl, setEditAvatarUrl] = useState(''); const [editFotoArquivo, setEditFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null); const [showCropModal, setShowCropModal] = useState(false); const [imageToCrop, setImageToCrop] = useState<string | null>(null); const [crop, setCrop] = useState({ x: 0, y: 0 }); const [zoom, setZoom] = useState(1); const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
 
   const [editAgendas, setEditAgendas] = useState<any[]>([])
@@ -70,11 +70,26 @@ export default function PerfilAluno() {
     const { data: mats } = await supabase.from('materiais_aluno').select('*').eq('aluno_id', id).order('data_envio', { ascending: false })
     const { data: reposicoes } = await supabase.from('solicitacoes_reagendamento').select('*').eq('aluno_id', id)
     
-    // Calcula o saldo de créditos
-    const qtdDesmarcadas = (hist || []).filter(h => h.status === 'Desmarcada' || h.status === 'Crédito' || h.status === 'Falta Justificada').length;
-    const qtdUsadasPortal = (reposicoes || []).filter((r: any) => r.status !== 'Negada').length;
-    const qtdUsadasManual = (hist || []).filter(h => h.status === 'Reposição' || h.status === 'Ajuste de Saldo').length;
-    setSaldoCreditos(Math.max(0, qtdDesmarcadas - (qtdUsadasPortal + qtdUsadasManual)));
+    const info = Array.isArray(profile?.alunos_info) ? profile?.alunos_info[0] : profile?.alunos_info;
+    if (getBillingModel(info) === 'VENCIMENTO_FIXO') {
+      const { data: creditosReposicao, error: creditosError } = await supabase
+        .from('creditos_reposicao')
+        .select('id')
+        .eq('aluno_id', id)
+        .is('usado_em', null)
+        .gte('expira_em', new Date().toISOString().slice(0, 10));
+
+      if (!creditosError) {
+        setSaldoCreditos(creditosReposicao?.length || 0);
+      } else {
+        const qtdDesmarcadas = (hist || []).filter(h => h.status === 'Desmarcada' || h.status === 'Crédito' || h.status === 'Falta Justificada').length;
+        const qtdUsadasPortal = (reposicoes || []).filter((r: any) => r.status !== 'Negada').length;
+        const qtdUsadasManual = (hist || []).filter(h => h.status === 'Reposição' || h.status === 'Ajuste de Saldo').length;
+        setSaldoCreditos(Math.max(0, qtdDesmarcadas - (qtdUsadasPortal + qtdUsadasManual)));
+      }
+    } else {
+      setSaldoCreditos(0);
+    }
 
     const { data: pL } = await supabase.from('profiles').select('id, nome_completo').in('role', ['PROFESSOR', 'ADMIN'])
     const { data: sL } = await supabase.from('salas').select('id, nome')
@@ -85,9 +100,10 @@ export default function PerfilAluno() {
   }
 
   const infoMatricula = Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info; const isAlunoInativo = infoMatricula?.status === 'Inativo'; const isEditingInativo = editStatus === 'Inativo'
+  const modeloFaturamento = getBillingModel(infoMatricula)
 
   const abrirModalEdicao = () => { 
-    setEditStatus(infoMatricula?.status || 'Ativo'); setEditNome(aluno.nome_completo || ''); setEditEmail(aluno.email || ''); setEditTel(aluno.telefone || ''); setEditCpf(aluno.cpf || ''); setEditDataNascimento(aluno.data_nascimento || ''); setEditCep(aluno.cep || ''); setEditEndereco(aluno.endereco || ''); setEditNumero(aluno.numero || ''); setEditComplemento(aluno.complemento || ''); setEditBairro(aluno.bairro || ''); setEditCidade(aluno.cidade || ''); setEditEstado(aluno.estado || ''); setEditComoConheceu(infoMatricula?.como_conheceu || ''); setEditIndicacaoNome(infoMatricula?.indicacao_nome || ''); setEditValor(infoMatricula?.valor_mensalidade || ''); setEditVencimento(infoMatricula?.data_vencimento || ''); setEditAvatarUrl(aluno.avatar_url || ''); setFotoPreview(aluno.avatar_url || null); setEditFotoArquivo(null); 
+    setEditStatus(infoMatricula?.status || 'Ativo'); setEditNome(aluno.nome_completo || ''); setEditEmail(aluno.email || ''); setEditTel(aluno.telefone || ''); setEditCpf(aluno.cpf || ''); setEditDataNascimento(isoToDateInput(aluno.data_nascimento)); setEditCep(aluno.cep || ''); setEditEndereco(aluno.endereco || ''); setEditNumero(aluno.numero || ''); setEditComplemento(aluno.complemento || ''); setEditBairro(aluno.bairro || ''); setEditCidade(aluno.cidade || ''); setEditEstado(aluno.estado || ''); setEditComoConheceu(infoMatricula?.como_conheceu || ''); setEditIndicacaoNome(infoMatricula?.indicacao_nome || ''); setEditValor(infoMatricula?.valor_mensalidade || ''); setEditVencimento(infoMatricula?.data_vencimento || ''); setEditModeloFaturamento(getBillingModel(infoMatricula)); setEditValorPorAula(infoMatricula?.valor_por_aula || ''); setEditAvatarUrl(aluno.avatar_url || ''); setFotoPreview(aluno.avatar_url || null); setEditFotoArquivo(null);
     
     if (aulasFixas.length > 0) { 
       setEditAgendas(aulasFixas.map(a => ({
@@ -126,6 +142,20 @@ export default function PerfilAluno() {
   
   const handleSalvarEdicao = async (e: React.FormEvent) => { 
     e.preventDefault(); setIsSubmitting(true); 
+    const dataNascimentoISO = editDataNascimento ? dateInputToISO(editDataNascimento) : null;
+    if (!isEditingInativo && !dataNascimentoISO) {
+      setIsSubmitting(false);
+      return alert("Informe uma data de nascimento válida no formato DD/MM/AAAA.");
+    }
+    if (!isEditingInativo && editModeloFaturamento === 'MENSAL_FECHADO' && Number(editValorPorAula) <= 0) {
+      setIsSubmitting(false);
+      return alert("Informe o valor cobrado por aula.");
+    }
+    const documentoNumeros = editCpf.replace(/\D/g, '');
+    if (!isEditingInativo && ![11, 14].includes(documentoNumeros.length)) {
+      setIsSubmitting(false);
+      return alert("Informe um CPF ou CNPJ válido para o faturamento.");
+    }
     
     if (!isEditingInativo) {
       if (editAgendas.some(ag => !ag.professor_id || !ag.sala_id || !ag.instrumento_aula)) {
@@ -190,10 +220,28 @@ export default function PerfilAluno() {
     let finalAvatarUrl = editAvatarUrl; 
     if (editFotoArquivo) { const fileName = `alunos/${id}-${crypto.randomUUID()}.jpg`; const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, editFotoArquivo); if (!uploadError) { finalAvatarUrl = supabase.storage.from('avatars').getPublicUrl(fileName).data.publicUrl } } 
     
-    const { error: err1 } = await supabase.from('profiles').update({ nome_completo: editNome, email: editEmail, telefone: editTel, cpf: editCpf, data_nascimento: editDataNascimento || null, cep: editCep, endereco: editEndereco, numero: editNumero, complemento: editComplemento, bairro: editBairro, cidade: editCidade, estado: editEstado, avatar_url: finalAvatarUrl }).eq('id', id); if (err1) { setIsSubmitting(false); return alert("Erro: " + err1.message) } 
+    const { error: err1 } = await supabase.from('profiles').update({ nome_completo: normalizeName(editNome), email: normalizeEmail(editEmail), telefone: ensureBrazilianNinthDigit(editTel), cpf: formatCPFOrCNPJ(editCpf), data_nascimento: dataNascimentoISO, cep: formatCEP(editCep), endereco: editEndereco, numero: editNumero, complemento: editComplemento, bairro: editBairro, cidade: editCidade, estado: editEstado.toUpperCase(), avatar_url: finalAvatarUrl }).eq('id', id); if (err1) { setIsSubmitting(false); return alert("Erro: " + err1.message) }
     
     const dataInativacao = editStatus === 'Inativo' ? new Date().toISOString().split('T')[0] : null;
-    await supabase.from('alunos_info').update({ valor_mensalidade: editValor ? parseFloat(editValor) : 0, data_vencimento: editVencimento ? parseInt(editVencimento) : null, status: editStatus, como_conheceu: editComoConheceu, indicacao_nome: editComoConheceu === 'Indicação' ? editIndicacaoNome : null, data_inativacao: dataInativacao }).eq('id', id); 
+    const valorBase = editModeloFaturamento === 'MENSAL_FECHADO'
+      ? Number((Number(editValorPorAula) * 4).toFixed(2))
+      : Number(editValor || 0);
+    const { error: infoError } = await supabase.from('alunos_info').update({
+      valor_mensalidade: valorBase,
+      data_vencimento: editModeloFaturamento === 'VENCIMENTO_FIXO' && editVencimento ? parseInt(editVencimento) : null,
+      modelo_faturamento: editModeloFaturamento,
+      creditos_por_pagamento: 4,
+      valor_por_aula: editModeloFaturamento === 'MENSAL_FECHADO' ? Number(editValorPorAula) : null,
+      prazo_vencimento_dias: 7,
+      status: editStatus,
+      como_conheceu: editComoConheceu,
+      indicacao_nome: editComoConheceu === 'Indicação' ? editIndicacaoNome : null,
+      data_inativacao: dataInativacao
+    }).eq('id', id);
+    if (infoError) {
+      setIsSubmitting(false);
+      return alert("Erro ao atualizar o faturamento: " + infoError.message);
+    }
     
     if (!isEditingInativo) {
       const idsAtuais = editAgendas.filter(a => !String(a.id).startsWith('new_')).map(a => a.id);
@@ -217,7 +265,14 @@ export default function PerfilAluno() {
 
   const handleExcluirAluno = async () => { if (!window.confirm(`🚨 Apagar DEFINITIVAMENTE o aluno?`)) return; setLoading(true); await supabase.from('historico_aulas').delete().eq('aluno_id', id); await supabase.from('agenda').delete().eq('aluno_id', id); await supabase.from('pagamentos').delete().eq('aluno_id', id); await supabase.from('materiais_aluno').delete().eq('aluno_id', id); await supabase.from('alunos_info').delete().eq('id', id); await supabase.from('profiles').delete().eq('id', id); alert("🗑️ Excluído!"); router.push('/alunos') }
   const handleRegistrarAula = async (e: React.FormEvent) => { e.preventDefault(); await supabase.from('historico_aulas').insert([{ aluno_id: id, data_aula: dataAula, horario_inicio: horaInicioAula, horario_fim: horaFimAula, status: statusAula, observacoes: obsAula }]); setIsClassModalOpen(false); setObsAula(''); carregarDados() }
-  const abrirModalPagamento = () => { setPayValor(infoMatricula?.valor_mensalidade || ''); setPayData(new Date().toISOString().split('T')[0]); setPayMetodo('PIX'); setIsPayModalOpen(true) }
+  const abrirModalPagamento = () => {
+    const prefixo = new Date().toISOString().slice(0, 7);
+    const totalMesFechado = historicoAulas.filter(h => String(h.data_aula).startsWith(prefixo) && isBillableClass(h.status)).length * Number(infoMatricula?.valor_por_aula || 0);
+    setPayValor(modeloFaturamento === 'MENSAL_FECHADO' ? totalMesFechado.toFixed(2) : infoMatricula?.valor_mensalidade || '');
+    setPayData(new Date().toISOString().split('T')[0]);
+    setPayMetodo('PIX');
+    setIsPayModalOpen(true)
+  }
   const handleSalvarPagamento = async (e: React.FormEvent) => { e.preventDefault(); await supabase.from('pagamentos').insert([{ aluno_id: id, valor: parseFloat(payValor), status: 'Pago', data_pagamento: payData, metodo_pagamento: payMetodo }]); setIsPayModalOpen(false); carregarDados() }
   const abrirModalEdicaoPagamento = (pg: any) => { setEditPayId(pg.id); setEditPayData(pg.data_pagamento.split('T')[0]); setEditPayMetodo(pg.metodo_pagamento || 'PIX'); setEditPayValor(pg.valor); setIsEditPayModalOpen(true); }
   const handleSalvarEdicaoPagamento = async (e: React.FormEvent) => { e.preventDefault(); setIsSubmitting(true); await supabase.from('pagamentos').update({ valor: parseFloat(editPayValor), data_pagamento: editPayData, metodo_pagamento: editPayMetodo }).eq('id', editPayId); setIsSubmitting(false); setIsEditPayModalOpen(false); carregarDados(); }
@@ -316,6 +371,11 @@ export default function PerfilAluno() {
   } else {
     aulasDesdeUltimoPagamento = historicoAulas.filter(h => h.status === 'Realizada' || h.status === 'Reposição').length;
   }
+  const prefixoMesAtual = new Date().toISOString().slice(0, 7);
+  const aulasRealizadasNoMes = historicoAulas.filter(h =>
+    String(h.data_aula).startsWith(prefixoMesAtual) && isBillableClass(h.status)
+  ).length;
+  const valorApuradoNoMes = aulasRealizadasNoMes * Number(infoMatricula?.valor_por_aula || 0);
 
   const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
 
@@ -363,35 +423,60 @@ export default function PerfilAluno() {
               {infoMatricula?.como_conheceu && (<div className="pt-2 border-t border-slate-200/50"><p className={`text-slate-500 text-[10px] font-semibold uppercase mb-1`}>Chegou via</p><span className="bg-indigo-50 text-indigo-600 border border-indigo-100 px-2 py-1 rounded text-[10px] font-bold shadow-sm inline-block">{infoMatricula.como_conheceu} {infoMatricula.indicacao_nome ? `(${infoMatricula.indicacao_nome})` : ''}</span></div>)}
             </div>
 
+            <div className="p-5 rounded-2xl bg-emerald-50/60 border border-emerald-200 shadow-inner mb-4 text-left">
+              <p className="text-slate-500 text-[10px] font-semibold uppercase mb-1">Modelo de faturamento</p>
+              <p className="text-lg font-bold text-emerald-700">{getBillingModelLabel(modeloFaturamento)}</p>
+              <p className="text-[10px] text-slate-500 font-medium mt-1">
+                {BILLING_MODELS.find(model => model.value === modeloFaturamento)?.description}
+              </p>
+            </div>
+
+            {modeloFaturamento === 'VENCIMENTO_FIXO' && (
+              <div className={`p-5 rounded-2xl bg-white/40 border border-white/80 shadow-inner mb-4 flex justify-between items-center`}>
+                <div className="text-left">
+                  <p className={`text-slate-500 text-[10px] font-semibold uppercase mb-1 flex items-center gap-1`}><span className="text-lg">🌟</span> Créditos de Reposição</p>
+                  <p className="text-2xl font-bold tracking-tight text-indigo-600">{saldoCreditos} Saldo</p>
+                  <p className="text-[9px] text-slate-400 font-semibold mt-1">Expiram 30 dias após a aula desmarcada.</p>
+                </div>
+                <div className="flex gap-2">
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={handleRemoverCredito} disabled={isSubmitting || saldoCreditos <= 0} className="h-10 w-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center font-bold text-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm disabled:opacity-50" title="Abater Crédito Manualmente">-</motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={handleConcederCredito} disabled={isSubmitting} className="h-10 w-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center font-bold text-xl hover:bg-indigo-500 hover:text-white transition-all shadow-sm disabled:opacity-50" title="Conceder Crédito Manual">+</motion.button>
+                </div>
+              </div>
+            )}
+
             <div className={`p-5 rounded-2xl bg-white/40 border border-white/80 shadow-inner mb-4 flex justify-between items-center`}>
               <div className="text-left">
-                <p className={`text-slate-500 text-[10px] font-semibold uppercase mb-1 flex items-center gap-1`}><span className="text-lg">🌟</span> Créditos de Reposição</p>
-                <p className="text-2xl font-bold tracking-tight text-indigo-600">{saldoCreditos} Saldo</p>
+                <p className={`text-slate-500 text-[10px] font-semibold uppercase mb-1 flex items-center gap-1`}>
+                  <span className="text-lg">{modeloFaturamento === 'CREDITOS' ? '🎟️' : '🎼'}</span>
+                  {modeloFaturamento === 'CREDITOS' ? 'Créditos de faturamento' : modeloFaturamento === 'MENSAL_FECHADO' ? 'Apuração do mês' : 'Ciclo de aulas'}
+                </p>
+                {modeloFaturamento === 'CREDITOS' ? (
+                  <p className={`text-2xl font-bold tracking-tight ${Number(infoMatricula?.saldo_creditos_faturamento || 0) <= 0 ? 'text-rose-600' : 'text-violet-600'}`}>
+                    {Number(infoMatricula?.saldo_creditos_faturamento || 0)} <span className="text-sm font-medium text-slate-500">disponíveis</span>
+                  </p>
+                ) : modeloFaturamento === 'MENSAL_FECHADO' ? (
+                  <>
+                    <p className="text-2xl font-bold tracking-tight text-cyan-600">{aulasRealizadasNoMes} <span className="text-sm font-medium text-slate-500">aulas</span></p>
+                    <p className="text-[10px] font-semibold text-slate-500 mt-1">Parcial: {formatCurrencyBR(valorApuradoNoMes)}</p>
+                  </>
+                ) : (
+                  <p className="text-2xl font-bold tracking-tight text-indigo-600">{aulasDesdeUltimoPagamento} <span className="text-sm font-medium text-slate-500">feitas</span></p>
+                )}
               </div>
-              <div className="flex gap-2">
-                <motion.button whileTap={{ scale: 0.95 }} onClick={handleRemoverCredito} disabled={isSubmitting || saldoCreditos <= 0} className="h-10 w-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center font-bold text-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm disabled:opacity-50" title="Abater Crédito Manualmente">-</motion.button>
-                <motion.button whileTap={{ scale: 0.95 }} onClick={handleConcederCredito} disabled={isSubmitting} className="h-10 w-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center font-bold text-xl hover:bg-indigo-500 hover:text-white transition-all shadow-sm disabled:opacity-50" title="Conceder Crédito Manual">+</motion.button>
+              <div className="text-right">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                  {modeloFaturamento === 'CREDITOS' ? '4 por pagamento' : modeloFaturamento === 'MENSAL_FECHADO' ? `${formatCurrencyBR(infoMatricula?.valor_por_aula)}/aula` : 'Desde o último pagto'}
+                </p>
               </div>
             </div>
 
-            {/* NOVO CARD: AULAS DESDE O ÚLTIMO PAGAMENTO */}
-            <div className={`p-5 rounded-2xl bg-white/40 border border-white/80 shadow-inner mb-4 flex justify-between items-center`}>
-              <div className="text-left">
-                <p className={`text-slate-500 text-[10px] font-semibold uppercase mb-1 flex items-center gap-1`}><span className="text-lg">🎼</span> Ciclo de Aulas</p>
-                <p className="text-2xl font-bold tracking-tight text-indigo-600">{aulasDesdeUltimoPagamento} <span className="text-sm font-medium text-slate-500">feitas</span></p>
-              </div>
-              <div className="text-right">
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Desde o</p>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">último pagto</p>
-              </div>
-            </div>
-            
             <div className={`p-5 rounded-2xl bg-white/40 border border-white/80 shadow-inner mb-6`}>
               <div className="flex justify-between items-center mb-1">
-                <p className={`text-slate-500 text-[10px] font-semibold uppercase`}>Mensalidade</p>
-                <p className={`text-slate-500 text-[10px] font-semibold uppercase`}>Venc. dia {infoMatricula?.data_vencimento || '--'}</p>
+                <p className={`text-slate-500 text-[10px] font-semibold uppercase`}>{modeloFaturamento === 'MENSAL_FECHADO' ? 'Valor por aula' : modeloFaturamento === 'CREDITOS' ? 'Pacote com 4 créditos' : 'Mensalidade'}</p>
+                <p className={`text-slate-500 text-[10px] font-semibold uppercase`}>{modeloFaturamento === 'MENSAL_FECHADO' ? 'Vence 7 dias após o fechamento' : modeloFaturamento === 'VENCIMENTO_FIXO' ? `Venc. dia ${infoMatricula?.data_vencimento || '--'}` : 'Renova ao zerar'}</p>
               </div>
-              <p className="text-3xl font-bold tracking-tight text-emerald-600 text-left">R$ {infoMatricula?.valor_mensalidade || '0,00'}</p>
+              <p className="text-3xl font-bold tracking-tight text-emerald-600 text-left">{formatCurrencyBR(modeloFaturamento === 'MENSAL_FECHADO' ? infoMatricula?.valor_por_aula : infoMatricula?.valor_mensalidade)}</p>
             </div>
             
             <motion.button whileTap={{ scale: 0.95 }} onClick={abrirModalPagamento} disabled={isAlunoInativo} className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm shadow-md hover:bg-emerald-500 transition-all disabled:opacity-50"> {isAlunoInativo ? 'Aluno Inativo' : 'Registrar Pagamento'} </motion.button>
@@ -644,9 +729,13 @@ export default function PerfilAluno() {
                     <option value="Falta Injustificada">Falta Injustificada ❌</option>
                     <option value="Falta Justificada">Falta Justificada ⚖️</option>
                     <option value="Desmarcada">Desmarcada 🔄</option>
-                    <option value="Reposição">Reposição 🌟</option>
-                    <option value="Crédito">Crédito (Apenas Injeta Saldo) 🎟️</option>
-                    <option value="Ajuste de Saldo">Ajuste de Saldo (Remove 1 Crédito) ➖</option>
+                    {modeloFaturamento === 'VENCIMENTO_FIXO' && (
+                      <>
+                        <option value="Reposição">Reposição 🌟</option>
+                        <option value="Crédito">Crédito de reposição manual 🎟️</option>
+                        <option value="Ajuste de Saldo">Ajuste de saldo de reposição ➖</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div>
@@ -695,27 +784,27 @@ export default function PerfilAluno() {
                 <div className="space-y-4">
                   <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-indigo-600 border-indigo-500/10'}`}>Dados Pessoais</p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <input placeholder="Nome" required={!isEditingInativo} disabled={isEditingInativo} value={editNome} onChange={e => setEditNome(e.target.value)} className={`md:col-span-2 ${inputClass} disabled:opacity-50`} />
+                    <input placeholder="Nome" required={!isEditingInativo} disabled={isEditingInativo} value={editNome} onChange={e => setEditNome(e.target.value)} onBlur={() => setEditNome(normalizeName(editNome))} autoComplete="name" className={`md:col-span-2 ${inputClass} disabled:opacity-50`} />
                     <div>
                       <label className="text-xs font-semibold text-slate-500 ml-1 block mb-1">Data Nasc.</label>
-                      <input type="date" required={!isEditingInativo} disabled={isEditingInativo} value={editDataNascimento} onChange={e => setEditDataNascimento(e.target.value)} className={`${inputClass} !mt-0 disabled:opacity-50`} />
+                      <input type="text" inputMode="numeric" placeholder="DD/MM/AAAA" maxLength={10} required={!isEditingInativo} disabled={isEditingInativo} value={editDataNascimento} onChange={e => setEditDataNascimento(formatDateInput(e.target.value))} autoComplete="bday" className={`${inputClass} !mt-0 disabled:opacity-50`} />
                     </div>
-                    <input placeholder="CPF" required={!isEditingInativo} disabled={isEditingInativo} value={editCpf} onChange={e => setEditCpf(formatCPF(e.target.value))} maxLength={14} className={`${inputClass} disabled:opacity-50`} />
-                    <input placeholder="E-mail" type="email" required={!isEditingInativo} disabled={isEditingInativo} value={editEmail} onChange={e => setEditEmail(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
-                    <input placeholder="WhatsApp" required={!isEditingInativo} disabled={isEditingInativo} value={editTel} onChange={e => setEditTel(formatPhone(e.target.value))} maxLength={15} className={`${inputClass} disabled:opacity-50`} />
+                    <input placeholder="CPF ou CNPJ" inputMode="numeric" required={!isEditingInativo} disabled={isEditingInativo} value={editCpf} onChange={e => setEditCpf(formatCPFOrCNPJ(e.target.value))} maxLength={18} className={`${inputClass} disabled:opacity-50`} />
+                    <input placeholder="E-mail" type="email" required={!isEditingInativo} disabled={isEditingInativo} value={editEmail} onChange={e => setEditEmail(e.target.value)} onBlur={() => setEditEmail(normalizeEmail(editEmail))} autoComplete="email" className={`${inputClass} disabled:opacity-50`} />
+                    <input placeholder="WhatsApp" inputMode="tel" required={!isEditingInativo} disabled={isEditingInativo} value={editTel} onChange={e => setEditTel(formatBrazilianPhone(e.target.value))} onBlur={() => setEditTel(ensureBrazilianNinthDigit(editTel))} maxLength={15} autoComplete="tel" className={`${inputClass} disabled:opacity-50`} />
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-indigo-600 border-indigo-500/10'}`}>Endereço</p>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <input placeholder="CEP" required={!isEditingInativo} disabled={isEditingInativo} value={editCep} onChange={handleEditCepChange} maxLength={9} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
-                    <input placeholder="Endereço / Rua" required={!isEditingInativo} disabled={isEditingInativo} value={editEndereco} onChange={e => setEditEndereco(e.target.value)} className={`col-span-2 md:col-span-2 ${inputClass} disabled:opacity-50`} />
-                    <input id="edit-input-numero" placeholder="Número" required={!isEditingInativo} disabled={isEditingInativo} value={editNumero} onChange={e => setEditNumero(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
+                    <input placeholder="CEP" inputMode="numeric" required={!isEditingInativo} disabled={isEditingInativo} value={editCep} onChange={handleEditCepChange} maxLength={9} autoComplete="postal-code" className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
+                    <input placeholder="Endereço / Rua" required={!isEditingInativo} disabled={isEditingInativo} value={editEndereco} onChange={e => setEditEndereco(e.target.value)} autoComplete="address-line1" className={`col-span-2 md:col-span-2 ${inputClass} disabled:opacity-50`} />
+                    <input id="edit-input-numero" placeholder="Número" required={!isEditingInativo} disabled={isEditingInativo} value={editNumero} onChange={e => setEditNumero(e.target.value.toUpperCase())} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
                     <input placeholder="Complemento" disabled={isEditingInativo} value={editComplemento} onChange={e => setEditComplemento(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
                     <input placeholder="Bairro" required={!isEditingInativo} disabled={isEditingInativo} value={editBairro} onChange={e => setEditBairro(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
                     <input placeholder="Cidade" required={!isEditingInativo} disabled={isEditingInativo} value={editCidade} onChange={e => setEditCidade(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
-                    <input placeholder="UF" required={!isEditingInativo} disabled={isEditingInativo} value={editEstado} onChange={e => setEditEstado(e.target.value)} maxLength={2} className={`col-span-2 md:col-span-1 uppercase ${inputClass} disabled:opacity-50`} />
+                    <input placeholder="UF" required={!isEditingInativo} disabled={isEditingInativo} value={editEstado} onChange={e => setEditEstado(e.target.value.replace(/[^a-z]/gi, '').toUpperCase())} maxLength={2} className={`col-span-2 md:col-span-1 uppercase ${inputClass} disabled:opacity-50`} />
                   </div>
                 </div>
 
@@ -785,15 +874,33 @@ export default function PerfilAluno() {
                   </div>
                   <div className="space-y-4">
                     <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-emerald-600 border-emerald-500/10'}`}>Financeiro</p>
-                    <div className="grid grid-cols-2 gap-3 mt-4">
+                    <div className="space-y-3 mt-4">
                       <div>
-                        <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Mensalidade (R$)</label>
-                        <input type="number" required={!isEditingInativo} disabled={isEditingInativo} value={editValor} onChange={e => setEditValor(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
+                        <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Modelo de faturamento</label>
+                        <select required={!isEditingInativo} disabled={isEditingInativo} value={editModeloFaturamento} onChange={e => setEditModeloFaturamento(e.target.value as BillingModel)} className={`${inputClass} disabled:opacity-50`}>
+                          {BILLING_MODELS.map(model => <option key={model.value} value={model.value}>{model.label}</option>)}
+                        </select>
                       </div>
-                      <div>
-                        <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Dia Vencimento</label>
-                        <input type="number" min="1" max="31" required={!isEditingInativo} disabled={isEditingInativo} value={editVencimento} onChange={e => setEditVencimento(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
-                      </div>
+                      {editModeloFaturamento === 'MENSAL_FECHADO' ? (
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Valor por aula (R$)</label>
+                          <input type="number" inputMode="decimal" min="0.01" step="0.01" required={!isEditingInativo} disabled={isEditingInativo} value={editValorPorAula} onChange={e => setEditValorPorAula(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
+                          <p className="text-[10px] text-cyan-700 font-semibold mt-2">Fecha no último dia do mês e vence em 7 dias.</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className={editModeloFaturamento === 'CREDITOS' ? 'col-span-2' : ''}>
+                            <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">{editModeloFaturamento === 'CREDITOS' ? 'Pacote com 4 créditos (R$)' : 'Mensalidade (R$)'}</label>
+                            <input type="number" inputMode="decimal" min="0.01" step="0.01" required={!isEditingInativo} disabled={isEditingInativo} value={editValor} onChange={e => setEditValor(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
+                          </div>
+                          {editModeloFaturamento === 'VENCIMENTO_FIXO' && (
+                            <div>
+                              <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Dia Vencimento</label>
+                              <input type="number" inputMode="numeric" min="1" max="31" required={!isEditingInativo} disabled={isEditingInativo} value={editVencimento} onChange={e => setEditVencimento(e.target.value.replace(/\D/g, '').slice(0, 2))} className={`${inputClass} disabled:opacity-50`} />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
