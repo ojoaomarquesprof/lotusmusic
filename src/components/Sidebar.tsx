@@ -391,7 +391,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         )}
       </AnimatePresence>
       
-      <aside className={`fixed inset-y-0 left-0 z-50 w-[270px] h-screen border-r border-white/[0.06] bg-[#12271f] p-5 flex flex-col justify-between shadow-[16px_0_42px_rgba(16,35,28,0.12)] overflow-y-auto custom-scrollbar transition-transform duration-300 ease-in-out xl:relative xl:translate-x-0 ${menuAberto ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[270px] h-screen border-r border-white/[0.06] bg-[#12271f] p-5 flex flex-col justify-between shadow-[16px_0_42px_rgba(16,35,28,0.12)] overflow-y-auto custom-scrollbar transition-transform duration-300 ease-in-out xl:sticky xl:top-0 xl:self-start xl:translate-x-0 ${menuAberto ? 'translate-x-0' : '-translate-x-full'}`}>
         <div>
           <div className="flex items-center justify-between gap-3 px-1 relative">
             <button aria-label="Fechar menu" className="xl:hidden absolute -right-1 top-0 p-2 text-white/50 hover:text-white transition-colors" onClick={() => setMenuAberto(false)}>
