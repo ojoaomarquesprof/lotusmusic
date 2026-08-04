@@ -135,9 +135,14 @@ Antes de publicar essa funcionalidade, execute no Supabase a migração:
 
 ```text
 supabase/migrations/202608040001_modelos_faturamento.sql
+supabase/migrations/202608040002_faturas_detalhadas.sql
 ```
 
 A rotina de fechamento roda diariamente pela Vercel e processa o mês anterior logo após a virada para o primeiro dia. Assim, inclui todas as aulas do último dia; a fatura mantém a data de emissão do mês encerrado e vence 7 dias depois. A rotina é protegida por `CRON_SECRET` e não duplica faturas em reexecuções.
+
+No perfil do aluno, o botão **Gerar fatura** permite selecionar a qualquer momento as aulas realizadas que ainda não foram cobradas, ajustar o valor por aula e definir o vencimento. Cada aula só pode pertencer a uma fatura, evitando cobranças duplicadas. A visualização detalhada inclui data, horário, modalidade, professor, valor, dados do aluno e dados da escola.
+
+Preencha os dados do emitente em **Financeiro → Configurações** antes de gerar a primeira fatura definitiva. A fatura guarda uma cópia dessas informações no momento da emissão.
 
 Para emissão automática:
 

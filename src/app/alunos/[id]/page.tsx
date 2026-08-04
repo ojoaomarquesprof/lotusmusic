@@ -10,6 +10,8 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { BILLING_MODELS, BillingModel, formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../../lib/billing'
 import { dateInputToISO, ensureBrazilianNinthDigit, formatBrazilianPhone, formatCEP, formatCPFOrCNPJ, formatDateInput, isoToDateInput, normalizeEmail, normalizeName } from '../../../lib/formatters'
+import { getWeekdayName, formatInvoiceNumber } from '../../../lib/invoices'
+import { CreateInvoiceModal } from '../../../components/CreateInvoiceModal'
 
 const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<File | null> => { const image = await createImage(imageSrc); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); if (!ctx) return null; canvas.width = 256; canvas.height = 256; ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, 256, 256); return new Promise(resolve => canvas.toBlob(blob => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.9)) }
@@ -27,7 +29,7 @@ export default function PerfilAluno() {
   
   const [isMounted, setIsMounted] = useState(false)
   
-  const [aluno, setAluno] = useState<any>(null); const [aulasFixas, setAulasFixas] = useState<any[]>([]); const [pagamentos, setPagamentos] = useState<any[]>([]); const [historicoAulas, setHistoricoAulas] = useState<any[]>([])
+  const [aluno, setAluno] = useState<any>(null); const [aulasFixas, setAulasFixas] = useState<any[]>([]); const [pagamentos, setPagamentos] = useState<any[]>([]); const [historicoAulas, setHistoricoAulas] = useState<any[]>([]); const [faturas, setFaturas] = useState<any[]>([])
   const [materiais, setMateriais] = useState<any[]>([])
   const [loading, setLoading] = useState(true); const [isSubmitting, setIsSubmitting] = useState(false); const [imgError, setImgError] = useState(false)
 
@@ -67,6 +69,7 @@ export default function PerfilAluno() {
     const { data: agenda } = await supabase.from('agenda').select(`*, professor:profiles!professor_id(nome_completo), sala:salas(nome)`).eq('aluno_id', id).order('dia')
     const { data: pgs } = await supabase.from('pagamentos').select('*').eq('aluno_id', id).order('data_pagamento', { ascending: false })
     const { data: hist } = await supabase.from('historico_aulas').select('*').eq('aluno_id', id).order('data_aula', { ascending: false })
+    const { data: invoices } = await supabase.from('faturas').select('*').eq('aluno_id', id).order('data_emissao', { ascending: false })
     const { data: mats } = await supabase.from('materiais_aluno').select('*').eq('aluno_id', id).order('data_envio', { ascending: false })
     const { data: reposicoes } = await supabase.from('solicitacoes_reagendamento').select('*').eq('aluno_id', id)
     
@@ -96,7 +99,7 @@ export default function PerfilAluno() {
     const { data: mL } = await supabase.from('modalidades').select('nome').order('nome')
 
     setProfessoresList(pL || []); setSalasList(sL || []); setModalidadesLista(mL || [])
-    setAluno(profile); setAulasFixas(agenda || []); setPagamentos(pgs || []); setHistoricoAulas(hist || []); setMateriais(mats || []); setLoading(false)
+    setAluno(profile); setAulasFixas(agenda || []); setPagamentos(pgs || []); setHistoricoAulas(hist || []); setFaturas(invoices || []); setMateriais(mats || []); setLoading(false)
   }
 
   const infoMatricula = Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info; const isAlunoInativo = infoMatricula?.status === 'Inativo'; const isEditingInativo = editStatus === 'Inativo'
@@ -264,7 +267,32 @@ export default function PerfilAluno() {
   }
 
   const handleExcluirAluno = async () => { if (!window.confirm(`🚨 Apagar DEFINITIVAMENTE o aluno?`)) return; setLoading(true); await supabase.from('historico_aulas').delete().eq('aluno_id', id); await supabase.from('agenda').delete().eq('aluno_id', id); await supabase.from('pagamentos').delete().eq('aluno_id', id); await supabase.from('materiais_aluno').delete().eq('aluno_id', id); await supabase.from('alunos_info').delete().eq('id', id); await supabase.from('profiles').delete().eq('id', id); alert("🗑️ Excluído!"); router.push('/alunos') }
-  const handleRegistrarAula = async (e: React.FormEvent) => { e.preventDefault(); await supabase.from('historico_aulas').insert([{ aluno_id: id, data_aula: dataAula, horario_inicio: horaInicioAula, horario_fim: horaFimAula, status: statusAula, observacoes: obsAula }]); setIsClassModalOpen(false); setObsAula(''); carregarDados() }
+  const handleRegistrarAula = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const weekday = getWeekdayName(dataAula)
+    const schedule =
+      aulasFixas.find(
+        aula =>
+          aula.dia === weekday &&
+          aula.horario_inicio?.slice(0, 5) === horaInicioAula.slice(0, 5),
+      ) ||
+      aulasFixas.find(aula => aula.dia === weekday) ||
+      aulasFixas[0]
+
+    await supabase.from('historico_aulas').insert([{
+      aluno_id: id,
+      data_aula: dataAula,
+      horario_inicio: horaInicioAula,
+      horario_fim: horaFimAula,
+      status: statusAula,
+      observacoes: obsAula,
+      professor_id: schedule?.professor_id || null,
+      modalidade: schedule?.instrumento_aula || null,
+    }])
+    setIsClassModalOpen(false)
+    setObsAula('')
+    carregarDados()
+  }
   const abrirModalPagamento = () => {
     const prefixo = new Date().toISOString().slice(0, 7);
     const totalMesFechado = historicoAulas.filter(h => String(h.data_aula).startsWith(prefixo) && isBillableClass(h.status)).length * Number(infoMatricula?.valor_por_aula || 0);
@@ -479,7 +507,18 @@ export default function PerfilAluno() {
               <p className="text-3xl font-bold tracking-tight text-emerald-600 text-left">{formatCurrencyBR(modeloFaturamento === 'MENSAL_FECHADO' ? infoMatricula?.valor_por_aula : infoMatricula?.valor_mensalidade)}</p>
             </div>
             
-            <motion.button whileTap={{ scale: 0.95 }} onClick={abrirModalPagamento} disabled={isAlunoInativo} className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm shadow-md hover:bg-emerald-500 transition-all disabled:opacity-50"> {isAlunoInativo ? 'Aluno Inativo' : 'Registrar Pagamento'} </motion.button>
+            <div className="grid grid-cols-1 gap-3">
+              <CreateInvoiceModal
+                alunoId={String(id)}
+                alunoNome={aluno?.nome_completo || 'Aluno'}
+                infoFaturamento={infoMatricula}
+                aulas={historicoAulas}
+                agendas={aulasFixas}
+                professores={professoresList}
+                onCreated={carregarDados}
+              />
+              <motion.button whileTap={{ scale: 0.95 }} onClick={abrirModalPagamento} disabled={isAlunoInativo} className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm shadow-md hover:bg-emerald-500 transition-all disabled:opacity-50"> {isAlunoInativo ? 'Aluno Inativo' : 'Registrar Pagamento'} </motion.button>
+            </div>
           </motion.div>
         </div>
 
@@ -503,6 +542,40 @@ export default function PerfilAluno() {
                 ) 
               })}
               {aulasFixas.length === 0 && <p className={`text-slate-500 col-span-2 text-center py-4 italic text-sm`}>Nenhum horário fixo.</p>}
+            </div>
+          </motion.div>
+
+          <motion.div variants={itemVariants} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-bold tracking-tight flex items-center gap-3 text-slate-800"><span className="text-cyan-500 drop-shadow-sm">🧾</span> Faturas</h3>
+                <p className="text-xs text-slate-500 font-medium mt-1">Aulas faturadas e cobranças emitidas.</p>
+              </div>
+              <span className="px-3 py-1 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 text-xs font-bold">{faturas.length}</span>
+            </div>
+            <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+              {faturas.map(fatura => (
+                <button
+                  type="button"
+                  key={fatura.id}
+                  onClick={() => router.push(`/faturas/${fatura.id}`)}
+                  className="w-full bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/80 shadow-sm flex justify-between items-center hover:bg-white/80 hover:shadow-md transition-all text-left"
+                >
+                  <div>
+                    <p className="font-bold text-sm text-slate-800">{formatInvoiceNumber(fatura.numero, fatura.id)}</p>
+                    <p className="text-[11px] text-slate-500 font-medium mt-1">
+                      Emitida em {new Date(`${String(fatura.data_emissao).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR')} • {fatura.quantidade_aulas} aula(s)
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-lg text-cyan-700">{formatCurrencyBR(fatura.valor_total)}</p>
+                    <p className={`text-[10px] font-bold mt-1 ${fatura.status === 'PAGO' ? 'text-emerald-600' : fatura.status === 'VENCIDO' ? 'text-rose-600' : 'text-amber-600'}`}>{fatura.status}</p>
+                  </div>
+                </button>
+              ))}
+              {faturas.length === 0 && (
+                <p className="text-slate-500 text-center py-8 italic text-sm border border-dashed border-slate-300 rounded-2xl bg-white/30">Nenhuma fatura emitida.</p>
+              )}
             </div>
           </motion.div>
           

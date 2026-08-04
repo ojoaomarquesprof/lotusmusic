@@ -303,8 +303,12 @@ export default function PortalAluno() {
         await supabase.from('historico_aulas').insert([{
             aluno_id: aluno.id,
             data_aula: dStr,
+            horario_inicio: aulaParaMudar.horario_inicio || null,
+            horario_fim: aulaParaMudar.horario_fim || null,
             status: 'Desmarcada',
-            observacoes: 'Aluno solicitou reagendamento'
+            observacoes: 'Aluno solicitou reagendamento',
+            professor_id: aulaParaMudar.professor_id || null,
+            modalidade: aulaParaMudar.instrumento_aula || null,
         }]);
     }
 
@@ -582,8 +586,11 @@ export default function PortalAluno() {
               </div>
             </div>
 
-            {modeloFaturamentoPortal === 'MENSAL_FECHADO' && faturaAtual?.invoice_url && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && (
-              <motion.button whileTap={{ scale: 0.98 }} onClick={() => window.open(faturaAtual.invoice_url, '_blank')} className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-bold text-sm mb-3 shadow-md hover:shadow-lg transition-all">📄 Abrir e pagar fatura</motion.button>
+            {faturaAtual && !['SEM_MOVIMENTO', 'CANCELADO'].includes(faturaAtual.status) && (
+              <motion.button whileTap={{ scale: 0.98 }} onClick={() => window.open(`/faturas/${faturaAtual.id}`, '_blank')} className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white font-bold text-sm mb-3 shadow-md hover:shadow-lg transition-all">📄 Ver fatura detalhada</motion.button>
+            )}
+            {faturaAtual?.invoice_url && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && (
+              <motion.button whileTap={{ scale: 0.98 }} onClick={() => window.open(faturaAtual.invoice_url, '_blank')} className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-bold text-sm mb-3 shadow-md hover:shadow-lg transition-all">💳 Abrir cobrança</motion.button>
             )}
             {((modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && !statusMensalidade.pago) || (modeloFaturamentoPortal === 'CREDITOS' && Number(infoFinanceira?.saldo_creditos_faturamento || 0) <= 0) || (modeloFaturamentoPortal === 'MENSAL_FECHADO' && faturaAtual && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && !faturaAtual.invoice_url)) && (
               <motion.button whileTap={{ scale: 0.98 }} onClick={copiarPix} className="w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-cyan-500 text-white font-bold text-sm mb-3 shadow-md hover:shadow-lg transition-all">🔗 Copiar Chave PIX</motion.button>

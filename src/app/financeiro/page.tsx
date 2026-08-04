@@ -7,6 +7,7 @@ import { useStyles } from '../../lib/useStyles'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../lib/billing'
+import { ensureBrazilianNinthDigit, formatBrazilianPhone, formatCEP, formatCPFOrCNPJ, normalizeEmail, normalizeName } from '../../lib/formatters'
 
 const DEFAULT_PENDENTE = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Lotus Music*. Sua cobrança de *{{modelo}}* no valor de *{{valor}}* vence em {{vencimento}}.\n\n{{link}}\nChave PIX: *{{pix}}*\n\nMuito obrigado! 🎶"
 const DEFAULT_ATRASADO = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Lotus Music*. A cobrança de *{{modelo}}* no valor de *{{valor}}*, com vencimento em {{vencimento}}, está pendente.\n\n{{link}}\nChave PIX: *{{pix}}*\n\nSe precisar, fale com a gente. 🎶"
@@ -34,6 +35,19 @@ export default function RelatorioFinanceiro() {
   const [chavePix, setChavePix] = useState('')
   const [msgPendente, setMsgPendente] = useState(DEFAULT_PENDENTE)
   const [msgAtrasado, setMsgAtrasado] = useState(DEFAULT_ATRASADO)
+  const [schoolData, setSchoolData] = useState({
+    escola_nome: 'Lotus Music',
+    escola_documento: '',
+    escola_email: '',
+    escola_telefone: '',
+    escola_cep: '',
+    escola_endereco: '',
+    escola_numero: '',
+    escola_complemento: '',
+    escola_bairro: '',
+    escola_cidade: '',
+    escola_estado: '',
+  })
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false)
   const [isSavingConfig, setIsSavingConfig] = useState(false)
 
@@ -53,11 +67,25 @@ export default function RelatorioFinanceiro() {
   async function carregarDadosFinanceiros() {
     const hoje = new Date(); const mesAtual = hoje.getMonth() + 1; const anoAtual = hoje.getFullYear(); const diaAtual = hoje.getDate()
 
-    const { data: configData } = await supabase.from('configuracoes').select('chave_pix, mensagem_pendente, mensagem_atrasado').eq('id', 1).single()
+    const { data: configData } = await supabase.from('configuracoes').select('chave_pix, mensagem_pendente, mensagem_atrasado, escola_nome, escola_documento, escola_email, escola_telefone, escola_cep, escola_endereco, escola_numero, escola_complemento, escola_bairro, escola_cidade, escola_estado').eq('id', 1).single()
     if (configData) {
       if (configData.chave_pix) setChavePix(configData.chave_pix)
       if (configData.mensagem_pendente) setMsgPendente(configData.mensagem_pendente)
       if (configData.mensagem_atrasado) setMsgAtrasado(configData.mensagem_atrasado)
+      setSchoolData(current => ({
+        ...current,
+        escola_nome: configData.escola_nome || 'Lotus Music',
+        escola_documento: configData.escola_documento || '',
+        escola_email: configData.escola_email || '',
+        escola_telefone: configData.escola_telefone || '',
+        escola_cep: configData.escola_cep || '',
+        escola_endereco: configData.escola_endereco || '',
+        escola_numero: configData.escola_numero || '',
+        escola_complemento: configData.escola_complemento || '',
+        escola_bairro: configData.escola_bairro || '',
+        escola_cidade: configData.escola_cidade || '',
+        escola_estado: configData.escola_estado || '',
+      }))
     }
 
     const { data: allPagamentos } = await supabase.from('pagamentos').select('*')
@@ -117,6 +145,7 @@ export default function RelatorioFinanceiro() {
            modelo: getBillingModelLabel(modelo),
            alunoId: aluno.id,
            invoiceUrl: null,
+           invoiceId: null,
          })
       } else if (modelo === 'CREDITOS') {
         const saldo = Number(info.saldo_creditos_faturamento || 0)
@@ -133,6 +162,7 @@ export default function RelatorioFinanceiro() {
             modelo: getBillingModelLabel(modelo),
             alunoId: aluno.id,
             invoiceUrl: null,
+            invoiceId: null,
             saldo,
           })
         }
@@ -168,6 +198,7 @@ export default function RelatorioFinanceiro() {
           modelo: getBillingModelLabel(fatura.modelo_faturamento),
           alunoId: aluno.id,
           invoiceUrl: fatura.invoice_url,
+          invoiceId: fatura.id,
         })
       })
 
@@ -252,7 +283,13 @@ export default function RelatorioFinanceiro() {
 
   const handleSalvarConfig = async (e: React.FormEvent) => {
     e.preventDefault(); setIsSavingConfig(true)
-    const { error } = await supabase.from('configuracoes').upsert({ id: 1, chave_pix: chavePix, mensagem_pendente: msgPendente || DEFAULT_PENDENTE, mensagem_atrasado: msgAtrasado || DEFAULT_ATRASADO })
+    const { error } = await supabase.from('configuracoes').upsert({
+      id: 1,
+      chave_pix: chavePix,
+      mensagem_pendente: msgPendente || DEFAULT_PENDENTE,
+      mensagem_atrasado: msgAtrasado || DEFAULT_ATRASADO,
+      ...schoolData,
+    })
     setIsSavingConfig(false); if (error) alert("Erro: " + error.message); else { setIsConfigModalOpen(false); alert("✅ Salvo com sucesso!"); carregarDadosFinanceiros() }
   }
 
@@ -291,7 +328,8 @@ export default function RelatorioFinanceiro() {
   const enviarCobrancaWhatsApp = (aluno: any) => {
     if (!aluno.telefone) return alert("Sem WhatsApp cadastrado.")
     let numero = aluno.telefone.replace(/\D/g, ''); if (numero.length === 10 || numero.length === 11) numero = `55${numero}`
-    const link = aluno.invoiceUrl ? `Pague por aqui: ${aluno.invoiceUrl}` : ''
+    const invoiceLink = aluno.invoiceUrl || (aluno.invoiceId ? `${window.location.origin}/faturas/${aluno.invoiceId}` : '')
+    const link = invoiceLink ? `Consulte sua fatura: ${invoiceLink}` : ''
     const msgFinal = (aluno.status === 'Atrasado' ? msgAtrasado : msgPendente)
       .replace(/\{\{nome\}\}/g, aluno.nome.split(' ')[0])
       .replace(/\{\{valor\}\}/g, formatCurrencyBR(aluno.valor))
@@ -467,7 +505,7 @@ export default function RelatorioFinanceiro() {
                       {aluno.status}
                     </span>
                   </div>
-                  {aluno.invoiceUrl && <motion.button whileTap={{ scale: 0.9 }} onClick={() => window.open(aluno.invoiceUrl, '_blank')} className="h-10 w-10 rounded-xl bg-cyan-100 text-cyan-700 border border-cyan-200 hover:bg-cyan-500 hover:text-white transition-all flex items-center justify-center text-lg shadow-sm" title="Abrir fatura">📄</motion.button>}
+                  {aluno.invoiceId && <motion.button whileTap={{ scale: 0.9 }} onClick={() => window.open(`/faturas/${aluno.invoiceId}`, '_blank')} className="h-10 w-10 rounded-xl bg-cyan-100 text-cyan-700 border border-cyan-200 hover:bg-cyan-500 hover:text-white transition-all flex items-center justify-center text-lg shadow-sm" title="Abrir fatura detalhada">📄</motion.button>}
                   <motion.button whileTap={{ scale: 0.9 }} onClick={() => enviarCobrancaWhatsApp(aluno)} className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-600 border border-emerald-200 hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center text-lg shadow-sm" title="Lembrar via WhatsApp">💬</motion.button>
                   <motion.button whileTap={{ scale: 0.9 }} onClick={() => router.push(`/alunos/${aluno.alunoId}`)} className="h-10 w-10 rounded-xl bg-indigo-100 text-indigo-600 border border-indigo-200 hover:bg-indigo-500 hover:text-white transition-all flex items-center justify-center font-bold shadow-sm" title="Ir para o perfil e dar baixa">$</motion.button>
                 </div>
@@ -493,6 +531,59 @@ export default function RelatorioFinanceiro() {
               </h2>
               
               <form onSubmit={handleSalvarConfig} className="space-y-6">
+                <div className="rounded-2xl bg-white/50 border border-white/70 p-5">
+                  <div className="mb-4">
+                    <p className="text-sm font-bold text-slate-800">Dados da escola na fatura</p>
+                    <p className="text-xs text-slate-500 mt-1">Estas informações ficam registradas na fatura no momento da emissão.</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="text-xs font-semibold text-slate-600 ml-1">Nome da escola / razão social</label>
+                      <input required value={schoolData.escola_nome} onChange={e => setSchoolData(current => ({ ...current, escola_nome: normalizeName(e.target.value) }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 font-semibold mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 ml-1">CPF ou CNPJ</label>
+                      <input value={schoolData.escola_documento} onChange={e => setSchoolData(current => ({ ...current, escola_documento: formatCPFOrCNPJ(e.target.value) }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 ml-1">Telefone</label>
+                      <input value={schoolData.escola_telefone} onChange={e => setSchoolData(current => ({ ...current, escola_telefone: formatBrazilianPhone(e.target.value) }))} onBlur={() => setSchoolData(current => ({ ...current, escola_telefone: ensureBrazilianNinthDigit(current.escola_telefone) }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-xs font-semibold text-slate-600 ml-1">E-mail</label>
+                      <input type="email" value={schoolData.escola_email} onChange={e => setSchoolData(current => ({ ...current, escola_email: normalizeEmail(e.target.value) }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 ml-1">CEP</label>
+                      <input value={schoolData.escola_cep} onChange={e => setSchoolData(current => ({ ...current, escola_cep: formatCEP(e.target.value) }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 ml-1">Endereço</label>
+                      <input value={schoolData.escola_endereco} onChange={e => setSchoolData(current => ({ ...current, escola_endereco: e.target.value }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 ml-1">Número</label>
+                      <input value={schoolData.escola_numero} onChange={e => setSchoolData(current => ({ ...current, escola_numero: e.target.value }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 ml-1">Complemento</label>
+                      <input value={schoolData.escola_complemento} onChange={e => setSchoolData(current => ({ ...current, escola_complemento: e.target.value }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 ml-1">Bairro</label>
+                      <input value={schoolData.escola_bairro} onChange={e => setSchoolData(current => ({ ...current, escola_bairro: e.target.value }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 ml-1">Cidade</label>
+                      <input value={schoolData.escola_cidade} onChange={e => setSchoolData(current => ({ ...current, escola_cidade: e.target.value }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 ml-1">Estado</label>
+                      <input maxLength={2} value={schoolData.escola_estado} onChange={e => setSchoolData(current => ({ ...current, escola_estado: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') }))} className="w-full p-3 rounded-xl border border-slate-200 bg-white/80 text-slate-700 mt-1" />
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-xs font-semibold text-slate-600 ml-1">Sua Chave PIX</label>
                   <input placeholder="Ex: 12.345.678/0001-90" value={chavePix} onChange={e => setChavePix(e.target.value)} className={`w-full p-4 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1`} />

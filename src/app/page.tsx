@@ -210,8 +210,12 @@ export default function Dashboard() {
     const { error } = await supabase.from('historico_aulas').insert([{
       aluno_id: aulaParaDarBaixa.aluno_id,
       data_aula: aulaParaDarBaixa.data_selecionada,
+      horario_inicio: aulaParaDarBaixa.horario_inicio || null,
+      horario_fim: aulaParaDarBaixa.horario_fim || null,
       status: status,
-      observacoes: obsBaixa || obsPadrao
+      observacoes: obsBaixa || obsPadrao,
+      professor_id: aulaParaDarBaixa.professor_id || null,
+      modalidade: aulaParaDarBaixa.instrumento_aula || null,
     }]);
 
     if (error) {
@@ -261,7 +265,16 @@ export default function Dashboard() {
     
     setHistoricoSemana(prev => [...prev, { aluno_id: selectedAula.aluno.id, data_aula: dataParaDesmarcar, status: 'Desmarcada' }]);
     await supabase.from('historico_aulas').delete().eq('aluno_id', selectedAula.aluno.id).eq('data_aula', dataParaDesmarcar);
-    const { error: errInsert } = await supabase.from('historico_aulas').insert([{ aluno_id: selectedAula.aluno.id, data_aula: dataParaDesmarcar, status: 'Desmarcada', observacoes: motivo }]);
+    const { error: errInsert } = await supabase.from('historico_aulas').insert([{
+      aluno_id: selectedAula.aluno.id,
+      data_aula: dataParaDesmarcar,
+      horario_inicio: selectedAula.horario_inicio || null,
+      horario_fim: selectedAula.horario_fim || null,
+      status: 'Desmarcada',
+      observacoes: motivo,
+      professor_id: selectedAula.professor_id || null,
+      modalidade: selectedAula.instrumento_aula || null,
+    }]);
 
     if (errInsert) { alert("🚨 O banco de dados bloqueou o salvamento! Erro: " + errInsert.message); carregarDados(); setIsSubmitting(false); return; }
 

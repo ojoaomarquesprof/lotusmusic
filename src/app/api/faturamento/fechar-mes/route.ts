@@ -2,6 +2,13 @@ import { NextRequest } from 'next/server'
 import { createAsaasCustomer, createAsaasPayment } from '../../../../lib/asaas'
 import { getSupabaseAdmin } from '../../../../lib/supabaseAdmin'
 import { unmask } from '../../../../lib/formatters'
+import {
+  addDaysISO,
+  buildAddress,
+  InvoiceLesson,
+  InvoiceSchedule,
+  resolveLessonDetails,
+} from '../../../../lib/invoices'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -41,12 +48,6 @@ function getCompetence(request: NextRequest) {
     forced: false,
     isClosingWindow: day === 1,
   }
-}
-
-function addDays(dateString: string, days: number) {
-  const date = new Date(`${dateString}T12:00:00Z`)
-  date.setUTCDate(date.getUTCDate() + days)
-  return date.toISOString().slice(0, 10)
 }
 
 async function closeMonth(request: NextRequest) {
@@ -93,15 +94,24 @@ async function closeMonth(request: NextRequest) {
   const studentIds = monthlyStudents.map((student: any) => student.id)
   const { data: classHistory, error: classHistoryError } = await admin
     .from('historico_aulas')
-    .select('aluno_id, data_aula, status')
+    .select('id, aluno_id, data_aula, horario_inicio, horario_fim, status, professor_id, modalidade, fatura_id')
     .in('aluno_id', studentIds)
     .gte('data_aula', startDate)
     .lte('data_aula', `${endDate}T23:59:59`)
     .in('status', ['Realizada', 'Reposição'])
+    .is('fatura_id', null)
 
   if (classHistoryError) {
     return Response.json({ error: classHistoryError.message }, { status: 500 })
   }
+
+  const { data: schoolSettings } = await admin
+    .from('configuracoes')
+    .select(
+      'escola_nome, escola_documento, escola_email, escola_telefone, escola_cep, escola_endereco, escola_numero, escola_complemento, escola_bairro, escola_cidade, escola_estado',
+    )
+    .eq('id', 1)
+    .maybeSingle()
 
   const processed: any[] = []
 
@@ -109,9 +119,10 @@ async function closeMonth(request: NextRequest) {
     const info = Array.isArray(student.alunos_info)
       ? student.alunos_info[0]
       : student.alunos_info
-    const lessonCount = (classHistory || []).filter(
+    const studentLessons = (classHistory || []).filter(
       (lesson: any) => lesson.aluno_id === student.id,
-    ).length
+    )
+    const lessonCount = studentLessons.length
     const lessonValue = Number(info?.valor_por_aula || 0)
     const total = Number((lessonCount * lessonValue).toFixed(2))
 
@@ -121,6 +132,7 @@ async function closeMonth(request: NextRequest) {
       .eq('aluno_id', student.id)
       .eq('competencia', startDate)
       .eq('modelo_faturamento', 'MENSAL_FECHADO')
+      .eq('tipo_emissao', 'AUTOMATICA')
       .maybeSingle()
 
     if (existingInvoice) {
@@ -132,13 +144,16 @@ async function closeMonth(request: NextRequest) {
       continue
     }
 
-    const dueDate = addDays(endDate, Number(info?.prazo_vencimento_dias || 7))
+    const dueDate = addDaysISO(endDate, Number(info?.prazo_vencimento_dias || 7))
     const { data: invoice, error: invoiceError } = await admin
       .from('faturas')
       .insert({
         aluno_id: student.id,
         competencia: startDate,
         modelo_faturamento: 'MENSAL_FECHADO',
+        tipo_emissao: 'AUTOMATICA',
+        periodo_inicio: startDate,
+        periodo_fim: endDate,
         quantidade_aulas: lessonCount,
         valor_unitario: lessonValue,
         valor_total: total,
@@ -147,6 +162,24 @@ async function closeMonth(request: NextRequest) {
         status: total > 0 ? 'RASCUNHO' : 'SEM_MOVIMENTO',
         provider: process.env.ASAAS_API_KEY ? 'ASAAS' : 'MANUAL',
         external_reference: `${student.id}:${startDate}`,
+        aluno_nome: student.nome_completo,
+        aluno_documento: student.cpf,
+        aluno_email: student.email,
+        aluno_telefone: student.telefone,
+        aluno_endereco: buildAddress(student),
+        emitente_nome: schoolSettings?.escola_nome || 'Lotus Music',
+        emitente_documento: schoolSettings?.escola_documento || null,
+        emitente_email: schoolSettings?.escola_email || null,
+        emitente_telefone: schoolSettings?.escola_telefone || null,
+        emitente_endereco: buildAddress({
+          endereco: schoolSettings?.escola_endereco,
+          numero: schoolSettings?.escola_numero,
+          complemento: schoolSettings?.escola_complemento,
+          bairro: schoolSettings?.escola_bairro,
+          cidade: schoolSettings?.escola_cidade,
+          estado: schoolSettings?.escola_estado,
+          cep: schoolSettings?.escola_cep,
+        }),
       })
       .select()
       .single()
@@ -158,6 +191,93 @@ async function closeMonth(request: NextRequest) {
         error: invoiceError?.message || 'Não foi possível criar a fatura.',
       })
       continue
+    }
+
+    if (studentLessons.length > 0) {
+      try {
+        const { data: schedules, error: schedulesError } = await admin
+          .from('agenda')
+          .select(
+            'dia, horario_inicio, professor_id, instrumento_aula, professor:profiles!professor_id(nome_completo)',
+          )
+          .eq('aluno_id', student.id)
+          .order('horario_inicio')
+        if (schedulesError) throw schedulesError
+
+        const professorIds = Array.from(
+          new Set(
+            [
+              ...studentLessons.map((lesson: any) => lesson.professor_id),
+              ...(schedules || []).map((schedule: any) => schedule.professor_id),
+            ].filter(Boolean),
+          ),
+        )
+        const professorNames: Record<string, string> = {}
+        if (professorIds.length > 0) {
+          const { data: professors, error: professorsError } = await admin
+            .from('profiles')
+            .select('id, nome_completo')
+            .in('id', professorIds)
+          if (professorsError) throw professorsError
+          for (const professor of professors || []) {
+            professorNames[professor.id] = professor.nome_completo
+          }
+        }
+
+        const items = studentLessons.map((lesson: any) => {
+          const details = resolveLessonDetails(
+            lesson as InvoiceLesson,
+            (schedules || []) as InvoiceSchedule[],
+            professorNames,
+          )
+          return {
+            fatura_id: invoice.id,
+            historico_aula_id: String(lesson.id),
+            data_aula: String(lesson.data_aula).slice(0, 10),
+            horario_inicio: lesson.horario_inicio || null,
+            horario_fim: lesson.horario_fim || null,
+            modalidade: details.modalidade,
+            professor_id: details.professorId,
+            professor_nome: details.professorName,
+            descricao: `Aula ${lesson.status.toLowerCase()}`,
+            quantidade: 1,
+            valor_unitario: lessonValue,
+            valor_total: lessonValue,
+          }
+        })
+
+        const { error: itemsError } = await admin.from('fatura_itens').insert(items)
+        if (itemsError) throw itemsError
+
+        const { data: linkedLessons, error: linkError } = await admin
+          .from('historico_aulas')
+          .update({
+            fatura_id: invoice.id,
+            faturado_em: new Date().toISOString(),
+          })
+          .in('id', studentLessons.map((lesson: any) => lesson.id))
+          .is('fatura_id', null)
+          .select('id')
+        if (linkError || linkedLessons?.length !== studentLessons.length) {
+          throw linkError || new Error('As aulas mudaram durante o fechamento.')
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível detalhar as aulas da fatura.'
+        await admin
+          .from('historico_aulas')
+          .update({ fatura_id: null, faturado_em: null })
+          .eq('fatura_id', invoice.id)
+        await admin.from('faturas').delete().eq('id', invoice.id)
+        processed.push({
+          alunoId: student.id,
+          status: 'error',
+          error: message,
+        })
+        continue
+      }
     }
 
     if (total <= 0) {
