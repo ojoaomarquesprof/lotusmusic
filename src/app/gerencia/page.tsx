@@ -4,20 +4,34 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
+import { formatCPFOrCNPJ } from '../../lib/formatters'
 import Cropper from 'react-easy-crop'
 import { motion, AnimatePresence } from 'framer-motion'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
   BarChart3,
+  BadgeCheck,
   Building2,
   CalendarClock,
+  Clock3,
   Download,
+  DoorOpen,
   GraduationCap,
+  ImageIcon,
   Landmark,
+  Mail,
   MapPin,
+  Music2,
+  Pencil,
+  Phone,
+  Plus,
+  Save,
+  Search,
   Settings2,
+  Trash2,
   UserCheck,
+  UserRound,
   UserX,
   UsersRound,
 } from 'lucide-react'
@@ -40,6 +54,7 @@ export default function Gerencia() {
   const [isMounted, setIsMounted] = useState(false)
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [activeSection, setActiveSection] = useState<'identidade' | 'estrutura' | 'equipe' | 'horarios' | 'relatorios'>('identidade')
 
   const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
@@ -63,9 +78,10 @@ export default function Gerencia() {
   const [selectedProfId, setSelectedProfId] = useState('')
   const [disponibilidades, setDisponibilidades] = useState<any[]>([])
   const [matriculasProf, setMatriculasProf] = useState<any[]>([]) 
+  const [diasDispSelecionados, setDiasDispSelecionados] = useState<string[]>(['Segunda'])
   const [dispDia, setDispDia] = useState('Segunda')
   const [dispInicio, setDispInicio] = useState('08:00')
-  const [dispFim, setDispFim] = useState('22:00')
+  const [dispFim, setDispFim] = useState('12:00')
   const [temAlmoco, setTemAlmoco] = useState(true)
   const [almocoInicio, setAlmocoInicio] = useState('12:00')
   const [almocoFim, setAlmocoFim] = useState('14:00')
@@ -80,6 +96,7 @@ export default function Gerencia() {
     modalidades: [] as string[]
   })
   const [showCropModalProf, setShowCropModalProf] = useState(false)
+  const [buscaEquipe, setBuscaEquipe] = useState('')
   const [imageToCropProf, setImageToCropProf] = useState<string | null>(null)
   const [cropProf, setCropProf] = useState({ x: 0, y: 0 })
   const [zoomProf, setZoomProf] = useState(1)
@@ -214,38 +231,70 @@ export default function Gerencia() {
 
   const handleGerarDisponibilidade = async () => {
     if (!selectedProfId) return alert("Selecione um professor primeiro.")
+    if (diasDispSelecionados.length === 0) return alert("Selecione pelo menos um dia da semana.")
     setIsSubmitting(true)
 
     const startMin = parseInt(dispInicio.split(':')[0]) * 60 + parseInt(dispInicio.split(':')[1])
     const endMin = parseInt(dispFim.split(':')[0]) * 60 + parseInt(dispFim.split(':')[1])
-    const lunchStartMin = temAlmoco ? parseInt(almocoInicio.split(':')[0]) * 60 + parseInt(almocoInicio.split(':')[1]) : 0
-    const lunchEndMin = temAlmoco ? parseInt(almocoFim.split(':')[0]) * 60 + parseInt(almocoFim.split(':')[1]) : 0
+    if (endMin <= startMin) {
+      setIsSubmitting(false)
+      return alert("O horário final precisa ser depois do horário inicial.")
+    }
 
     const slotsToInsert = []
-    let currentMin = startMin
-
-    while (currentMin + 60 <= endMin) { 
-      const slotStart = currentMin
-      const slotEnd = currentMin + 60
-      let isLunch = false
-      if (temAlmoco && ((slotStart >= lunchStartMin && slotStart < lunchEndMin) || (slotEnd > lunchStartMin && slotEnd <= lunchEndMin))) isLunch = true
-
-      if (!isLunch) {
+    for (const dia of diasDispSelecionados) {
+      let currentMin = startMin
+      while (currentMin + 60 <= endMin) {
+        const slotStart = currentMin
+        const slotEnd = currentMin + 60
         const hStart = String(Math.floor(slotStart / 60)).padStart(2, '0') + ':' + String(slotStart % 60).padStart(2, '0')
         const hEnd = String(Math.floor(slotEnd / 60)).padStart(2, '0') + ':' + String(slotEnd % 60).padStart(2, '0')
-        const exists = disponibilidades.some(d => d.dia_semana === dispDia && d.hora_inicio === hStart)
-        if (!exists) slotsToInsert.push({ professor_id: selectedProfId, dia_semana: dispDia, hora_inicio: hStart, hora_fim: hEnd })
+        const exists = disponibilidades.some(d => d.dia_semana === dia && String(d.hora_inicio).slice(0, 5) === hStart)
+        if (!exists) slotsToInsert.push({ professor_id: selectedProfId, dia_semana: dia, hora_inicio: hStart, hora_fim: hEnd })
+        currentMin += 60
       }
-      currentMin += 60 
     }
 
     if (slotsToInsert.length > 0) {
       await supabase.from('disponibilidade_professor').insert(slotsToInsert)
-      alert(`✅ ${slotsToInsert.length} horários criados na grade!`)
+      alert(`✅ ${slotsToInsert.length} horários adicionados à semana!`)
       carregarDisponibilidadeProf(selectedProfId)
     } else {
-      alert("⚠️ Nenhum horário gerado. Verifique os horários e se já não existem.")
+      alert("Esses horários já fazem parte da disponibilidade.")
     }
+    setIsSubmitting(false)
+  }
+
+  const toggleDiaDisponibilidade = (dia: string) => {
+    setDiasDispSelecionados(prev => prev.includes(dia) ? prev.filter(item => item !== dia) : [...prev, dia])
+  }
+
+  const handleToggleDisponibilidade = async (dia: string, horaInicio: string) => {
+    if (!selectedProfId || isSubmitting) return
+    const existente = disponibilidades.find(d => d.dia_semana === dia && String(d.hora_inicio).slice(0, 5) === horaInicio)
+
+    if (existente) {
+      if (getOcupante(existente)) {
+        return alert("Este horário possui uma aula fixa. Altere primeiro a matrícula na agenda.")
+      }
+      setIsSubmitting(true)
+      await supabase.from('disponibilidade_professor').delete().eq('id', existente.id)
+      await carregarDisponibilidadeProf(selectedProfId)
+      setIsSubmitting(false)
+      return
+    }
+
+    const inicioMin = parseInt(horaInicio.slice(0, 2)) * 60 + parseInt(horaInicio.slice(3, 5))
+    const fimMin = inicioMin + 60
+    const horaFim = `${String(Math.floor(fimMin / 60)).padStart(2, '0')}:${String(fimMin % 60).padStart(2, '0')}`
+    setIsSubmitting(true)
+    await supabase.from('disponibilidade_professor').insert([{
+      professor_id: selectedProfId,
+      dia_semana: dia,
+      hora_inicio: horaInicio,
+      hora_fim: horaFim,
+    }])
+    await carregarDisponibilidadeProf(selectedProfId)
     setIsSubmitting(false)
   }
 
@@ -261,10 +310,12 @@ export default function Gerencia() {
   }
 
   const handleLimparDia = async (dia: string) => { 
-    if (!confirm(`🚨 Apagar TODOS os horários de ${dia}? As vagas que já estão com matrículas cadastradas vão ficar órfãs se você prosseguir.`)) return; 
-    setIsSubmitting(true); 
-    await supabase.from('disponibilidade_professor').delete().eq('professor_id', selectedProfId).eq('dia_semana', dia); 
-    carregarDisponibilidadeProf(selectedProfId); 
+    const livres = disponibilidades.filter(d => d.dia_semana === dia && !getOcupante(d))
+    if (livres.length === 0) return alert(`Não há horários livres para remover em ${dia}.`)
+    if (!confirm(`Remover ${livres.length} horário(s) livre(s) de ${dia}? Aulas já ocupadas serão preservadas.`)) return;
+    setIsSubmitting(true);
+    await supabase.from('disponibilidade_professor').delete().in('id', livres.map(d => d.id));
+    await carregarDisponibilidadeProf(selectedProfId);
     setIsSubmitting(false) 
   }
 
@@ -549,6 +600,22 @@ export default function Gerencia() {
   }
 
   const inputClass = "w-full px-4 py-3.5 rounded-xl bg-white border border-[#deddd6] text-slate-800 font-medium focus:border-[#1f4a3a] focus:ring-4 focus:ring-[#1f4a3a]/10 transition-all outline-none placeholder:text-slate-400 mt-1";
+  const equipeFiltrada = professores.filter(prof => {
+    const termo = buscaEquipe.trim().toLowerCase()
+    if (!termo) return true
+    return [prof.nome_completo, prof.email, prof.telefone, ...(prof.modalidades || [])]
+      .filter(Boolean)
+      .some(valor => String(valor).toLowerCase().includes(termo))
+  })
+  const professorSelecionado = professores.find(prof => prof.id === selectedProfId)
+  const gradeHoras = Array.from({ length: 17 }, (_, index) => `${String(index + 6).padStart(2, '0')}:00`)
+  const horariosLivres = disponibilidades.filter(d => !getOcupante(d)).length
+  const horariosOcupados = disponibilidades.filter(d => getOcupante(d)).length
+
+  const abrirDisponibilidadeProfessor = (professorId: string) => {
+    setSelectedProfId(professorId)
+    setActiveSection('horarios')
+  }
 
   if (!isMounted) return null;
   if (loading) return <div className="flex justify-center items-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
@@ -574,6 +641,7 @@ export default function Gerencia() {
       <motion.nav
         variants={itemVariants}
         aria-label="Seções da central de gestão"
+        role="tablist"
         className="sticky top-3 z-20 premium-panel !rounded-2xl p-2 mb-8 overflow-x-auto custom-scrollbar"
       >
         <div className="flex min-w-max gap-1">
@@ -585,21 +653,354 @@ export default function Gerencia() {
             { id: 'relatorios', icon: BarChart3, label: 'Relatórios' },
           ].map((item) => {
             const Icon = item.icon
+            const isActive = activeSection === item.id
             return (
-              <a
+              <button
                 key={item.id}
-                href={`#${item.id}`}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-[#e7efe9] hover:text-[#1f4a3a] transition-colors"
+                onClick={() => setActiveSection(item.id as typeof activeSection)}
+                role="tab"
+                aria-selected={isActive}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors ${isActive ? 'bg-[#1f4a3a] text-white shadow-sm' : 'text-slate-600 hover:bg-[#e7efe9] hover:text-[#1f4a3a]'}`}
               >
                 <Icon size={15} strokeWidth={1.8} />
                 {item.label}
-              </a>
+              </button>
             )
           })}
         </div>
       </motion.nav>
 
       <div className="space-y-8">
+        {activeSection === 'identidade' && (
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+            <form onSubmit={handleSalvarConfig} className="space-y-5">
+              <div className="premium-panel overflow-hidden">
+                <div className="px-5 md:px-6 py-5 border-b border-[#e5e3dc] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center">
+                      <Building2 size={19} strokeWidth={1.8} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">Perfil da escola</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Identidade usada no aplicativo, nas faturas e nos documentos.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] font-semibold text-[#1f4a3a]">
+                    <BadgeCheck size={15} />
+                    Dados centralizados
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-[330px_minmax(0,1fr)]">
+                  <aside className="p-5 md:p-6 bg-[#faf9f6] border-b xl:border-b-0 xl:border-r border-[#e5e3dc]">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 mb-4">Marca</p>
+                    <label className="block cursor-pointer group">
+                      <div className="h-36 rounded-2xl border border-dashed border-[#cfd6d0] bg-white flex items-center justify-center overflow-hidden relative">
+                        {logoPreview ? (
+                          <img src={logoPreview} alt="Logo atual da escola" className="max-h-full max-w-full object-contain p-4" />
+                        ) : (
+                          <div className="text-center text-slate-400">
+                            <ImageIcon size={25} strokeWidth={1.5} className="mx-auto mb-2" />
+                            <span className="text-xs font-medium">Adicionar logotipo</span>
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-[#153b2f]/85 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs font-semibold">Alterar logotipo</div>
+                      </div>
+                      <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setLogoFile(e.target.files[0]); setLogoPreview(URL.createObjectURL(e.target.files[0])) } }} />
+                    </label>
+                    <p className="text-[10px] leading-relaxed text-slate-500 mt-3">Prefira uma imagem PNG com fundo transparente e boa leitura em fundo claro.</p>
+
+                    <div className="mt-6 pt-5 border-t border-[#e5e3dc] flex items-center gap-4">
+                      <label className="cursor-pointer group shrink-0">
+                        <div className="h-16 w-16 rounded-2xl border border-dashed border-[#cfd6d0] bg-white flex items-center justify-center overflow-hidden">
+                          {faviconPreview ? <img src={faviconPreview} alt="Ícone atual da escola" className="h-full w-full object-contain p-2" /> : <ImageIcon size={19} className="text-slate-400" />}
+                        </div>
+                        <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setFaviconFile(e.target.files[0]); setFaviconPreview(URL.createObjectURL(e.target.files[0])) } }} />
+                      </label>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-800">Ícone do aplicativo</p>
+                        <p className="text-[10px] text-slate-500 mt-1">Formato quadrado, idealmente 512 × 512 px.</p>
+                      </div>
+                    </div>
+                  </aside>
+
+                  <div className="p-5 md:p-7">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-semibold text-slate-600">Nome da escola</label>
+                        <input value={config.nome_escola || ''} onChange={e => setConfig({...config, nome_escola: e.target.value})} placeholder="Nome exibido no sistema" className={inputClass} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-600">CNPJ</label>
+                        <input value={config.cnpj || ''} onChange={e => setConfig({...config, cnpj: formatCPFOrCNPJ(e.target.value)})} placeholder="00.000.000/0000-00" className={inputClass} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-600">Telefone ou WhatsApp</label>
+                        <input value={config.telefone || ''} onChange={e => setConfig({...config, telefone: formatPhone(e.target.value)})} placeholder="(00) 00000-0000" className={inputClass} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-semibold text-slate-600">Chave PIX</label>
+                        <input value={config.chave_pix || ''} onChange={e => setConfig({...config, chave_pix: e.target.value})} placeholder="Chave usada nas cobranças" className={inputClass} />
+                        <p className="text-[10px] text-slate-500 mt-1.5">Esta informação aparece nas faturas quando não há cobrança integrada.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="premium-panel overflow-hidden">
+                <div className="px-5 md:px-6 py-4 border-b border-[#e5e3dc] flex items-center gap-3">
+                  <MapPin size={18} className="text-[#1f4a3a]" />
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Endereço principal</h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Usado em documentos, contratos e faturas.</p>
+                  </div>
+                </div>
+                <div className="p-5 md:p-6 grid grid-cols-2 md:grid-cols-12 gap-x-4 gap-y-4">
+                  <div className="col-span-2 md:col-span-3"><label className="text-xs font-semibold text-slate-600">CEP</label><input value={config.cep || ''} onChange={handleCepChange} maxLength={9} className={inputClass} /></div>
+                  <div className="col-span-2 md:col-span-6"><label className="text-xs font-semibold text-slate-600">Rua</label><input value={config.endereco || ''} onChange={e => setConfig({...config, endereco: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-1 md:col-span-3"><label className="text-xs font-semibold text-slate-600">Número</label><input id="escola-numero" value={config.numero || ''} onChange={e => setConfig({...config, numero: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-1 md:col-span-3"><label className="text-xs font-semibold text-slate-600">Complemento</label><input value={config.complemento || ''} onChange={e => setConfig({...config, complemento: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-2 md:col-span-3"><label className="text-xs font-semibold text-slate-600">Bairro</label><input value={config.bairro || ''} onChange={e => setConfig({...config, bairro: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-2 md:col-span-4"><label className="text-xs font-semibold text-slate-600">Cidade</label><input value={config.cidade || ''} onChange={e => setConfig({...config, cidade: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-1 md:col-span-2"><label className="text-xs font-semibold text-slate-600">UF</label><input value={config.estado || ''} onChange={e => setConfig({...config, estado: e.target.value.toUpperCase()})} maxLength={2} className={inputClass} /></div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button type="submit" disabled={isSubmitting} className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#1f4a3a] text-white text-sm font-semibold flex items-center justify-center gap-2 hover:bg-[#173c2e] disabled:opacity-50">
+                  <Save size={16} /> {isSubmitting ? 'Salvando...' : 'Salvar dados da escola'}
+                </button>
+              </div>
+            </form>
+          </motion.section>
+        )}
+
+        {activeSection === 'estrutura' && (
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="premium-panel p-5 flex items-center gap-4">
+                <div className="h-10 w-10 rounded-xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center"><DoorOpen size={19} /></div>
+                <div><p className="text-2xl font-semibold text-slate-900">{salas.length}</p><p className="text-[10px] uppercase tracking-wider text-slate-500">Salas cadastradas</p></div>
+              </div>
+              <div className="premium-panel p-5 flex items-center gap-4">
+                <div className="h-10 w-10 rounded-xl bg-[#f3ecdf] text-[#8b6538] flex items-center justify-center"><Music2 size={19} /></div>
+                <div><p className="text-2xl font-semibold text-slate-900">{modalidades.length}</p><p className="text-[10px] uppercase tracking-wider text-slate-500">Modalidades ativas</p></div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+              <div className="premium-panel overflow-hidden">
+                <div className="px-5 py-4 border-b border-[#e5e3dc]">
+                  <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><DoorOpen size={18} className="text-[#1f4a3a]" /> Salas e espaços</h3>
+                  <p className="text-xs text-slate-500 mt-1">Ambientes disponíveis para agendamento.</p>
+                </div>
+                <form onSubmit={handleAddSala} className="p-4 border-b border-[#ebe9e3] flex gap-2">
+                  <input value={novaSala} onChange={e => setNovaSala(e.target.value)} placeholder="Ex.: Sala de Piano" aria-label="Nome da nova sala" className={`${inputClass} !mt-0 !py-3`} />
+                  <button type="submit" className="h-12 px-4 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center gap-2 shrink-0"><Plus size={15} /> Adicionar</button>
+                </form>
+                <div className="divide-y divide-[#ebe9e3] max-h-[430px] overflow-y-auto custom-scrollbar">
+                  {salas.map(sl => (
+                    <div key={sl.id} className="px-5 py-3.5 flex items-center gap-3 hover:bg-[#faf9f6]">
+                      <div className="h-8 w-8 rounded-lg bg-[#f1f3ef] text-slate-500 flex items-center justify-center"><DoorOpen size={15} /></div>
+                      <span className="text-sm font-semibold text-slate-800 flex-1">{sl.nome}</span>
+                      <button onClick={() => handleDelSala(sl.id)} aria-label={`Excluir ${sl.nome}`} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                  {salas.length === 0 && <div className="py-14 px-6 text-center text-sm text-slate-500">Nenhuma sala cadastrada.</div>}
+                </div>
+              </div>
+
+              <div className="premium-panel overflow-hidden">
+                <div className="px-5 py-4 border-b border-[#e5e3dc]">
+                  <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><GraduationCap size={19} className="text-[#1f4a3a]" /> Modalidades e cursos</h3>
+                  <p className="text-xs text-slate-500 mt-1">Opções oferecidas nos cadastros e na agenda.</p>
+                </div>
+                <form onSubmit={handleAddModalidade} className="p-4 border-b border-[#ebe9e3] flex gap-2">
+                  <input value={novaModalidade} onChange={e => setNovaModalidade(e.target.value)} placeholder="Ex.: Violão" aria-label="Nome da nova modalidade" className={`${inputClass} !mt-0 !py-3`} />
+                  <button type="submit" className="h-12 px-4 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center gap-2 shrink-0"><Plus size={15} /> Adicionar</button>
+                </form>
+                <div className="divide-y divide-[#ebe9e3] max-h-[430px] overflow-y-auto custom-scrollbar">
+                  {modalidades.map(modalidade => (
+                    <div key={modalidade.id} className="px-5 py-3.5 flex items-center gap-3 hover:bg-[#faf9f6]">
+                      <div className="h-8 w-8 rounded-lg bg-[#f3ecdf] text-[#8b6538] flex items-center justify-center"><Music2 size={15} /></div>
+                      <span className="text-sm font-semibold text-slate-800 flex-1">{modalidade.nome}</span>
+                      <button onClick={() => handleDelModalidade(modalidade.id)} aria-label={`Excluir ${modalidade.nome}`} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                  {modalidades.length === 0 && <div className="py-14 px-6 text-center text-sm text-slate-500">Nenhuma modalidade cadastrada.</div>}
+                </div>
+              </div>
+            </div>
+          </motion.section>
+        )}
+
+        {activeSection === 'equipe' && (
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="premium-panel overflow-hidden">
+            <div className="px-5 md:px-6 py-5 border-b border-[#e5e3dc] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><UsersRound size={19} className="text-[#1f4a3a]" /> Pessoas e acessos</h3>
+                <p className="text-xs text-slate-500 mt-1">{professores.filter(p => p.role === 'PROFESSOR').length} professor(es) · {professores.filter(p => p.role === 'ADMIN').length} administrador(es)</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+                <label className="relative flex-1 lg:w-72">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input value={buscaEquipe} onChange={e => setBuscaEquipe(e.target.value)} placeholder="Buscar na equipe" className="h-11 w-full pl-10 pr-4 rounded-xl border border-[#deddd6] bg-white text-sm outline-none focus:border-[#1f4a3a] focus:ring-4 focus:ring-[#1f4a3a]/10" />
+                </label>
+                <button onClick={() => abrirModalEquipe()} className="h-11 px-4 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2"><Plus size={15} /> Novo membro</button>
+              </div>
+            </div>
+
+            <div className="hidden md:grid grid-cols-[minmax(240px,1.2fr)_130px_minmax(180px,1fr)_150px] gap-4 px-6 py-2.5 bg-[#faf9f6] border-b border-[#ebe9e3] text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+              <span>Profissional</span><span>Acesso</span><span>Modalidades</span><span className="text-right">Ações</span>
+            </div>
+            <div className="divide-y divide-[#ebe9e3]">
+              {equipeFiltrada.map(prof => (
+                <div key={prof.id} className="px-5 md:px-6 py-4 grid grid-cols-1 md:grid-cols-[minmax(240px,1.2fr)_130px_minmax(180px,1fr)_150px] gap-4 md:items-center hover:bg-[#faf9f6] transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-11 w-11 rounded-full bg-[#dce8df] text-[#1f4a3a] flex items-center justify-center font-semibold overflow-hidden shrink-0">
+                      {prof.avatar_url ? <img src={prof.avatar_url} alt="" className="h-full w-full object-cover" /> : prof.nome_completo?.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{prof.nome_completo}</p>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                        {prof.email && <span className="text-[10px] text-slate-500 flex items-center gap-1"><Mail size={10} /> {prof.email}</span>}
+                        {prof.telefone && <span className="text-[10px] text-slate-500 flex items-center gap-1"><Phone size={10} /> {prof.telefone}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <span className={`inline-flex px-2 py-1 rounded-md text-[9px] font-semibold uppercase tracking-wide ${prof.role === 'ADMIN' ? 'bg-[#f3ecdf] text-[#7c5b33]' : 'bg-[#e7efe9] text-[#1f4a3a]'}`}>{prof.role === 'ADMIN' ? 'Administrador' : 'Professor'}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(prof.modalidades || []).slice(0, 3).map((modalidade: string) => <span key={modalidade} className="px-2 py-1 rounded-md bg-slate-100 text-[9px] font-medium text-slate-600">{modalidade}</span>)}
+                    {(prof.modalidades || []).length > 3 && <span className="px-2 py-1 rounded-md bg-slate-100 text-[9px] font-medium text-slate-500">+{prof.modalidades.length - 3}</span>}
+                    {(!prof.modalidades || prof.modalidades.length === 0) && <span className="text-[10px] text-slate-400">Não informadas</span>}
+                  </div>
+                  <div className="flex md:justify-end gap-1.5">
+                    {prof.role === 'PROFESSOR' && <button onClick={() => abrirDisponibilidadeProfessor(prof.id)} title="Gerenciar disponibilidade" className="h-9 px-3 rounded-lg border border-[#d7e3da] bg-[#f3f7f4] text-[#1f4a3a] text-[10px] font-semibold flex items-center gap-1.5"><CalendarClock size={13} /> Horários</button>}
+                    <button onClick={() => abrirModalEquipe(prof)} title="Editar ficha" className="h-9 w-9 rounded-lg border border-[#deddd6] bg-white text-slate-500 flex items-center justify-center hover:text-[#1f4a3a]"><Pencil size={14} /></button>
+                  </div>
+                </div>
+              ))}
+              {equipeFiltrada.length === 0 && <div className="py-16 px-6 text-center text-sm text-slate-500">Nenhum membro encontrado.</div>}
+            </div>
+          </motion.section>
+        )}
+
+        {activeSection === 'horarios' && (
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
+            <div className="premium-panel overflow-hidden">
+              <div className="px-5 md:px-6 py-5 border-b border-[#e5e3dc] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><CalendarClock size={19} className="text-[#1f4a3a]" /> Semana disponível</h3>
+                  <p className="text-xs text-slate-500 mt-1">Clique na grade ou aplique um período a vários dias de uma vez.</p>
+                </div>
+                <label className="w-full lg:w-80">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Professor</span>
+                  <select value={selectedProfId} onChange={e => setSelectedProfId(e.target.value)} className="mt-1.5 h-11 w-full px-3.5 rounded-xl border border-[#deddd6] bg-white text-sm font-semibold text-slate-800 outline-none focus:border-[#1f4a3a]">
+                    <option value="">Selecione um professor</option>
+                    {professores.filter(p => p.role === 'PROFESSOR').map(prof => <option key={prof.id} value={prof.id}>{prof.nome_completo}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              {!selectedProfId ? (
+                <div className="py-20 px-6 text-center">
+                  <div className="h-12 w-12 rounded-2xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center mx-auto mb-4"><UserRound size={22} /></div>
+                  <p className="text-sm font-semibold text-slate-800">Escolha um professor</p>
+                  <p className="text-xs text-slate-500 mt-1">A semana de disponibilidade aparecerá aqui.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="p-5 md:p-6 border-b border-[#e5e3dc] bg-[#faf9f6]">
+                    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-5 xl:items-end">
+                      <div>
+                        <div className="flex items-center justify-between gap-3 mb-2.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Aplicar aos dias</p>
+                          <button type="button" onClick={() => setDiasDispSelecionados(dias)} className="text-[10px] font-semibold text-[#1f4a3a]">Selecionar todos</button>
+                        </div>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                          {dias.map(dia => {
+                            const selecionado = diasDispSelecionados.includes(dia)
+                            return <button key={dia} type="button" onClick={() => toggleDiaDisponibilidade(dia)} className={`h-10 rounded-lg border text-[10px] font-semibold transition-colors ${selecionado ? 'bg-[#1f4a3a] border-[#1f4a3a] text-white' : 'bg-white border-[#deddd6] text-slate-500 hover:border-[#9fb4a7]'}`}>{dia.slice(0, 3)}</button>
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+                        <label className="flex-1 sm:w-32"><span className="text-[10px] font-semibold text-slate-500">Das</span><input type="time" value={dispInicio} onChange={e => setDispInicio(e.target.value)} className="mt-1 h-10 w-full px-3 rounded-lg border border-[#deddd6] bg-white text-xs font-semibold" /></label>
+                        <label className="flex-1 sm:w-32"><span className="text-[10px] font-semibold text-slate-500">Até</span><input type="time" value={dispFim} onChange={e => setDispFim(e.target.value)} className="mt-1 h-10 w-full px-3 rounded-lg border border-[#deddd6] bg-white text-xs font-semibold" /></label>
+                        <button onClick={handleGerarDisponibilidade} disabled={isSubmitting} className="h-10 px-4 rounded-lg bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><Plus size={14} /> Aplicar período</button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-3">Para criar uma pausa, aplique dois períodos no mesmo dia — por exemplo, 08h–12h e 14h–20h.</p>
+                  </div>
+
+                  <div className="px-5 md:px-6 py-4 border-b border-[#e5e3dc] flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="h-9 w-9 rounded-full bg-[#dce8df] text-[#1f4a3a] flex items-center justify-center font-semibold shrink-0">{professorSelecionado?.nome_completo?.charAt(0)}</div>
+                      <div className="min-w-0"><p className="text-sm font-semibold text-slate-900 truncate">{professorSelecionado?.nome_completo}</p><p className="text-[10px] text-slate-500">Disponibilidade semanal recorrente</p></div>
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px]">
+                      <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-sm border border-[#cdd4cf] bg-white" /> Indisponível</span>
+                      <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-sm bg-[#dcebdd]" /> Livre</span>
+                      <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-sm bg-[#1f4a3a]" /> Com aula</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 border-b border-[#e5e3dc]">
+                    <div className="px-4 py-3 text-center"><p className="text-lg font-semibold text-slate-900">{disponibilidades.length}</p><p className="text-[9px] uppercase tracking-wider text-slate-500">Disponíveis</p></div>
+                    <div className="px-4 py-3 text-center border-x border-[#e5e3dc]"><p className="text-lg font-semibold text-emerald-700">{horariosLivres}</p><p className="text-[9px] uppercase tracking-wider text-slate-500">Livres</p></div>
+                    <div className="px-4 py-3 text-center"><p className="text-lg font-semibold text-[#1f4a3a]">{horariosOcupados}</p><p className="text-[9px] uppercase tracking-wider text-slate-500">Com aula</p></div>
+                  </div>
+
+                  <div className="overflow-auto custom-scrollbar max-h-[620px]">
+                    <div className="min-w-[760px]">
+                      <div className="sticky top-0 z-10 grid grid-cols-[72px_repeat(6,minmax(105px,1fr))] bg-[#faf9f6] border-b border-[#e5e3dc]">
+                        <div className="px-3 py-3 text-[9px] font-semibold uppercase text-slate-400">Hora</div>
+                        {dias.map(dia => (
+                          <div key={dia} className="px-2 py-3 text-center border-l border-[#ebe9e3]">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">{dia}</p>
+                            {disponibilidades.some(d => d.dia_semana === dia) && <button onClick={() => handleLimparDia(dia)} className="text-[8px] text-rose-500 mt-1 hover:underline">Limpar livres</button>}
+                          </div>
+                        ))}
+                      </div>
+                      {gradeHoras.map(hora => (
+                        <div key={hora} className="grid grid-cols-[72px_repeat(6,minmax(105px,1fr))] border-b border-[#ebe9e3]">
+                          <div className="px-3 py-2.5 text-[10px] font-semibold text-slate-500 flex items-center gap-1.5"><Clock3 size={11} /> {hora}</div>
+                          {dias.map(dia => {
+                            const disponibilidade = disponibilidades.find(d => d.dia_semana === dia && String(d.hora_inicio).slice(0, 5) === hora)
+                            const ocupante = disponibilidade ? getOcupante(disponibilidade) : null
+                            const ocupado = !!ocupante
+                            return (
+                              <button
+                                key={`${dia}-${hora}`}
+                                onClick={() => handleToggleDisponibilidade(dia, hora)}
+                                disabled={isSubmitting || ocupado}
+                                title={ocupado ? `Aula de ${ocupante?.aluno?.nome_completo || 'aluno'}` : disponibilidade ? 'Clique para marcar como indisponível' : 'Clique para disponibilizar'}
+                                className={`min-h-12 px-2 py-2 border-l border-[#ebe9e3] text-left transition-colors disabled:cursor-wait ${ocupado ? 'bg-[#1f4a3a] text-white cursor-not-allowed' : disponibilidade ? 'bg-[#e4efe5] hover:bg-[#d5e6d7] text-[#1f4a3a]' : 'bg-white hover:bg-[#f7f8f5] text-slate-300'}`}
+                              >
+                                {ocupado ? (
+                                  <><span className="block text-[9px] font-semibold truncate">{ocupante?.aluno?.nome_completo?.split(' ')[0] || 'Ocupado'}</span><span className="text-[8px] text-white/60">aula fixa</span></>
+                                ) : disponibilidade ? (
+                                  <span className="text-[9px] font-semibold">Disponível</span>
+                                ) : (
+                                  <span className="text-[9px]">—</span>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </motion.section>
+        )}
+
+        {false && (<>
         <motion.section id="identidade" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <form onSubmit={handleSalvarConfig} className="premium-panel p-6 md:p-9">
                 <div className="flex items-center gap-3 mb-9 pb-5 border-b border-[#e5e3dc]">
@@ -890,7 +1291,9 @@ export default function Gerencia() {
                 )}
               </div>
         </motion.section>
+        </>)}
 
+        {activeSection === 'relatorios' && (
         <motion.section id="relatorios" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               <div className="premium-panel p-6 md:p-9">
                 
@@ -978,6 +1381,7 @@ export default function Gerencia() {
 
               </div>
         </motion.section>
+        )}
 
       </div>
 
