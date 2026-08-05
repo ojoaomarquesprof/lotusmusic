@@ -878,7 +878,7 @@ export default function Gerencia() {
                     {(!prof.modalidades || prof.modalidades.length === 0) && <span className="text-[10px] text-slate-400">Não informadas</span>}
                   </div>
                   <div className="flex md:justify-end gap-1.5">
-                    {prof.role === 'PROFESSOR' && <button onClick={() => abrirDisponibilidadeProfessor(prof.id)} title="Gerenciar disponibilidade" className="h-9 px-3 rounded-lg border border-[#d7e3da] bg-[#f3f7f4] text-[#1f4a3a] text-[10px] font-semibold flex items-center gap-1.5"><CalendarClock size={13} /> Horários</button>}
+                    <button onClick={() => abrirDisponibilidadeProfessor(prof.id)} title="Gerenciar disponibilidade" className="h-9 px-3 rounded-lg border border-[#d7e3da] bg-[#f3f7f4] text-[#1f4a3a] text-[10px] font-semibold flex items-center gap-1.5"><CalendarClock size={13} /> Horários</button>
                     <button onClick={() => abrirModalEquipe(prof)} title="Editar ficha" className="h-9 w-9 rounded-lg border border-[#deddd6] bg-white text-slate-500 flex items-center justify-center hover:text-[#1f4a3a]"><Pencil size={14} /></button>
                   </div>
                 </div>
@@ -900,7 +900,7 @@ export default function Gerencia() {
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Professor</span>
                   <select value={selectedProfId} onChange={e => setSelectedProfId(e.target.value)} className="mt-1.5 h-11 w-full px-3.5 rounded-xl border border-[#deddd6] bg-white text-sm font-semibold text-slate-800 outline-none focus:border-[#1f4a3a]">
                     <option value="">Selecione um professor</option>
-                    {professores.filter(p => p.role === 'PROFESSOR').map(prof => <option key={prof.id} value={prof.id}>{prof.nome_completo}</option>)}
+                    {professores.map(prof => <option key={prof.id} value={prof.id}>{prof.nome_completo}</option>)}
                   </select>
                 </label>
               </div>
