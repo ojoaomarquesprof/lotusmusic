@@ -660,7 +660,7 @@ export default function Gerencia() {
                 onClick={() => setActiveSection(item.id as typeof activeSection)}
                 role="tab"
                 aria-selected={isActive}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors ${isActive ? 'bg-[#1f4a3a] text-white shadow-sm' : 'text-slate-600 hover:bg-[#e7efe9] hover:text-[#1f4a3a]'}`}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${isActive ? 'bg-[#1f4a3a] text-white shadow-sm' : 'text-slate-600 hover:bg-[#e7efe9] hover:text-[#1f4a3a]'}`}
               >
                 <Icon size={15} strokeWidth={1.8} />
                 {item.label}
@@ -682,10 +682,10 @@ export default function Gerencia() {
                     </div>
                     <div>
                       <h3 className="text-lg font-semibold text-slate-900">Perfil da escola</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">Identidade usada no aplicativo, nas faturas e nos documentos.</p>
+                      <p className="text-sm text-slate-500 mt-0.5">Identidade usada no aplicativo, nas faturas e nos documentos.</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] font-semibold text-[#1f4a3a]">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#1f4a3a]">
                     <BadgeCheck size={15} />
                     Dados centralizados
                   </div>
@@ -693,7 +693,7 @@ export default function Gerencia() {
 
                 <div className="grid grid-cols-1 xl:grid-cols-[330px_minmax(0,1fr)]">
                   <aside className="p-5 md:p-6 bg-[#faf9f6] border-b xl:border-b-0 xl:border-r border-[#e5e3dc]">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 mb-4">Marca</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-4">Marca</p>
                     <label className="block cursor-pointer group">
                       <div className="h-36 rounded-2xl border border-dashed border-[#cfd6d0] bg-white flex items-center justify-center overflow-hidden relative">
                         {logoPreview ? (
@@ -708,7 +708,7 @@ export default function Gerencia() {
                       </div>
                       <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setLogoFile(e.target.files[0]); setLogoPreview(URL.createObjectURL(e.target.files[0])) } }} />
                     </label>
-                    <p className="text-[10px] leading-relaxed text-slate-500 mt-3">Prefira uma imagem PNG com fundo transparente e boa leitura em fundo claro.</p>
+                    <p className="text-xs leading-relaxed text-slate-500 mt-3">Prefira uma imagem PNG com fundo transparente e boa leitura em fundo claro.</p>
 
                     <div className="mt-6 pt-5 border-t border-[#e5e3dc] flex items-center gap-4">
                       <label className="cursor-pointer group shrink-0">
@@ -718,8 +718,8 @@ export default function Gerencia() {
                         <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setFaviconFile(e.target.files[0]); setFaviconPreview(URL.createObjectURL(e.target.files[0])) } }} />
                       </label>
                       <div>
-                        <p className="text-xs font-semibold text-slate-800">Ícone do aplicativo</p>
-                        <p className="text-[10px] text-slate-500 mt-1">Formato quadrado, idealmente 512 × 512 px.</p>
+                        <p className="text-sm font-semibold text-slate-800">Ícone do aplicativo</p>
+                        <p className="text-xs text-slate-500 mt-1">Formato quadrado, idealmente 512 × 512 px.</p>
                       </div>
                     </div>
                   </aside>
@@ -741,7 +741,7 @@ export default function Gerencia() {
                       <div className="md:col-span-2">
                         <label className="text-xs font-semibold text-slate-600">Chave PIX</label>
                         <input value={config.chave_pix || ''} onChange={e => setConfig({...config, chave_pix: e.target.value})} placeholder="Chave usada nas cobranças" className={inputClass} />
-                        <p className="text-[10px] text-slate-500 mt-1.5">Esta informação aparece nas faturas quando não há cobrança integrada.</p>
+                        <p className="text-xs text-slate-500 mt-1.5">Esta informação aparece nas faturas quando não há cobrança integrada.</p>
                       </div>
                     </div>
                   </div>
@@ -753,7 +753,7 @@ export default function Gerencia() {
                   <MapPin size={18} className="text-[#1f4a3a]" />
                   <div>
                     <h3 className="text-base font-semibold text-slate-900">Endereço principal</h3>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Usado em documentos, contratos e faturas.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Usado em documentos, contratos e faturas.</p>
                   </div>
                 </div>
                 <div className="p-5 md:p-6 grid grid-cols-2 md:grid-cols-12 gap-x-4 gap-y-4">
@@ -781,11 +781,11 @@ export default function Gerencia() {
             <div className="grid grid-cols-2 gap-3">
               <div className="premium-panel p-5 flex items-center gap-4">
                 <div className="h-10 w-10 rounded-xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center"><DoorOpen size={19} /></div>
-                <div><p className="text-2xl font-semibold text-slate-900">{salas.length}</p><p className="text-[10px] uppercase tracking-wider text-slate-500">Salas cadastradas</p></div>
+                <div><p className="text-2xl font-semibold text-slate-900">{salas.length}</p><p className="text-xs uppercase tracking-wider text-slate-500">Salas cadastradas</p></div>
               </div>
               <div className="premium-panel p-5 flex items-center gap-4">
                 <div className="h-10 w-10 rounded-xl bg-[#f3ecdf] text-[#8b6538] flex items-center justify-center"><Music2 size={19} /></div>
-                <div><p className="text-2xl font-semibold text-slate-900">{modalidades.length}</p><p className="text-[10px] uppercase tracking-wider text-slate-500">Modalidades ativas</p></div>
+                <div><p className="text-2xl font-semibold text-slate-900">{modalidades.length}</p><p className="text-xs uppercase tracking-wider text-slate-500">Modalidades ativas</p></div>
               </div>
             </div>
 
@@ -793,11 +793,11 @@ export default function Gerencia() {
               <div className="premium-panel overflow-hidden">
                 <div className="px-5 py-4 border-b border-[#e5e3dc]">
                   <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><DoorOpen size={18} className="text-[#1f4a3a]" /> Salas e espaços</h3>
-                  <p className="text-xs text-slate-500 mt-1">Ambientes disponíveis para agendamento.</p>
+                  <p className="text-sm text-slate-500 mt-1">Ambientes disponíveis para agendamento.</p>
                 </div>
                 <form onSubmit={handleAddSala} className="p-4 border-b border-[#ebe9e3] flex gap-2">
                   <input value={novaSala} onChange={e => setNovaSala(e.target.value)} placeholder="Ex.: Sala de Piano" aria-label="Nome da nova sala" className={`${inputClass} !mt-0 !py-3`} />
-                  <button type="submit" className="h-12 px-4 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center gap-2 shrink-0"><Plus size={15} /> Adicionar</button>
+                  <button type="submit" className="h-12 px-4 rounded-xl bg-[#1f4a3a] text-white text-sm font-semibold flex items-center gap-2 shrink-0"><Plus size={15} /> Adicionar</button>
                 </form>
                 <div className="divide-y divide-[#ebe9e3] max-h-[430px] overflow-y-auto custom-scrollbar">
                   {salas.map(sl => (
@@ -814,11 +814,11 @@ export default function Gerencia() {
               <div className="premium-panel overflow-hidden">
                 <div className="px-5 py-4 border-b border-[#e5e3dc]">
                   <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><GraduationCap size={19} className="text-[#1f4a3a]" /> Modalidades e cursos</h3>
-                  <p className="text-xs text-slate-500 mt-1">Opções oferecidas nos cadastros e na agenda.</p>
+                  <p className="text-sm text-slate-500 mt-1">Opções oferecidas nos cadastros e na agenda.</p>
                 </div>
                 <form onSubmit={handleAddModalidade} className="p-4 border-b border-[#ebe9e3] flex gap-2">
                   <input value={novaModalidade} onChange={e => setNovaModalidade(e.target.value)} placeholder="Ex.: Violão" aria-label="Nome da nova modalidade" className={`${inputClass} !mt-0 !py-3`} />
-                  <button type="submit" className="h-12 px-4 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center gap-2 shrink-0"><Plus size={15} /> Adicionar</button>
+                  <button type="submit" className="h-12 px-4 rounded-xl bg-[#1f4a3a] text-white text-sm font-semibold flex items-center gap-2 shrink-0"><Plus size={15} /> Adicionar</button>
                 </form>
                 <div className="divide-y divide-[#ebe9e3] max-h-[430px] overflow-y-auto custom-scrollbar">
                   {modalidades.map(modalidade => (
@@ -840,18 +840,18 @@ export default function Gerencia() {
             <div className="px-5 md:px-6 py-5 border-b border-[#e5e3dc] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><UsersRound size={19} className="text-[#1f4a3a]" /> Pessoas e acessos</h3>
-                <p className="text-xs text-slate-500 mt-1">{professores.filter(p => p.role === 'PROFESSOR').length} professor(es) · {professores.filter(p => p.role === 'ADMIN').length} administrador(es)</p>
+                <p className="text-sm text-slate-500 mt-1">{professores.filter(p => p.role === 'PROFESSOR').length} professor(es) · {professores.filter(p => p.role === 'ADMIN').length} administrador(es)</p>
               </div>
               <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
                 <label className="relative flex-1 lg:w-72">
                   <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input value={buscaEquipe} onChange={e => setBuscaEquipe(e.target.value)} placeholder="Buscar na equipe" className="h-11 w-full pl-10 pr-4 rounded-xl border border-[#deddd6] bg-white text-sm outline-none focus:border-[#1f4a3a] focus:ring-4 focus:ring-[#1f4a3a]/10" />
                 </label>
-                <button onClick={() => abrirModalEquipe()} className="h-11 px-4 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2"><Plus size={15} /> Novo membro</button>
+                <button onClick={() => abrirModalEquipe()} className="h-11 px-4 rounded-xl bg-[#1f4a3a] text-white text-sm font-semibold flex items-center justify-center gap-2"><Plus size={15} /> Novo membro</button>
               </div>
             </div>
 
-            <div className="hidden md:grid grid-cols-[minmax(240px,1.2fr)_130px_minmax(180px,1fr)_150px] gap-4 px-6 py-2.5 bg-[#faf9f6] border-b border-[#ebe9e3] text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+            <div className="hidden md:grid grid-cols-[minmax(240px,1.2fr)_130px_minmax(180px,1fr)_150px] gap-4 px-6 py-3 bg-[#faf9f6] border-b border-[#ebe9e3] text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
               <span>Profissional</span><span>Acesso</span><span>Modalidades</span><span className="text-right">Ações</span>
             </div>
             <div className="divide-y divide-[#ebe9e3]">
@@ -864,21 +864,21 @@ export default function Gerencia() {
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-900 truncate">{prof.nome_completo}</p>
                       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
-                        {prof.email && <span className="text-[10px] text-slate-500 flex items-center gap-1"><Mail size={10} /> {prof.email}</span>}
-                        {prof.telefone && <span className="text-[10px] text-slate-500 flex items-center gap-1"><Phone size={10} /> {prof.telefone}</span>}
+                        {prof.email && <span className="text-xs text-slate-500 flex items-center gap-1"><Mail size={12} /> {prof.email}</span>}
+                        {prof.telefone && <span className="text-xs text-slate-500 flex items-center gap-1"><Phone size={12} /> {prof.telefone}</span>}
                       </div>
                     </div>
                   </div>
                   <div>
-                    <span className={`inline-flex px-2 py-1 rounded-md text-[9px] font-semibold uppercase tracking-wide ${prof.role === 'ADMIN' ? 'bg-[#f3ecdf] text-[#7c5b33]' : 'bg-[#e7efe9] text-[#1f4a3a]'}`}>{prof.role === 'ADMIN' ? 'Administrador' : 'Professor'}</span>
+                    <span className={`inline-flex px-2.5 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wide ${prof.role === 'ADMIN' ? 'bg-[#f3ecdf] text-[#7c5b33]' : 'bg-[#e7efe9] text-[#1f4a3a]'}`}>{prof.role === 'ADMIN' ? 'Administrador' : 'Professor'}</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {(prof.modalidades || []).slice(0, 3).map((modalidade: string) => <span key={modalidade} className="px-2 py-1 rounded-md bg-slate-100 text-[9px] font-medium text-slate-600">{modalidade}</span>)}
-                    {(prof.modalidades || []).length > 3 && <span className="px-2 py-1 rounded-md bg-slate-100 text-[9px] font-medium text-slate-500">+{prof.modalidades.length - 3}</span>}
-                    {(!prof.modalidades || prof.modalidades.length === 0) && <span className="text-[10px] text-slate-400">Não informadas</span>}
+                    {(prof.modalidades || []).slice(0, 3).map((modalidade: string) => <span key={modalidade} className="px-2.5 py-1.5 rounded-md bg-slate-100 text-[11px] font-medium text-slate-600">{modalidade}</span>)}
+                    {(prof.modalidades || []).length > 3 && <span className="px-2.5 py-1.5 rounded-md bg-slate-100 text-[11px] font-medium text-slate-500">+{prof.modalidades.length - 3}</span>}
+                    {(!prof.modalidades || prof.modalidades.length === 0) && <span className="text-xs text-slate-500">Não informadas</span>}
                   </div>
                   <div className="flex md:justify-end gap-1.5">
-                    <button onClick={() => abrirDisponibilidadeProfessor(prof.id)} title="Gerenciar disponibilidade" className="h-9 px-3 rounded-lg border border-[#d7e3da] bg-[#f3f7f4] text-[#1f4a3a] text-[10px] font-semibold flex items-center gap-1.5"><CalendarClock size={13} /> Horários</button>
+                    <button onClick={() => abrirDisponibilidadeProfessor(prof.id)} title="Gerenciar disponibilidade" className="h-10 px-3 rounded-lg border border-[#d7e3da] bg-[#f3f7f4] text-[#1f4a3a] text-xs font-semibold flex items-center gap-1.5"><CalendarClock size={14} /> Horários</button>
                     <button onClick={() => abrirModalEquipe(prof)} title="Editar ficha" className="h-9 w-9 rounded-lg border border-[#deddd6] bg-white text-slate-500 flex items-center justify-center hover:text-[#1f4a3a]"><Pencil size={14} /></button>
                   </div>
                 </div>
@@ -894,10 +894,10 @@ export default function Gerencia() {
               <div className="px-5 md:px-6 py-5 border-b border-[#e5e3dc] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><CalendarClock size={19} className="text-[#1f4a3a]" /> Semana disponível</h3>
-                  <p className="text-xs text-slate-500 mt-1">Clique na grade ou aplique um período a vários dias de uma vez.</p>
+                  <p className="text-sm text-slate-500 mt-1">Clique na grade ou aplique um período a vários dias de uma vez.</p>
                 </div>
                 <label className="w-full lg:w-80">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Professor</span>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Professor</span>
                   <select value={selectedProfId} onChange={e => setSelectedProfId(e.target.value)} className="mt-1.5 h-11 w-full px-3.5 rounded-xl border border-[#deddd6] bg-white text-sm font-semibold text-slate-800 outline-none focus:border-[#1f4a3a]">
                     <option value="">Selecione um professor</option>
                     {professores.map(prof => <option key={prof.id} value={prof.id}>{prof.nome_completo}</option>)}
@@ -909,7 +909,7 @@ export default function Gerencia() {
                 <div className="py-20 px-6 text-center">
                   <div className="h-12 w-12 rounded-2xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center mx-auto mb-4"><UserRound size={22} /></div>
                   <p className="text-sm font-semibold text-slate-800">Escolha um professor</p>
-                  <p className="text-xs text-slate-500 mt-1">A semana de disponibilidade aparecerá aqui.</p>
+                  <p className="text-sm text-slate-500 mt-1">A semana de disponibilidade aparecerá aqui.</p>
                 </div>
               ) : (
                 <>
@@ -917,31 +917,31 @@ export default function Gerencia() {
                     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-5 xl:items-end">
                       <div>
                         <div className="flex items-center justify-between gap-3 mb-2.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Aplicar aos dias</p>
-                          <button type="button" onClick={() => setDiasDispSelecionados(dias)} className="text-[10px] font-semibold text-[#1f4a3a]">Selecionar todos</button>
+                          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-600">Aplicar aos dias</p>
+                          <button type="button" onClick={() => setDiasDispSelecionados(dias)} className="text-xs font-semibold text-[#1f4a3a]">Selecionar todos</button>
                         </div>
                         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                           {dias.map(dia => {
                             const selecionado = diasDispSelecionados.includes(dia)
-                            return <button key={dia} type="button" onClick={() => toggleDiaDisponibilidade(dia)} className={`h-10 rounded-lg border text-[10px] font-semibold transition-colors ${selecionado ? 'bg-[#1f4a3a] border-[#1f4a3a] text-white' : 'bg-white border-[#deddd6] text-slate-500 hover:border-[#9fb4a7]'}`}>{dia.slice(0, 3)}</button>
+                            return <button key={dia} type="button" onClick={() => toggleDiaDisponibilidade(dia)} className={`h-11 rounded-lg border text-xs font-semibold transition-colors ${selecionado ? 'bg-[#1f4a3a] border-[#1f4a3a] text-white' : 'bg-white border-[#deddd6] text-slate-600 hover:border-[#9fb4a7]'}`}>{dia.slice(0, 3)}</button>
                           })}
                         </div>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
-                        <label className="flex-1 sm:w-32"><span className="text-[10px] font-semibold text-slate-500">Das</span><input type="time" value={dispInicio} onChange={e => setDispInicio(e.target.value)} className="mt-1 h-10 w-full px-3 rounded-lg border border-[#deddd6] bg-white text-xs font-semibold" /></label>
-                        <label className="flex-1 sm:w-32"><span className="text-[10px] font-semibold text-slate-500">Até</span><input type="time" value={dispFim} onChange={e => setDispFim(e.target.value)} className="mt-1 h-10 w-full px-3 rounded-lg border border-[#deddd6] bg-white text-xs font-semibold" /></label>
-                        <button onClick={handleGerarDisponibilidade} disabled={isSubmitting} className="h-10 px-4 rounded-lg bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><Plus size={14} /> Aplicar período</button>
+                        <label className="flex-1 sm:w-32"><span className="text-xs font-semibold text-slate-600">Das</span><input type="time" value={dispInicio} onChange={e => setDispInicio(e.target.value)} className="mt-1 h-11 w-full px-3 rounded-lg border border-[#deddd6] bg-white text-sm font-semibold" /></label>
+                        <label className="flex-1 sm:w-32"><span className="text-xs font-semibold text-slate-600">Até</span><input type="time" value={dispFim} onChange={e => setDispFim(e.target.value)} className="mt-1 h-11 w-full px-3 rounded-lg border border-[#deddd6] bg-white text-sm font-semibold" /></label>
+                        <button onClick={handleGerarDisponibilidade} disabled={isSubmitting} className="h-11 px-4 rounded-lg bg-[#1f4a3a] text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><Plus size={15} /> Aplicar período</button>
                       </div>
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-3">Para criar uma pausa, aplique dois períodos no mesmo dia — por exemplo, 08h–12h e 14h–20h.</p>
+                    <p className="text-xs text-slate-500 mt-3">Para criar uma pausa, aplique dois períodos no mesmo dia — por exemplo, 08h–12h e 14h–20h.</p>
                   </div>
 
                   <div className="px-5 md:px-6 py-4 border-b border-[#e5e3dc] flex flex-col md:flex-row md:items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="h-9 w-9 rounded-full bg-[#dce8df] text-[#1f4a3a] flex items-center justify-center font-semibold shrink-0">{professorSelecionado?.nome_completo?.charAt(0)}</div>
-                      <div className="min-w-0"><p className="text-sm font-semibold text-slate-900 truncate">{professorSelecionado?.nome_completo}</p><p className="text-[10px] text-slate-500">Disponibilidade semanal recorrente</p></div>
+                      <div className="min-w-0"><p className="text-base font-semibold text-slate-900 truncate">{professorSelecionado?.nome_completo}</p><p className="text-xs text-slate-500">Disponibilidade semanal recorrente</p></div>
                     </div>
-                    <div className="flex items-center gap-3 text-[10px]">
+                    <div className="flex items-center gap-3 text-xs">
                       <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-sm border border-[#cdd4cf] bg-white" /> Indisponível</span>
                       <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-sm bg-[#dcebdd]" /> Livre</span>
                       <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-sm bg-[#1f4a3a]" /> Com aula</span>
@@ -949,25 +949,25 @@ export default function Gerencia() {
                   </div>
 
                   <div className="grid grid-cols-3 border-b border-[#e5e3dc]">
-                    <div className="px-4 py-3 text-center"><p className="text-lg font-semibold text-slate-900">{disponibilidades.length}</p><p className="text-[9px] uppercase tracking-wider text-slate-500">Disponíveis</p></div>
-                    <div className="px-4 py-3 text-center border-x border-[#e5e3dc]"><p className="text-lg font-semibold text-emerald-700">{horariosLivres}</p><p className="text-[9px] uppercase tracking-wider text-slate-500">Livres</p></div>
-                    <div className="px-4 py-3 text-center"><p className="text-lg font-semibold text-[#1f4a3a]">{horariosOcupados}</p><p className="text-[9px] uppercase tracking-wider text-slate-500">Com aula</p></div>
+                    <div className="px-4 py-3.5 text-center"><p className="text-xl font-semibold text-slate-900">{disponibilidades.length}</p><p className="text-xs uppercase tracking-wider text-slate-500">Disponíveis</p></div>
+                    <div className="px-4 py-3.5 text-center border-x border-[#e5e3dc]"><p className="text-xl font-semibold text-emerald-700">{horariosLivres}</p><p className="text-xs uppercase tracking-wider text-slate-500">Livres</p></div>
+                    <div className="px-4 py-3.5 text-center"><p className="text-xl font-semibold text-[#1f4a3a]">{horariosOcupados}</p><p className="text-xs uppercase tracking-wider text-slate-500">Com aula</p></div>
                   </div>
 
                   <div className="overflow-auto custom-scrollbar max-h-[620px]">
                     <div className="min-w-[760px]">
                       <div className="sticky top-0 z-10 grid grid-cols-[72px_repeat(6,minmax(105px,1fr))] bg-[#faf9f6] border-b border-[#e5e3dc]">
-                        <div className="px-3 py-3 text-[9px] font-semibold uppercase text-slate-400">Hora</div>
+                        <div className="px-3 py-3 text-[11px] font-semibold uppercase text-slate-500">Hora</div>
                         {dias.map(dia => (
                           <div key={dia} className="px-2 py-3 text-center border-l border-[#ebe9e3]">
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">{dia}</p>
-                            {disponibilidades.some(d => d.dia_semana === dia) && <button onClick={() => handleLimparDia(dia)} className="text-[8px] text-rose-500 mt-1 hover:underline">Limpar livres</button>}
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">{dia}</p>
+                            {disponibilidades.some(d => d.dia_semana === dia) && <button onClick={() => handleLimparDia(dia)} className="text-[10px] font-medium text-rose-600 mt-1 hover:underline">Limpar livres</button>}
                           </div>
                         ))}
                       </div>
                       {gradeHoras.map(hora => (
                         <div key={hora} className="grid grid-cols-[72px_repeat(6,minmax(105px,1fr))] border-b border-[#ebe9e3]">
-                          <div className="px-3 py-2.5 text-[10px] font-semibold text-slate-500 flex items-center gap-1.5"><Clock3 size={11} /> {hora}</div>
+                          <div className="px-3 py-3 text-xs font-semibold text-slate-600 flex items-center gap-1.5"><Clock3 size={13} /> {hora}</div>
                           {dias.map(dia => {
                             const disponibilidade = disponibilidades.find(d => d.dia_semana === dia && String(d.hora_inicio).slice(0, 5) === hora)
                             const ocupante = disponibilidade ? getOcupante(disponibilidade) : null
@@ -981,11 +981,11 @@ export default function Gerencia() {
                                 className={`min-h-12 px-2 py-2 border-l border-[#ebe9e3] text-left transition-colors disabled:cursor-wait ${ocupado ? 'bg-[#1f4a3a] text-white cursor-not-allowed' : disponibilidade ? 'bg-[#e4efe5] hover:bg-[#d5e6d7] text-[#1f4a3a]' : 'bg-white hover:bg-[#f7f8f5] text-slate-300'}`}
                               >
                                 {ocupado ? (
-                                  <><span className="block text-[9px] font-semibold truncate">{ocupante?.aluno?.nome_completo?.split(' ')[0] || 'Ocupado'}</span><span className="text-[8px] text-white/60">aula fixa</span></>
+                                  <><span className="block text-[11px] font-semibold truncate">{ocupante?.aluno?.nome_completo?.split(' ')[0] || 'Ocupado'}</span><span className="text-[10px] text-white/70">aula fixa</span></>
                                 ) : disponibilidade ? (
-                                  <span className="text-[9px] font-semibold">Disponível</span>
+                                  <span className="text-[11px] font-semibold">Disponível</span>
                                 ) : (
-                                  <span className="text-[9px]">—</span>
+                                  <span className="text-[11px]">—</span>
                                 )}
                               </button>
                             )
