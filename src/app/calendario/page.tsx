@@ -253,15 +253,15 @@ export default function CalendarioEscolar() {
       variants={containerVariants}
       initial="hidden"
       animate="show"
-      className="pb-12 w-full max-w-[1500px] mx-auto"
+      className="pb-6 w-full max-w-[1500px] mx-auto"
     >
       <motion.header
         variants={itemVariants}
-        className="flex flex-col sm:flex-row sm:items-end justify-between gap-5 mb-7"
+        className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-5"
       >
         <div>
           <div className="premium-kicker mb-2">Planejamento</div>
-          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-slate-900">
+          <h2 className="text-3xl font-semibold tracking-tight text-slate-900">
             Calendário escolar
           </h2>
           <p className="text-slate-500 text-sm mt-1.5">
@@ -277,8 +277,9 @@ export default function CalendarioEscolar() {
         </button>
       </motion.header>
 
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
       <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
-        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 md:p-5 border-b border-[#dfded7]">
+        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 md:p-4 border-b border-[#dfded7]">
           <div className="flex items-center gap-2">
             <button
               aria-label="Mês anterior"
@@ -321,7 +322,7 @@ export default function CalendarioEscolar() {
           {weekDays.map((day) => (
             <div
               key={day}
-              className="px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 border-r border-[#e4e2dc] last:border-r-0"
+              className="px-3 py-2 text-center text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500 border-r border-[#e4e2dc] last:border-r-0"
             >
               {day}
             </div>
@@ -334,13 +335,13 @@ export default function CalendarioEscolar() {
               key={day.key}
               onClick={() => openEventForm(day.date)}
               aria-label={`Adicionar evento em ${formatEventDate(day.key)}`}
-              className={`min-h-28 p-2.5 text-left border-r border-b border-[#ebe9e3] hover:bg-[#f7f7f3] focus:bg-[#f7f7f3] focus:outline-none transition-colors ${
+              className={`min-h-[68px] 2xl:min-h-[74px] p-2 text-left border-r border-b border-[#ebe9e3] hover:bg-[#f7f7f3] focus:bg-[#f7f7f3] focus:outline-none transition-colors ${
                 (index + 1) % 7 === 0 ? 'border-r-0' : ''
               } ${day.currentMonth ? 'bg-white' : 'bg-[#faf9f6] text-slate-300'}`}
             >
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-1">
                 <span
-                  className={`h-7 min-w-7 px-1 rounded-full flex items-center justify-center text-xs font-semibold ${
+                  className={`h-6 min-w-6 px-1 rounded-full flex items-center justify-center text-[11px] font-semibold ${
                     day.key === hojeStr
                       ? 'bg-[#1f4a3a] text-white'
                       : day.currentMonth
@@ -350,19 +351,19 @@ export default function CalendarioEscolar() {
                 >
                   {day.date.getDate()}
                 </span>
-                {day.events.length > 2 && (
+                {day.events.length > 1 && (
                   <span className="text-[9px] font-semibold text-slate-400">
-                    +{day.events.length - 2}
+                    +{day.events.length - 1}
                   </span>
                 )}
               </div>
-              <div className="space-y-1.5">
-                {day.events.slice(0, 2).map((event) => {
+              <div>
+                {day.events.slice(0, 1).map((event) => {
                   const style = getEventStyle(event.tipo)
                   return (
                     <div
                       key={event.id}
-                      className={`px-2 py-1.5 rounded-lg border text-[10px] font-semibold truncate ${style.chip}`}
+                      className={`px-1.5 py-1 rounded-md border text-[9px] font-semibold truncate ${style.chip}`}
                       title={event.titulo}
                     >
                       <span className={`inline-block h-1.5 w-1.5 rounded-full mr-1.5 ${style.dot}`} />
@@ -411,9 +412,9 @@ export default function CalendarioEscolar() {
         </div>
       </motion.section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6 mt-6">
-        <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-5 py-4 border-b border-[#dfded7]">
+      <div className="space-y-5">
+        <motion.section variants={itemVariants} className="premium-panel overflow-hidden xl:h-[330px] flex flex-col">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-b border-[#dfded7] shrink-0">
             <div>
               <h3 className="text-lg font-semibold flex items-center gap-2.5">
                 <BookOpenCheck size={19} className="text-[#1f4a3a]" />
@@ -452,7 +453,7 @@ export default function CalendarioEscolar() {
             </div>
           </div>
 
-          <div className="divide-y divide-[#ebe9e3] min-h-64">
+          <div className="divide-y divide-[#ebe9e3] min-h-0 flex-1 overflow-y-auto custom-scrollbar">
             {loadingHistorico ? (
               <div className="flex items-center justify-center py-16">
                 <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#1f4a3a]" />
@@ -479,9 +480,9 @@ export default function CalendarioEscolar() {
                     : 'bg-amber-50 text-amber-700'
 
                 return (
-                  <div key={aula.id} className="px-5 py-4 flex items-start gap-3.5 hover:bg-[#faf9f6] transition-colors">
-                    <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${tone}`}>
-                      <StatusIcon size={17} strokeWidth={1.8} />
+                  <div key={aula.id} className="px-4 py-3 flex items-start gap-3 hover:bg-[#faf9f6] transition-colors">
+                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${tone}`}>
+                      <StatusIcon size={15} strokeWidth={1.8} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
@@ -521,15 +522,15 @@ export default function CalendarioEscolar() {
           </div>
         </motion.section>
 
-        <motion.aside variants={itemVariants} className="premium-panel overflow-hidden h-fit">
-          <div className="px-5 py-4 border-b border-[#dfded7]">
+        <motion.aside variants={itemVariants} className="premium-panel overflow-hidden xl:h-[255px] flex flex-col">
+          <div className="px-4 py-3 border-b border-[#dfded7] shrink-0">
             <h3 className="text-lg font-semibold flex items-center gap-2.5">
               <CalendarDays size={19} className="text-[#1f4a3a]" />
               Próximas datas
             </h3>
             <p className="text-xs text-slate-500 mt-1">Agenda geral, além do mês visível.</p>
           </div>
-          <div className="divide-y divide-[#ebe9e3]">
+          <div className="divide-y divide-[#ebe9e3] flex-1 overflow-y-auto custom-scrollbar">
             {eventosFuturos.length === 0 ? (
               <div className="py-12 px-6 text-center text-sm text-slate-500">
                 Nenhuma data futura cadastrada.
@@ -539,9 +540,9 @@ export default function CalendarioEscolar() {
                 const style = getEventStyle(event.tipo)
                 const Icon = style.Icon
                 return (
-                  <div key={event.id} className="p-4 flex items-center gap-3 group">
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${style.icon}`}>
-                      <Icon size={18} strokeWidth={1.8} />
+                  <div key={event.id} className="px-4 py-3 flex items-center gap-3 group">
+                    <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${style.icon}`}>
+                      <Icon size={16} strokeWidth={1.8} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm text-slate-800 truncate">{event.titulo}</p>
@@ -563,9 +564,10 @@ export default function CalendarioEscolar() {
           </div>
         </motion.aside>
       </div>
+      </div>
 
       {eventosPassados.length > 0 && (
-        <motion.details variants={itemVariants} className="premium-panel mt-6 group">
+        <motion.details variants={itemVariants} className="premium-panel mt-5 group">
           <summary className="list-none cursor-pointer px-5 py-4 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <History size={18} className="text-slate-400" />
