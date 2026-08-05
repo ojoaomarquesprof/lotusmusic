@@ -12,6 +12,29 @@ import { BILLING_MODELS, BillingModel, formatCurrencyBR, getBillingModel, getBil
 import { dateInputToISO, ensureBrazilianNinthDigit, formatBrazilianPhone, formatCEP, formatCPFOrCNPJ, formatDateInput, isoToDateInput, normalizeEmail, normalizeName } from '../../../lib/formatters'
 import { getWeekdayName, formatInvoiceNumber } from '../../../lib/invoices'
 import { CreateInvoiceModal } from '../../../components/CreateInvoiceModal'
+import {
+  ArrowLeft,
+  Bell,
+  BookOpenCheck,
+  CalendarClock,
+  CheckCircle2,
+  ChevronRight,
+  CircleDollarSign,
+  Clock3,
+  Download,
+  Edit3,
+  FileText,
+  FolderOpen,
+  Mail,
+  MapPin,
+  MoreHorizontal,
+  Phone,
+  ReceiptText,
+  Trash2,
+  Upload,
+  UserRound,
+  WalletCards,
+} from 'lucide-react'
 
 const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<File | null> => { const image = await createImage(imageSrc); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); if (!ctx) return null; canvas.width = 256; canvas.height = 256; ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, 256, 256); return new Promise(resolve => canvas.toBlob(blob => resolve(blob ? new File([blob], 'avatar.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.9)) }
@@ -59,6 +82,7 @@ export default function PerfilAluno() {
   const [selectedClassDetails, setSelectedClassDetails] = useState<any>(null)
 
   const [saldoCreditos, setSaldoCreditos] = useState(0)
+  const [activeTab, setActiveTab] = useState<'visao' | 'aulas' | 'financeiro' | 'arquivos'>('visao')
 
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (isMounted) carregarDados() }, [id, isMounted])
@@ -404,6 +428,14 @@ export default function PerfilAluno() {
     String(h.data_aula).startsWith(prefixoMesAtual) && isBillableClass(h.status)
   ).length;
   const valorApuradoNoMes = aulasRealizadasNoMes * Number(infoMatricula?.valor_por_aula || 0);
+  const faturasEmAberto = faturas.filter(f => !['PAGO', 'CANCELADA'].includes(String(f.status).toUpperCase()));
+  const valorEmAberto = faturasEmAberto.reduce((total, fatura) => total + Number(fatura.valor_total || 0), 0);
+  const totalRecebido = pagamentos.reduce((total, pagamento) => total + Number(pagamento.valor || 0), 0);
+  const registrosDePresenca = historicoAulas.filter(h => ['Realizada', 'Falta', 'Falta Injustificada', 'Falta Justificada'].includes(h.status));
+  const aulasRealizadasTotal = registrosDePresenca.filter(h => h.status === 'Realizada').length;
+  const taxaPresenca = registrosDePresenca.length > 0 ? Math.round((aulasRealizadasTotal / registrosDePresenca.length) * 100) : 0;
+  const ultimoRegistroAula = historicoAulas.find(h => h.status !== 'Ajuste de Saldo');
+  const whatsappUrl = aluno?.telefone ? `https://wa.me/55${String(aluno.telefone).replace(/\D/g, '')}` : null;
 
   const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
 
@@ -411,23 +443,392 @@ export default function PerfilAluno() {
   if (loading) return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
 
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="show">
-      
-      <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-200/50 pb-4">
-        <div className="flex items-center gap-4">
-          <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => router.push('/alunos')} className={`bg-white/40 backdrop-blur-md border border-white/60 p-3 rounded-2xl shadow-sm font-bold text-sm text-indigo-600 hover:bg-white/60 transition-all`}>← Voltar</motion.button>
+    <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full max-w-[1500px] mx-auto pb-8">
+      <motion.header variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push('/alunos')}
+            aria-label="Voltar para alunos"
+            className="h-10 w-10 rounded-xl border border-[#dfded7] bg-white flex items-center justify-center text-slate-600 hover:text-[#1f4a3a] hover:border-[#aebfb4] transition-colors"
+          >
+            <ArrowLeft size={18} />
+          </button>
           <div>
-            <h2 className="text-3xl font-bold tracking-tight text-slate-800">Dossiê do Aluno</h2>
-            <p className="text-slate-500 text-sm mt-1">Visão completa e histórico</p>
+            <div className="premium-kicker mb-1">Cadastro do aluno</div>
+            <p className="text-sm text-slate-500">Informações, aulas e relacionamento financeiro.</p>
           </div>
         </div>
-        <div className="flex flex-wrap justify-center gap-3">
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={handleExcluirAluno} className="px-4 py-2.5 rounded-xl border border-rose-300 bg-white/40 backdrop-blur-md text-rose-600 font-bold text-xs hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2 shadow-sm"><span>🗑️</span> Excluir</motion.button>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={() => setIsMsgModalOpen(true)} className={`px-4 py-2.5 rounded-xl bg-amber-400 text-amber-950 font-bold text-xs shadow-md transition-all flex items-center gap-2`}><span>🔔</span> Enviar Aviso</motion.button>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={abrirModalEdicao} className={`px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2`}><span>⚙️</span> Editar Aluno</motion.button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setIsMsgModalOpen(true)} className="px-3.5 py-2.5 rounded-xl border border-[#dfded7] bg-white text-slate-600 text-xs font-semibold flex items-center gap-2 hover:border-[#aebfb4] hover:text-[#1f4a3a] transition-colors">
+            <Bell size={15} /> <span className="hidden sm:inline">Enviar aviso</span>
+          </button>
+          <button onClick={abrirModalEdicao} className="px-4 py-2.5 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#17382c] transition-colors">
+            <Edit3 size={15} /> Editar aluno
+          </button>
+          <details className="relative">
+            <summary className="list-none h-10 w-10 rounded-xl border border-[#dfded7] bg-white flex items-center justify-center text-slate-500 hover:text-slate-800 cursor-pointer">
+              <MoreHorizontal size={18} />
+            </summary>
+            <div className="absolute right-0 top-12 z-20 w-48 rounded-xl border border-[#dfded7] bg-white p-1.5 shadow-xl">
+              <button onClick={handleExcluirAluno} className="w-full px-3 py-2.5 rounded-lg text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2">
+                <Trash2 size={14} /> Excluir aluno
+              </button>
+            </div>
+          </details>
         </div>
-      </motion.div>
+      </motion.header>
 
+      <motion.section variants={itemVariants} className="premium-panel overflow-hidden mb-5">
+        <div className="p-5 md:p-6 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-6 xl:items-center">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-5 min-w-0">
+            <div className={`h-24 w-24 rounded-2xl overflow-hidden flex items-center justify-center shrink-0 border ${isAlunoInativo ? 'border-rose-200 bg-rose-50' : 'border-[#d7dfd9] bg-[#e7efe9]'}`}>
+              {aluno?.avatar_url && !imgError
+                ? <img src={aluno.avatar_url} alt="" className={`w-full h-full object-cover ${isAlunoInativo ? 'grayscale opacity-70' : ''}`} onError={() => setImgError(true)} />
+                : <span className={`text-3xl font-semibold ${isAlunoInativo ? 'text-rose-400' : 'text-[#1f4a3a]'}`}>{aluno?.nome_completo?.charAt(0)}</span>}
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 truncate">{aluno?.nome_completo}</h1>
+                <span className={`px-2.5 py-1 rounded-full text-[9px] font-semibold uppercase tracking-wide border ${isAlunoInativo ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-[#e7efe9] text-[#1f4a3a] border-[#cbdad0]'}`}>
+                  {isAlunoInativo ? 'Matrícula inativa' : 'Aluno ativo'}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-xs text-slate-500">
+                {aluno?.email && <a href={`mailto:${aluno.email}`} className="flex items-center gap-1.5 hover:text-[#1f4a3a]"><Mail size={13} /> {aluno.email}</a>}
+                {aluno?.telefone && <a href={whatsappUrl || '#'} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-[#1f4a3a]"><Phone size={13} /> {aluno.telefone}</a>}
+                {aluno?.cidade && <span className="flex items-center gap-1.5"><MapPin size={13} /> {aluno.cidade}/{aluno.estado}</span>}
+              </div>
+              <p className="text-xs text-slate-500 mt-3">
+                {aulasFixas.length > 0
+                  ? `${aulasFixas.map(aula => `${aula.instrumento_aula} · ${aula.dia}, ${aula.horario_inicio.slice(0, 5)}`).join(' • ')}`
+                  : 'Nenhum horário fixo cadastrado.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-4 gap-3">
+            <div className="min-w-[112px] border-l border-[#e5e3dd] pl-3">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Presença</p>
+              <p className="text-xl font-semibold text-slate-900 mt-1">{taxaPresenca}%</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">{aulasRealizadasTotal} realizadas</p>
+            </div>
+            <div className="min-w-[112px] border-l border-[#e5e3dd] pl-3">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Em aberto</p>
+              <p className={`text-xl font-semibold mt-1 ${valorEmAberto > 0 ? 'text-[#a56a32]' : 'text-slate-900'}`}>{formatCurrencyBR(valorEmAberto)}</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">{faturasEmAberto.length} fatura(s)</p>
+            </div>
+            <div className="min-w-[112px] border-l border-[#e5e3dd] pl-3">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Faturamento</p>
+              <p className="text-sm font-semibold text-slate-900 mt-1">{getBillingModelLabel(modeloFaturamento)}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{modeloFaturamento === 'MENSAL_FECHADO' ? `${formatCurrencyBR(infoMatricula?.valor_por_aula)}/aula` : formatCurrencyBR(infoMatricula?.valor_mensalidade)}</p>
+            </div>
+            <div className="min-w-[112px] border-l border-[#e5e3dd] pl-3">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Última aula</p>
+              <p className="text-sm font-semibold text-slate-900 mt-1">{ultimoRegistroAula ? new Date(ultimoRegistroAula.data_aula).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '—'}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{ultimoRegistroAula?.status || 'Sem registros'}</p>
+            </div>
+          </div>
+        </div>
+      </motion.section>
+
+      <motion.nav variants={itemVariants} aria-label="Seções do aluno" className="premium-panel p-1.5 flex gap-1 overflow-x-auto custom-scrollbar mb-5">
+        {[
+          { id: 'visao', label: 'Visão geral', icon: UserRound },
+          { id: 'aulas', label: 'Aulas e diário', icon: BookOpenCheck, count: historicoAulas.length },
+          { id: 'financeiro', label: 'Financeiro', icon: WalletCards, count: faturasEmAberto.length },
+          { id: 'arquivos', label: 'Arquivos', icon: FolderOpen, count: materiais.length },
+        ].map(tab => {
+          const Icon = tab.icon
+          const isActive = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 whitespace-nowrap transition-colors ${isActive ? 'bg-[#1f4a3a] text-white' : 'text-slate-500 hover:bg-[#f3f4ef] hover:text-slate-800'}`}
+            >
+              <Icon size={15} /> {tab.label}
+              {tab.count !== undefined && <span className={`min-w-5 h-5 px-1 rounded-full text-[9px] flex items-center justify-center ${isActive ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>{tab.count}</span>}
+            </button>
+          )
+        })}
+      </motion.nav>
+
+      {activeTab === 'visao' && (
+        <motion.div variants={itemVariants} className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)] gap-5 items-start">
+          <section className="premium-panel overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#dfded7] flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5">
+                  <CalendarClock size={19} className="text-[#1f4a3a]" /> Rotina de aulas
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">Horários recorrentes e responsáveis.</p>
+              </div>
+              <button onClick={abrirModalEdicao} className="text-[11px] font-semibold text-[#1f4a3a] hover:underline">Editar grade</button>
+            </div>
+            <div className="divide-y divide-[#ebe9e3]">
+              {aulasFixas.map(aula => {
+                const nomeProf = Array.isArray(aula.professor) ? aula.professor[0]?.nome_completo : aula.professor?.nome_completo
+                const nomeSala = Array.isArray(aula.sala) ? aula.sala[0]?.nome : aula.sala?.nome
+                return (
+                  <div key={aula.id} className="px-5 py-4 grid grid-cols-[74px_minmax(0,1fr)] sm:grid-cols-[90px_110px_minmax(0,1fr)_auto] gap-3 items-center">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{aula.dia}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{aula.horario_inicio.slice(0, 5)}</p>
+                    </div>
+                    <div className="hidden sm:block text-xs text-slate-600">{aula.horario_inicio.slice(0, 5)} — {aula.horario_fim.slice(0, 5)}</div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">{aula.instrumento_aula}</p>
+                      <p className="text-[11px] text-slate-500 mt-1 truncate">Prof. {nomeProf || 'Não definido'} · {nomeSala || 'Sem sala'}</p>
+                    </div>
+                    <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full bg-[#e7efe9] text-[#1f4a3a] text-[9px] font-semibold uppercase tracking-wide">Fixo</span>
+                  </div>
+                )
+              })}
+              {aulasFixas.length === 0 && (
+                <div className="py-12 px-6 text-center">
+                  <CalendarClock size={28} strokeWidth={1.5} className="mx-auto text-slate-300 mb-3" />
+                  <p className="text-sm font-semibold text-slate-700">Sem horário fixo</p>
+                  <button onClick={abrirModalEdicao} className="text-xs text-[#1f4a3a] mt-2 hover:underline">Cadastrar grade</button>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 border-t border-[#dfded7] bg-[#faf9f6]">
+              <div className="p-4 md:border-r border-[#e5e3dd]">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Modelo financeiro</p>
+                <p className="text-sm font-semibold text-slate-800 mt-1.5">{getBillingModelLabel(modeloFaturamento)}</p>
+                <p className="text-[10px] text-slate-500 mt-1">{BILLING_MODELS.find(model => model.value === modeloFaturamento)?.description}</p>
+              </div>
+              <div className="p-4 md:border-r border-[#e5e3dd]">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                  {modeloFaturamento === 'CREDITOS' ? 'Créditos disponíveis' : modeloFaturamento === 'MENSAL_FECHADO' ? 'Apuração do mês' : 'Aulas no ciclo'}
+                </p>
+                <p className="text-xl font-semibold text-slate-900 mt-1.5">
+                  {modeloFaturamento === 'CREDITOS'
+                    ? Number(infoMatricula?.saldo_creditos_faturamento || 0)
+                    : modeloFaturamento === 'MENSAL_FECHADO'
+                      ? aulasRealizadasNoMes
+                      : aulasDesdeUltimoPagamento}
+                </p>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  {modeloFaturamento === 'CREDITOS' ? 'de 4 por pagamento' : modeloFaturamento === 'MENSAL_FECHADO' ? `Parcial de ${formatCurrencyBR(valorApuradoNoMes)}` : 'desde o último pagamento'}
+                </p>
+              </div>
+              <div className="p-4">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Reposições disponíveis</p>
+                <div className="flex items-center justify-between gap-3 mt-1.5">
+                  <div>
+                    <p className="text-xl font-semibold text-slate-900">{saldoCreditos}</p>
+                    <p className="text-[10px] text-slate-500 mt-1">validade de 30 dias</p>
+                  </div>
+                  {modeloFaturamento === 'VENCIMENTO_FIXO' && (
+                    <div className="flex gap-1.5">
+                      <button onClick={handleRemoverCredito} disabled={isSubmitting || saldoCreditos <= 0} className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 disabled:opacity-40">−</button>
+                      <button onClick={handleConcederCredito} disabled={isSubmitting} className="h-8 w-8 rounded-lg bg-[#1f4a3a] text-white disabled:opacity-40">+</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <aside className="premium-panel overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#dfded7]">
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5">
+                <UserRound size={19} className="text-[#1f4a3a]" /> Dados cadastrais
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">Informações essenciais e origem.</p>
+            </div>
+            <dl className="divide-y divide-[#ebe9e3]">
+              <div className="px-5 py-3.5 flex items-start justify-between gap-4"><dt className="text-xs text-slate-500">CPF/CNPJ</dt><dd className="text-xs font-semibold text-slate-800 text-right">{aluno?.cpf || '—'}</dd></div>
+              <div className="px-5 py-3.5 flex items-start justify-between gap-4"><dt className="text-xs text-slate-500">Nascimento</dt><dd className="text-xs font-semibold text-slate-800 text-right">{aluno?.data_nascimento ? new Date(aluno.data_nascimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '—'}</dd></div>
+              <div className="px-5 py-3.5 flex items-start justify-between gap-4"><dt className="text-xs text-slate-500">Endereço</dt><dd className="text-xs font-semibold text-slate-800 text-right max-w-[220px]">{aluno?.endereco ? `${aluno.endereco}, ${aluno.numero}${aluno.complemento ? ` · ${aluno.complemento}` : ''}, ${aluno.bairro} · ${aluno.cidade}/${aluno.estado}` : '—'}</dd></div>
+              <div className="px-5 py-3.5 flex items-start justify-between gap-4"><dt className="text-xs text-slate-500">CEP</dt><dd className="text-xs font-semibold text-slate-800 text-right">{aluno?.cep || '—'}</dd></div>
+              <div className="px-5 py-3.5 flex items-start justify-between gap-4"><dt className="text-xs text-slate-500">Origem</dt><dd className="text-xs font-semibold text-slate-800 text-right">{infoMatricula?.como_conheceu || 'Não informado'}{infoMatricula?.indicacao_nome ? ` · ${infoMatricula.indicacao_nome}` : ''}</dd></div>
+            </dl>
+            <div className="p-4 bg-[#faf9f6] border-t border-[#dfded7]">
+              <button onClick={abrirModalEdicao} className="w-full py-2.5 rounded-lg border border-[#dfded7] bg-white text-xs font-semibold text-slate-600 hover:text-[#1f4a3a] hover:border-[#aebfb4] transition-colors">Atualizar cadastro</button>
+            </div>
+          </aside>
+        </motion.div>
+      )}
+
+      {activeTab === 'aulas' && (
+        <motion.div variants={itemVariants} className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-5 items-start">
+          <aside className="premium-panel overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#dfded7]">
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><CalendarClock size={19} className="text-[#1f4a3a]" /> Horários fixos</h2>
+              <p className="text-xs text-slate-500 mt-1">{aulasFixas.length} horário(s) recorrente(s).</p>
+            </div>
+            <div className="divide-y divide-[#ebe9e3]">
+              {aulasFixas.map(aula => {
+                const nomeProf = Array.isArray(aula.professor) ? aula.professor[0]?.nome_completo : aula.professor?.nome_completo
+                const nomeSala = Array.isArray(aula.sala) ? aula.sala[0]?.nome : aula.sala?.nome
+                return (
+                  <div key={aula.id} className="p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-sm text-slate-900">{aula.dia}</p>
+                      <span className="text-[9px] font-semibold text-[#1f4a3a] bg-[#e7efe9] px-2 py-1 rounded-full">{aula.instrumento_aula}</span>
+                    </div>
+                    <p className="text-xs font-semibold text-slate-700 mt-2">{aula.horario_inicio.slice(0, 5)} — {aula.horario_fim.slice(0, 5)}</p>
+                    <p className="text-[11px] text-slate-500 mt-1.5">Prof. {nomeProf || 'Não definido'} · {nomeSala || 'Sem sala'}</p>
+                  </div>
+                )
+              })}
+              {aulasFixas.length === 0 && <p className="px-5 py-10 text-center text-sm text-slate-500">Nenhum horário fixo.</p>}
+            </div>
+          </aside>
+
+          <section className="premium-panel overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><BookOpenCheck size={19} className="text-[#1f4a3a]" /> Aulas e diário</h2>
+                <p className="text-xs text-slate-500 mt-1">Presença, conteúdo e ocorrências em ordem cronológica.</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={gerarPdfAulas} className="px-3 py-2 rounded-lg border border-[#dfded7] bg-white text-[10px] font-semibold text-slate-600 flex items-center gap-1.5"><Download size={13} /> PDF</button>
+                <button onClick={() => setIsClassModalOpen(true)} disabled={isAlunoInativo} className="px-3.5 py-2 rounded-lg bg-[#1f4a3a] text-white text-[10px] font-semibold flex items-center gap-1.5 disabled:opacity-50"><BookOpenCheck size={13} /> Lançar aula</button>
+              </div>
+            </div>
+            <div className="max-h-[620px] overflow-y-auto custom-scrollbar">
+              {historicoAulas.map((hist, index) => {
+                const isAjuste = hist.status === 'Ajuste de Saldo'
+                const tone = hist.status === 'Realizada'
+                  ? 'bg-emerald-500'
+                  : (hist.status === 'Falta' || hist.status === 'Falta Injustificada')
+                    ? 'bg-rose-500'
+                    : (hist.status === 'Crédito' || hist.status === 'Falta Justificada')
+                      ? 'bg-amber-500'
+                      : 'bg-slate-400'
+                return (
+                  <button key={hist.id} onClick={() => abrirDetalhesAula(hist)} className="w-full grid grid-cols-[92px_20px_minmax(0,1fr)] sm:grid-cols-[110px_24px_minmax(0,1fr)_auto] gap-3 px-5 py-4 text-left border-b border-[#ebe9e3] last:border-0 hover:bg-[#faf9f6] transition-colors">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-800">{new Date(hist.data_aula).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
+                      <p className="text-[10px] text-slate-500 mt-1">{hist.horario_inicio ? hist.horario_inicio.slice(0, 5) : 'Sem horário'}</p>
+                    </div>
+                    <div className="relative flex justify-center">
+                      {index < historicoAulas.length - 1 && <span className="absolute top-4 bottom-[-32px] w-px bg-[#d9ddd7]" />}
+                      <span className={`relative mt-1.5 h-2.5 w-2.5 rounded-full ring-4 ring-white ${tone}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{hist.modalidade || (isAjuste ? 'Ajuste administrativo' : 'Aula')}</p>
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-2">{hist.observacoes || 'Nenhuma anotação registrada.'}</p>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-2">
+                      <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[9px] font-semibold uppercase tracking-wide">{hist.status}</span>
+                      <ChevronRight size={15} className="text-slate-400" />
+                    </div>
+                  </button>
+                )
+              })}
+              {historicoAulas.length === 0 && (
+                <div className="py-14 px-6 text-center">
+                  <BookOpenCheck size={28} strokeWidth={1.5} className="mx-auto text-slate-300 mb-3" />
+                  <p className="text-sm font-semibold text-slate-700">Diário ainda vazio</p>
+                  <p className="text-xs text-slate-500 mt-1">As aulas registradas aparecerão aqui.</p>
+                </div>
+              )}
+            </div>
+          </section>
+        </motion.div>
+      )}
+
+      {activeTab === 'financeiro' && (
+        <motion.div variants={itemVariants} className="space-y-5">
+          <section className="premium-panel overflow-hidden">
+            <div className="p-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-5 lg:items-center">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div><p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Em aberto</p><p className="text-xl font-semibold text-[#a56a32] mt-1">{formatCurrencyBR(valorEmAberto)}</p><p className="text-[10px] text-slate-500 mt-1">{faturasEmAberto.length} fatura(s)</p></div>
+                <div><p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Total recebido</p><p className="text-xl font-semibold text-slate-900 mt-1">{formatCurrencyBR(totalRecebido)}</p><p className="text-[10px] text-slate-500 mt-1">{pagamentos.length} pagamento(s)</p></div>
+                <div><p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Modelo</p><p className="text-sm font-semibold text-slate-900 mt-1">{getBillingModelLabel(modeloFaturamento)}</p><p className="text-[10px] text-slate-500 mt-1">{modeloFaturamento === 'MENSAL_FECHADO' ? `${formatCurrencyBR(infoMatricula?.valor_por_aula)}/aula` : formatCurrencyBR(infoMatricula?.valor_mensalidade)}</p></div>
+                <div><p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Vencimento</p><p className="text-xl font-semibold text-slate-900 mt-1">{modeloFaturamento === 'VENCIMENTO_FIXO' ? `Dia ${infoMatricula?.data_vencimento || '—'}` : 'Variável'}</p><p className="text-[10px] text-slate-500 mt-1">{modeloFaturamento === 'CREDITOS' ? 'ao zerar créditos' : modeloFaturamento === 'MENSAL_FECHADO' ? '7 dias após fechar' : 'mensal'}</p></div>
+              </div>
+              <div className="flex flex-col sm:flex-row lg:flex-col gap-2 lg:min-w-52">
+                <CreateInvoiceModal
+                  alunoId={String(id)}
+                  alunoNome={aluno?.nome_completo || 'Aluno'}
+                  infoFaturamento={infoMatricula}
+                  aulas={historicoAulas}
+                  agendas={aulasFixas}
+                  professores={professoresList}
+                  onCreated={carregarDados}
+                />
+                <button onClick={abrirModalPagamento} disabled={isAlunoInativo} className="w-full py-3 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><CircleDollarSign size={15} /> Registrar pagamento</button>
+              </div>
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            <section className="premium-panel overflow-hidden">
+              <div className="px-5 py-4 border-b border-[#dfded7] flex items-center justify-between">
+                <div><h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><ReceiptText size={19} className="text-[#1f4a3a]" /> Faturas</h2><p className="text-xs text-slate-500 mt-1">Cobranças emitidas e situação.</p></div>
+                <span className="text-xs font-semibold text-slate-500">{faturas.length}</span>
+              </div>
+              <div className="max-h-[470px] overflow-y-auto custom-scrollbar divide-y divide-[#ebe9e3]">
+                {faturas.map(fatura => (
+                  <button key={fatura.id} onClick={() => router.push(`/faturas/${fatura.id}`)} className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-[#faf9f6] transition-colors">
+                    <div className="min-w-0"><p className="text-sm font-semibold text-slate-900">{formatInvoiceNumber(fatura.numero, fatura.id)}</p><p className="text-[11px] text-slate-500 mt-1">{new Date(`${String(fatura.data_emissao).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR')} · {fatura.quantidade_aulas} aula(s)</p></div>
+                    <div className="text-right shrink-0"><p className="text-sm font-semibold text-slate-900">{formatCurrencyBR(fatura.valor_total)}</p><p className={`text-[9px] font-semibold uppercase mt-1 ${fatura.status === 'PAGO' ? 'text-emerald-600' : fatura.status === 'VENCIDO' ? 'text-rose-600' : 'text-[#a56a32]'}`}>{fatura.status}</p></div>
+                  </button>
+                ))}
+                {faturas.length === 0 && <div className="py-12 px-6 text-center text-sm text-slate-500">Nenhuma fatura emitida.</div>}
+              </div>
+            </section>
+
+            <section className="premium-panel overflow-hidden">
+              <div className="px-5 py-4 border-b border-[#dfded7] flex items-center justify-between">
+                <div><h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><WalletCards size={19} className="text-[#1f4a3a]" /> Pagamentos</h2><p className="text-xs text-slate-500 mt-1">Valores recebidos e forma de pagamento.</p></div>
+                <button onClick={gerarPdfPagamentos} className="px-3 py-2 rounded-lg border border-[#dfded7] text-[10px] font-semibold text-slate-600 flex items-center gap-1.5"><Download size={13} /> PDF</button>
+              </div>
+              <div className="max-h-[470px] overflow-y-auto custom-scrollbar divide-y divide-[#ebe9e3]">
+                {pagamentos.map(pg => (
+                  <button key={pg.id} onClick={() => abrirModalEdicaoPagamento(pg)} className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-[#faf9f6] transition-colors">
+                    <div><p className="text-sm font-semibold text-slate-900">{new Date(pg.data_pagamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p><p className="text-[11px] text-slate-500 mt-1">{pg.metodo_pagamento || 'Forma não informada'}</p></div>
+                    <div className="text-right"><p className="text-sm font-semibold text-emerald-700">{formatCurrencyBR(pg.valor)}</p><p className="text-[9px] font-semibold uppercase text-emerald-600 mt-1">Pago</p></div>
+                  </button>
+                ))}
+                {pagamentos.length === 0 && <div className="py-12 px-6 text-center text-sm text-slate-500">Nenhum pagamento registrado.</div>}
+              </div>
+            </section>
+          </div>
+        </motion.div>
+      )}
+
+      {activeTab === 'arquivos' && (
+        <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><FolderOpen size={19} className="text-[#1f4a3a]" /> Arquivos do aluno</h2>
+              <p className="text-xs text-slate-500 mt-1">Partituras, áudios, documentos e materiais compartilhados.</p>
+            </div>
+            <label className={`px-3.5 py-2.5 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer ${isSubmitting ? 'opacity-50 pointer-events-none' : ''}`}>
+              <Upload size={14} /> {isSubmitting ? 'Enviando...' : 'Enviar arquivo'}
+              <input type="file" className="hidden" onChange={handleUploadMaterial} disabled={isSubmitting} />
+            </label>
+          </div>
+          <div className="divide-y divide-[#ebe9e3]">
+            {materiais.map(mat => (
+              <div key={mat.id} className="px-5 py-4 grid grid-cols-[38px_minmax(0,1fr)_auto] gap-3 items-center hover:bg-[#faf9f6] transition-colors group">
+                <div className="h-9 w-9 rounded-lg bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center"><FileText size={16} /></div>
+                <div className="min-w-0"><p className="text-sm font-semibold text-slate-900 truncate">{mat.nome_arquivo}</p><p className="text-[11px] text-slate-500 mt-1">{new Date(mat.data_envio).toLocaleDateString('pt-BR')} · {mat.tipo_arquivo || 'Arquivo'}</p></div>
+                <div className="flex items-center gap-2">
+                  <a href={mat.url_arquivo} target="_blank" rel="noopener noreferrer" className="h-8 w-8 rounded-lg border border-[#dfded7] flex items-center justify-center text-slate-500 hover:text-[#1f4a3a]" title="Abrir arquivo"><Download size={14} /></a>
+                  <button onClick={() => excluirMaterial(mat.id)} className="h-8 w-8 rounded-lg border border-transparent flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-600 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all" title="Excluir arquivo"><Trash2 size={14} /></button>
+                </div>
+              </div>
+            ))}
+            {materiais.length === 0 && (
+              <div className="py-16 px-6 text-center">
+                <FolderOpen size={30} strokeWidth={1.5} className="mx-auto text-slate-300 mb-3" />
+                <p className="text-sm font-semibold text-slate-700">Nenhum arquivo compartilhado</p>
+                <p className="text-xs text-slate-500 mt-1">Envie materiais para centralizar o acompanhamento.</p>
+              </div>
+            )}
+          </div>
+        </motion.section>
+      )}
+
+      {false && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         <div className="space-y-6">
@@ -659,6 +1060,7 @@ export default function PerfilAluno() {
           </motion.div>
         </div>
       </div>
+      )}
 
       {/* Modais */}
       <AnimatePresence>
