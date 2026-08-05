@@ -4,14 +4,26 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { useStyles } from '../lib/useStyles'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
+  ArrowUpRight,
   BellRing,
   BookOpenCheck,
+  CalendarDays,
+  Check,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock3,
+  FileText,
+  Inbox,
   MapPin,
   Mic2,
+  MoreHorizontal,
+  RotateCcw,
+  UserRound,
+  X,
+  XCircle,
 } from 'lucide-react'
 
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }
@@ -38,9 +50,9 @@ export default function Dashboard() {
   const [aulaParaDarBaixa, setAulaParaDarBaixa] = useState<any>(null) 
   const [obsBaixa, setObsBaixa] = useState('') 
   
-  // Modais
-  const [isDiarioModalOpen, setIsDiarioModalOpen] = useState(false)
-  const [isSolicitacoesModalOpen, setIsSolicitacoesModalOpen] = useState(false)
+  const [painelLateral, setPainelLateral] = useState<'solicitacoes' | 'diario'>('solicitacoes')
+  const [solicitacaoParaNegar, setSolicitacaoParaNegar] = useState<any>(null)
+  const [motivoRecusa, setMotivoRecusa] = useState('')
   
   const [saudacao, setSaudacao] = useState('Olá')
   const [primeiroNome, setPrimeiroNome] = useState('')
@@ -238,30 +250,26 @@ export default function Dashboard() {
   }
 
   const handleAprovarSolicitacao = async (sol: any) => {
-    if (!confirm(`Aprovar a reposição de ${sol.aluno_nome} para ${sol.novo_dia} às ${sol.novo_horario_inicio}?`)) return;
     setIsSubmitting(true)
     await supabase.from('solicitacoes_reagendamento').update({ status: 'Aprovada' }).eq('id', sol.id)
     await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '✅ Reposição Aprovada!', mensagem: `Sua reposição para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} às ${sol.novo_horario_inicio?.slice(0,5)} foi confirmada na agenda.`, lida: false }])
     
     setSolicitacoes(prev => prev.filter(s => s.id !== sol.id))
-    alert("✅ Solicitação Aprovada com sucesso! A aula já está na sua grade.")
     setIsSubmitting(false); 
     carregarDados();
-    if(solicitacoes.length <= 1) setIsSolicitacoesModalOpen(false);
   }
 
   const handleNegarSolicitacao = async (sol: any) => {
-    const motivo = window.prompt("Qual o motivo da recusa? (O aluno receberá esta mensagem)")
-    if (motivo === null) return 
+    const motivo = motivoRecusa.trim() || 'Horário indisponível no momento.'
     setIsSubmitting(true)
-    await supabase.from('solicitacoes_reagendamento').update({ status: 'Negada', motivo_recusa: motivo || 'Horário indisponível no momento.' }).eq('id', sol.id)
-    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '❌ Reposição Recusada', mensagem: `Seu pedido para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} foi recusado. Motivo: "${motivo || 'Indisponível no momento'}".`, lida: false }])
+    await supabase.from('solicitacoes_reagendamento').update({ status: 'Negada', motivo_recusa: motivo }).eq('id', sol.id)
+    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '❌ Reposição Recusada', mensagem: `Seu pedido para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} foi recusado. Motivo: "${motivo}".`, lida: false }])
     
     setSolicitacoes(prev => prev.filter(s => s.id !== sol.id))
-    alert("❌ Solicitação Negada.")
+    setSolicitacaoParaNegar(null)
+    setMotivoRecusa('')
     setIsSubmitting(false); 
     carregarDados();
-    if(solicitacoes.length <= 1) setIsSolicitacoesModalOpen(false);
   }
 
   const handleDesmarcarAula = async () => {
@@ -342,402 +350,443 @@ export default function Dashboard() {
   }
 
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full">
-      <motion.div variants={itemVariants} className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full max-w-[1500px] mx-auto pb-6">
+      <motion.header variants={itemVariants} className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-5">
         <div>
           <div className="premium-kicker mb-2">Operação diária</div>
-          <h2 className="text-3xl font-semibold tracking-tight text-slate-900">Visão geral</h2>
-          <p className="text-slate-500 text-sm mt-1">Agenda, pendências e solicitações em um único painel.</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
+            {saudacao}, <span className="text-[#1f4a3a]">{primeiroNome}</span>.
+          </h1>
+          <p className="text-slate-500 text-sm mt-1.5 capitalize">
+            {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+          </p>
         </div>
 
-        <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
-          
-          <div className="flex gap-2 w-full md:w-auto">
-            <motion.button 
-              whileHover={{ y: -1 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setIsSolicitacoesModalOpen(true)}
-              className={`relative flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2.5 rounded-xl border transition-all font-semibold text-xs ${solicitacoes.length > 0 ? 'bg-[#e7efe9] border-[#cbdad0] text-[#1f4a3a]' : 'bg-white border-[#dfded7] text-slate-600 hover:border-slate-300'}`}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full lg:w-auto">
+          {viewMode === 'semana' && (
+            <div className="flex items-center justify-between rounded-xl border border-[#dfded7] bg-white p-1">
+              <button aria-label="Semana anterior" onClick={semanaAnterior} className="h-9 w-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-[#f3f4ef] hover:text-[#1f4a3a] transition-colors">
+                <ChevronLeft size={17} />
+              </button>
+              <button onClick={semanaAtual} className="px-3 text-[11px] font-semibold text-slate-700 whitespace-nowrap">
+                {diasVisuais[0].display} — {diasVisuais[5].display}
+              </button>
+              <button aria-label="Próxima semana" onClick={proximaSemana} className="h-9 w-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-[#f3f4ef] hover:text-[#1f4a3a] transition-colors">
+                <ChevronRight size={17} />
+              </button>
+            </div>
+          )}
+          <div className="flex rounded-xl border border-[#dfded7] bg-white p-1 w-full sm:w-auto">
+            <button
+              onClick={() => { setViewMode('dia'); semanaAtual() }}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[11px] font-semibold transition-colors ${viewMode === 'dia' ? 'bg-[#1f4a3a] text-white' : 'text-slate-500 hover:bg-[#f3f4ef]'}`}
             >
-              <BellRing size={16} strokeWidth={1.8} />
-              <span className="hidden md:inline">Solicitações</span>
-              {solicitacoes.length > 0 && (
-                <span className="absolute -top-2 -right-2 h-6 w-6 bg-[#1f4a3a] text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                  {solicitacoes.length}
-                </span>
-              )}
-            </motion.button>
-
-            <motion.button 
-              whileHover={{ y: -1 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setIsDiarioModalOpen(true)}
-              className={`relative flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2.5 rounded-xl border transition-all font-semibold text-xs ${aulasPendentesBaixa.length > 0 ? 'bg-[#f4eadc] border-[#e4cfb2] text-[#76562e]' : 'bg-white border-[#dfded7] text-slate-600 hover:border-slate-300'}`}
-            >
-              <BookOpenCheck size={16} strokeWidth={1.8} />
-              <span className="hidden md:inline">Diário de Aula</span>
-              {aulasPendentesBaixa.length > 0 && (
-                <span className="absolute -top-2 -right-2 h-6 w-6 bg-[#b98b4f] text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                  {aulasPendentesBaixa.length}
-                </span>
-              )}
-            </motion.button>
-          </div>
-
-          <div className="flex bg-white/40 p-1.5 rounded-2xl shadow-sm border border-white/60 w-full md:w-auto">
-            <button onClick={() => { setViewMode('dia'); semanaAtual(); }} className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${viewMode === 'dia' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>
-              Aulas de Hoje
+              Hoje
             </button>
-            <button onClick={() => setViewMode('semana')} className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${viewMode === 'semana' ? 'bg-white shadow-md text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>
-              Semana Completa
+            <button
+              onClick={() => setViewMode('semana')}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[11px] font-semibold transition-colors ${viewMode === 'semana' ? 'bg-[#1f4a3a] text-white' : 'text-slate-500 hover:bg-[#f3f4ef]'}`}
+            >
+              Semana
             </button>
           </div>
-
-          <AnimatePresence>
-            {viewMode === 'semana' && (
-              <motion.div initial={{ opacity: 0, scale: 0.9, x: 20 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 20 }} className={`flex items-center p-2 rounded-2xl bg-white/40 backdrop-blur-md border border-white/60 shadow-[0_4px_20px_rgba(0,0,0,0.05)] gap-2 w-full md:w-auto justify-center shrink-0`}>
-                <motion.button aria-label="Semana anterior" whileTap={{ scale: 0.96 }} onClick={semanaAnterior} className="p-3 rounded-xl bg-white border border-[#dfded7] hover:border-[#1f4a3a]/40 hover:bg-[#e7efe9] transition-all text-[#1f4a3a]"><ChevronLeft size={17} /></motion.button>
-                <div className="w-40 text-center cursor-pointer" onClick={semanaAtual} title="Voltar para hoje">
-                  <p className="font-bold text-slate-800 uppercase tracking-widest text-[10px] md:text-xs drop-shadow-sm whitespace-nowrap">
-                    {diasVisuais[0].display} <span className="opacity-50 text-slate-500">até</span> {diasVisuais[5].display}
-                  </p>
-                  <p className={`text-slate-500 text-[8px] md:text-[9px] uppercase font-bold mt-0.5`}>Semana Selecionada</p>
-                </div>
-                <motion.button aria-label="Próxima semana" whileTap={{ scale: 0.96 }} onClick={proximaSemana} className="p-3 rounded-xl bg-white border border-[#dfded7] hover:border-[#1f4a3a]/40 hover:bg-[#e7efe9] transition-all text-[#1f4a3a]"><ChevronRight size={17} /></motion.button>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
-      </motion.div>
+      </motion.header>
 
       {loading ? (
-        <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
+        <div className="premium-panel flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-9 w-9 border-t-2 border-b-2 border-[#1f4a3a]" />
+        </div>
       ) : viewMode === 'dia' ? (
-        
-        <motion.div variants={itemVariants} className="mt-4">
-          <div className="mb-10 px-2">
-            <h1 className="text-3xl md:text-4xl font-semibold text-slate-900 tracking-tight leading-tight">
-              {saudacao}, <span className="text-[#1f4a3a]">{primeiroNome}</span>.
-            </h1>
-            <p className="text-slate-500 text-lg font-medium mt-3">
-              {nomeDiaHoje === 'Domingo' 
-                ? "Hoje é domingo, a escola está fechada. Aproveite o descanso!" 
-                : isFeriadoHoje 
-                  ? "Hoje é feriado na escola. Aproveite o descanso!" 
-                  : aulasDeHoje.length > 0 
-                    ? `Você tem ${aulasDeHoje.length} aula${aulasDeHoje.length > 1 ? 's' : ''} programada${aulasDeHoje.length > 1 ? 's' : ''} para hoje.` 
-                    : "Você não tem aulas programadas para hoje. A agenda está livre."}
-            </p>
-          </div>
+        <motion.div variants={itemVariants} className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
+          <section className="premium-panel overflow-hidden xl:h-[calc(100vh-190px)] min-h-[520px] flex flex-col">
+            <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5">
+                  <CalendarDays size={19} className="text-[#1f4a3a]" />
+                  Agenda de hoje
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  {nomeDiaHoje === 'Domingo'
+                    ? 'A escola está fechada aos domingos.'
+                    : isFeriadoHoje
+                      ? 'Dia sem aulas por feriado ou recesso.'
+                      : `${aulasDeHoje.length} aula${aulasDeHoje.length === 1 ? '' : 's'} programada${aulasDeHoje.length === 1 ? '' : 's'}.`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500">
+                <span className="h-2 w-2 rounded-full bg-[#1f4a3a]" />
+                Horário atual: {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {aulasDeHoje.map((aula, index) => {
-              const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(hojeDataStr))?.status;
-              const isPast = checkIfClassPast(hojeDataStr, aula.horario_fim);
-              const isPendenteDeBaixa = isPast && !statusHistorico; 
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+              {(nomeDiaHoje === 'Domingo' || isFeriadoHoje || aulasDeHoje.length === 0) ? (
+                <div className="h-full min-h-80 flex flex-col items-center justify-center text-center px-8">
+                  <CalendarDays size={30} strokeWidth={1.5} className="text-slate-300 mb-3" />
+                  <p className="font-semibold text-slate-700">Agenda livre</p>
+                  <p className="text-sm text-slate-500 mt-1 max-w-sm">
+                    {isFeriadoHoje ? eventosDeHoje[0]?.titulo || 'Hoje não haverá aulas.' : 'Nenhuma aula programada para hoje.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-[#ebe9e3]">
+                  {aulasDeHoje.map((aula, index) => {
+                    const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(hojeDataStr))?.status
+                    const isPast = checkIfClassPast(hojeDataStr, aula.horario_fim)
+                    const isPendenteDeBaixa = isPast && !statusHistorico
+                    const isCurrent = !isPast && (() => {
+                      const [h, m] = (aula.horario_inicio || '00:00').split(':').map(Number)
+                      const [endH, endM] = (aula.horario_fim || '23:59').split(':').map(Number)
+                      const minutes = currentTime.getHours() * 60 + currentTime.getMinutes()
+                      return minutes >= h * 60 + m && minutes <= endH * 60 + endM
+                    })()
 
-              return (
-                <motion.div
-                  key={aula.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05, duration: 0.3 }}
-                  className={`relative p-5 rounded-2xl bg-white/60 backdrop-blur-md border shadow-sm transition-all group overflow-hidden ${isPendenteDeBaixa ? 'border-amber-300 bg-amber-50/50' : isPast ? 'opacity-40 grayscale' : 'hover:shadow-md border-white/80'}`}
-                >
-                  <div className={`absolute top-0 left-0 w-1.5 h-full ${statusHistorico?.includes('Falta') ? 'bg-rose-500' : isPendenteDeBaixa ? 'bg-amber-400 animate-pulse' : aula.is_reposicao ? 'bg-indigo-400' : 'bg-indigo-500'}`}></div>
-                  
-                  <div className="flex justify-between items-start mb-4 pl-3">
-                    <div>
-                      <p className={`text-xl font-bold leading-none ${isPast && !isPendenteDeBaixa ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{aula.horario_inicio?.slice(0, 5)}</p>
-                      <p className="text-[10px] font-semibold text-slate-400 mt-1">Até {aula.horario_fim?.slice(0, 5)}</p>
-                    </div>
-                    
-                    {isPendenteDeBaixa ? (
-                      <span className="px-2.5 py-1 rounded border text-[8px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 border-amber-200 shadow-sm animate-pulse">
-                        ⚠️ Lançar
-                      </span>
-                    ) : isPast && !statusHistorico ? (
-                      <span className="px-2.5 py-1 rounded border text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 border-slate-200">
-                        Encerrada
-                      </span>
-                    ) : statusHistorico ? (
-                      <span className={`px-2.5 py-1 rounded border text-[9px] font-bold uppercase tracking-wider ${getStatusColor(statusHistorico)}`}>
-                        {statusHistorico}
-                      </span>
-                    ) : null}
+                    return (
+                      <motion.article
+                        key={`${aula.id}-${index}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.03 }}
+                        className={`grid grid-cols-[64px_22px_minmax(0,1fr)] sm:grid-cols-[72px_24px_minmax(0,1fr)_auto] gap-x-3 px-4 sm:px-5 py-4 hover:bg-[#faf9f6] transition-colors ${isCurrent ? 'bg-[#f1f6f2]' : ''}`}
+                      >
+                        <div className="pt-0.5 text-right">
+                          <p className={`text-base font-semibold ${isPast ? 'text-slate-400' : 'text-slate-900'}`}>{aula.horario_inicio?.slice(0, 5)}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{aula.horario_fim?.slice(0, 5)}</p>
+                        </div>
+
+                        <div className="relative flex justify-center">
+                          {index < aulasDeHoje.length - 1 && <span className="absolute top-4 bottom-[-32px] w-px bg-[#d9ddd7]" />}
+                          <span className={`relative mt-1.5 h-3 w-3 rounded-full border-[3px] ring-4 ring-white ${
+                            statusHistorico?.includes('Falta') ? 'bg-rose-500 border-rose-100'
+                              : statusHistorico === 'Realizada' ? 'bg-emerald-600 border-emerald-100'
+                                : isPendenteDeBaixa ? 'bg-amber-500 border-amber-100'
+                                  : isCurrent ? 'bg-[#1f4a3a] border-[#cbdad0]'
+                                    : 'bg-white border-slate-300'
+                          }`} />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-full bg-[#e9ece7] overflow-hidden flex items-center justify-center shrink-0 border border-white">
+                              {aula.aluno?.avatar_url
+                                ? <img src={aula.aluno.avatar_url} alt="" className="w-full h-full object-cover" />
+                                : <span className="text-xs font-semibold text-[#1f4a3a]">{aula.aluno?.nome_completo?.charAt(0)}</span>}
+                            </div>
+                            <div className="min-w-0">
+                              <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="font-semibold text-sm text-slate-900 truncate block max-w-full hover:text-[#1f4a3a]">
+                                {aula.aluno?.nome_completo}
+                              </button>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-500">
+                                <span className="flex items-center gap-1"><Mic2 size={12} /> {aula.instrumento_aula}</span>
+                                <span className="flex items-center gap-1"><MapPin size={12} /> {aula.sala?.nome}</span>
+                                {aula.is_reposicao && <span className="text-[#76562e] font-semibold">Reposição</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="sm:hidden mt-3 flex items-center gap-2">
+                            {isPendenteDeBaixa ? (
+                              <button onClick={() => { setAulaParaDarBaixa({ ...aula, data_selecionada: hojeDataStr }); setPainelLateral('diario') }} className="px-3 py-2 rounded-lg bg-[#b98b4f] text-white text-[10px] font-semibold">
+                                Registrar aula
+                              </button>
+                            ) : (
+                              <button onClick={() => setSelectedAula({ ...aula, data_selecionada: hojeDataStr })} className="px-3 py-2 rounded-lg border border-[#dfded7] text-slate-600 text-[10px] font-semibold">
+                                Detalhes
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="hidden sm:flex items-center justify-end gap-2 pl-4">
+                          {statusHistorico ? (
+                            <span className={`px-2.5 py-1.5 rounded-lg border text-[9px] font-semibold uppercase tracking-wide ${getStatusColor(statusHistorico)}`}>
+                              {statusHistorico}
+                            </span>
+                          ) : isPendenteDeBaixa ? (
+                            <button onClick={() => { setAulaParaDarBaixa({ ...aula, data_selecionada: hojeDataStr }); setPainelLateral('diario') }} className="px-3.5 py-2 rounded-lg bg-[#b98b4f] text-white text-[10px] font-semibold hover:bg-[#9f743e] transition-colors">
+                              Registrar aula
+                            </button>
+                          ) : isCurrent ? (
+                            <span className="px-2.5 py-1.5 rounded-lg bg-[#dfe9e2] text-[#1f4a3a] text-[9px] font-semibold uppercase tracking-wide">Em andamento</span>
+                          ) : (
+                            <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-[9px] font-semibold uppercase tracking-wide">Agendada</span>
+                          )}
+                          <button aria-label="Ver detalhes da aula" onClick={() => setSelectedAula({ ...aula, data_selecionada: hojeDataStr })} className="h-8 w-8 rounded-lg border border-[#dfded7] flex items-center justify-center text-slate-500 hover:text-[#1f4a3a] hover:border-[#aebfb4] transition-colors">
+                            <MoreHorizontal size={16} />
+                          </button>
+                        </div>
+                      </motion.article>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <aside className="premium-panel overflow-hidden xl:h-[calc(100vh-190px)] min-h-[520px] flex flex-col">
+            {aulaParaDarBaixa ? (
+              <>
+                <div className="px-4 py-3.5 border-b border-[#dfded7] flex items-center justify-between shrink-0">
+                  <div>
+                    <p className="premium-kicker">Diário de aula</p>
+                    <h2 className="text-lg font-semibold text-slate-900 mt-1">Registrar encontro</h2>
                   </div>
+                  <button aria-label="Voltar para pendências" onClick={() => { setAulaParaDarBaixa(null); setObsBaixa('') }} className="h-8 w-8 rounded-lg border border-[#dfded7] flex items-center justify-center text-slate-500 hover:bg-[#f3f4ef]">
+                    <X size={15} />
+                  </button>
+                </div>
+                <div className="p-4 flex-1 overflow-y-auto custom-scrollbar">
+                  <div className="rounded-xl bg-[#f4eadc] border border-[#e4cfb2] p-3.5 mb-4">
+                    <p className="font-semibold text-sm text-slate-900">{aulaParaDarBaixa.aluno?.nome_completo}</p>
+                    <p className="text-xs text-slate-600 mt-1">
+                      {new Date(aulaParaDarBaixa.data_selecionada).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} · {aulaParaDarBaixa.horario_inicio?.slice(0, 5)} · {aulaParaDarBaixa.instrumento_aula}
+                    </p>
+                  </div>
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Notas da aula ou motivo da falta</label>
+                  <textarea
+                    value={obsBaixa}
+                    onChange={e => setObsBaixa(e.target.value)}
+                    placeholder="Conteúdo trabalhado, orientações ou motivo..."
+                    className="w-full h-32 mt-2 p-3.5 rounded-xl border border-[#dfded7] bg-white text-sm text-slate-800 resize-none outline-none focus:border-[#1f4a3a] focus:ring-2 focus:ring-[#1f4a3a]/10"
+                  />
+                  <div className="space-y-2 mt-4">
+                    <button onClick={() => handleDarBaixa('Realizada')} disabled={isSubmitting} className="w-full py-3 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2 hover:bg-[#17382c] disabled:opacity-50">
+                      <Check size={16} /> Aula realizada
+                    </button>
+                    <button onClick={() => handleDarBaixa('Falta Justificada')} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-[#dfc394] bg-[#fbf5e9] text-[#76562e] text-xs font-semibold flex items-center justify-center gap-2 hover:bg-[#f4eadc] disabled:opacity-50">
+                      <RotateCcw size={15} /> Falta com reposição
+                    </button>
+                    <button onClick={() => handleDarBaixa('Falta Injustificada')} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold flex items-center justify-center gap-2 hover:bg-rose-100 disabled:opacity-50">
+                      <XCircle size={15} /> Falta sem reposição
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : selectedAula ? (
+              <>
+                <div className="px-4 py-3.5 border-b border-[#dfded7] flex items-center justify-between shrink-0">
+                  <div>
+                    <p className="premium-kicker">Aula selecionada</p>
+                    <h2 className="text-lg font-semibold text-slate-900 mt-1">Detalhes do horário</h2>
+                  </div>
+                  <button aria-label="Fechar detalhes" onClick={() => setSelectedAula(null)} className="h-8 w-8 rounded-lg border border-[#dfded7] flex items-center justify-center text-slate-500 hover:bg-[#f3f4ef]">
+                    <X size={15} />
+                  </button>
+                </div>
+                <div className="p-4 flex-1 overflow-y-auto custom-scrollbar">
+                  <div className="flex items-center gap-3 pb-4 border-b border-[#ebe9e3]">
+                    <div className="h-11 w-11 rounded-full bg-[#e7efe9] flex items-center justify-center text-[#1f4a3a] font-semibold">
+                      {selectedAula.aluno?.nome_completo?.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm text-slate-900 truncate">{selectedAula.aluno?.nome_completo}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{selectedAula.horario_inicio?.slice(0, 5)} — {selectedAula.horario_fim?.slice(0, 5)}</p>
+                    </div>
+                  </div>
+                  <dl className="py-4 space-y-3 text-sm">
+                    <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Modalidade</dt><dd className="font-medium text-slate-800">{selectedAula.instrumento_aula}</dd></div>
+                    <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Sala</dt><dd className="font-medium text-slate-800">{selectedAula.sala?.nome}</dd></div>
+                    <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Tipo</dt><dd className="font-medium text-slate-800">{selectedAula.is_reposicao ? 'Reposição' : 'Horário fixo'}</dd></div>
+                  </dl>
+                  <div className="space-y-2 pt-2">
+                    <button onClick={() => router.push(`/alunos/${selectedAula.aluno.id}`)} className="w-full py-3 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2">
+                      <UserRound size={15} /> Abrir perfil do aluno
+                    </button>
+                    <button onClick={handleDesmarcarAula} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-[#dfc394] bg-[#fbf5e9] text-[#76562e] text-xs font-semibold disabled:opacity-50">
+                      Desmarcar somente hoje
+                    </button>
+                    {!selectedAula.is_reposicao && (
+                      <button onClick={() => handleRemoverDaGrade(selectedAula.id)} className="w-full py-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold">
+                        Remover horário fixo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-1.5 border-b border-[#dfded7] bg-[#f7f7f3] grid grid-cols-2 gap-1 shrink-0">
+                  <button
+                    onClick={() => setPainelLateral('solicitacoes')}
+                    className={`relative px-3 py-2.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-2 transition-colors ${painelLateral === 'solicitacoes' ? 'bg-white text-[#1f4a3a] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    <BellRing size={15} /> Solicitações
+                    {solicitacoes.length > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-[#1f4a3a] text-white text-[9px] flex items-center justify-center">{solicitacoes.length}</span>}
+                  </button>
+                  <button
+                    onClick={() => setPainelLateral('diario')}
+                    className={`relative px-3 py-2.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-2 transition-colors ${painelLateral === 'diario' ? 'bg-white text-[#76562e] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    <BookOpenCheck size={15} /> Diário
+                    {aulasPendentesBaixa.length > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-[#b98b4f] text-white text-[9px] flex items-center justify-center">{aulasPendentesBaixa.length}</span>}
+                  </button>
+                </div>
 
-                  <div className="pl-3">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-full bg-slate-200 border border-white shadow-inner overflow-hidden flex items-center justify-center shrink-0">
-                        {aula.aluno?.avatar_url ? <img src={aula.aluno.avatar_url} className="w-full h-full object-cover" /> : <span className="font-bold text-slate-500 text-sm">{aula.aluno?.nome_completo?.charAt(0)}</span>}
+                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+                  {painelLateral === 'solicitacoes' ? (
+                    solicitacoes.length === 0 ? (
+                      <div className="h-full min-h-72 flex flex-col items-center justify-center text-center px-8">
+                        <Inbox size={28} strokeWidth={1.5} className="text-slate-300 mb-3" />
+                        <p className="font-semibold text-sm text-slate-700">Nenhuma solicitação</p>
+                        <p className="text-xs text-slate-500 mt-1">Os novos pedidos aparecerão nesta fila.</p>
                       </div>
-                      <h3 className={`text-sm font-bold uppercase line-clamp-2 leading-tight ${isPast && !isPendenteDeBaixa ? 'text-slate-500' : 'text-slate-800'}`}>
-                        {aula.aluno?.nome_completo}
-                      </h3>
+                    ) : (
+                      <div className="divide-y divide-[#ebe9e3]">
+                        {solicitacoes.map(sol => (
+                          <div key={sol.id} className="p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm text-slate-900 truncate">{sol.aluno_nome}</p>
+                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                  Reposição em {sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'data indefinida'}, {sol.novo_horario_inicio?.slice(0, 5)}
+                                </p>
+                              </div>
+                              <CalendarDays size={16} className="text-[#1f4a3a] shrink-0 mt-0.5" />
+                            </div>
+                            {solicitacaoParaNegar?.id === sol.id ? (
+                              <div className="mt-3">
+                                <textarea
+                                  value={motivoRecusa}
+                                  onChange={e => setMotivoRecusa(e.target.value)}
+                                  placeholder="Informe o motivo ao aluno..."
+                                  className="w-full h-20 p-3 rounded-lg border border-[#dfded7] text-xs resize-none outline-none focus:border-rose-300 focus:ring-2 focus:ring-rose-100"
+                                />
+                                <div className="flex gap-2 mt-2">
+                                  <button onClick={() => handleNegarSolicitacao(sol)} disabled={isSubmitting} className="flex-1 py-2 rounded-lg bg-rose-600 text-white text-[10px] font-semibold disabled:opacity-50">Confirmar recusa</button>
+                                  <button onClick={() => { setSolicitacaoParaNegar(null); setMotivoRecusa('') }} className="px-3 py-2 rounded-lg border border-[#dfded7] text-slate-500 text-[10px] font-semibold">Cancelar</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex gap-2 mt-3">
+                                <button onClick={() => handleAprovarSolicitacao(sol)} disabled={isSubmitting} className="flex-1 py-2 rounded-lg bg-[#1f4a3a] text-white text-[10px] font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50">
+                                  <Check size={13} /> Aprovar
+                                </button>
+                                <button onClick={() => { setSolicitacaoParaNegar(sol); setMotivoRecusa('') }} disabled={isSubmitting} className="flex-1 py-2 rounded-lg border border-[#dfded7] text-slate-600 text-[10px] font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50">
+                                  <X size={13} /> Recusar
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : aulasPendentesBaixa.length === 0 ? (
+                    <div className="h-full min-h-72 flex flex-col items-center justify-center text-center px-8">
+                      <CheckCircle2 size={28} strokeWidth={1.5} className="text-emerald-500 mb-3" />
+                      <p className="font-semibold text-sm text-slate-700">Diário em dia</p>
+                      <p className="text-xs text-slate-500 mt-1">Nenhuma aula aguardando registro.</p>
                     </div>
-
-                    <div className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-slate-200/60">
-                      <p className={`text-xs font-semibold flex items-center gap-2 ${aula.is_reposicao ? 'text-indigo-600' : 'text-slate-600'}`}>
-                        <Mic2 size={14} className={aula.is_reposicao ? 'text-indigo-400' : 'text-indigo-500'} /> {aula.instrumento_aula}
-                      </p>
-                      <p className="text-xs font-semibold text-slate-600 flex items-center gap-2"><MapPin size={14} className="text-indigo-500" /> {aula.sala?.nome}</p>
+                  ) : (
+                    <div className="divide-y divide-[#ebe9e3]">
+                      {aulasPendentesBaixa.map(aula => (
+                        <button
+                          key={`${aula.id}-${aula.data_selecionada}`}
+                          onClick={() => setAulaParaDarBaixa(aula)}
+                          className="w-full p-4 text-left hover:bg-[#faf9f6] transition-colors flex items-center gap-3"
+                        >
+                          <div className="h-9 w-9 rounded-lg bg-[#f4eadc] text-[#76562e] flex items-center justify-center shrink-0">
+                            <FileText size={16} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-sm text-slate-900 truncate">{aula.aluno?.nome_completo}</p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {new Date(aula.data_selecionada).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} · {aula.horario_inicio?.slice(0, 5)}
+                            </p>
+                          </div>
+                          <ArrowUpRight size={15} className="text-slate-400" />
+                        </button>
+                      ))}
                     </div>
-
-                    <div className="mt-4 flex gap-2">
-                      {isPendenteDeBaixa ? (
-                        <button onClick={() => setAulaParaDarBaixa({ ...aula, data_selecionada: hojeDataStr })} className="flex-1 py-2 rounded-xl bg-amber-400 text-amber-950 text-[10px] font-bold uppercase shadow-sm hover:bg-amber-500 hover:text-white transition-colors">Lançar Aula</button>
-                      ) : (
-                        <button onClick={() => setSelectedAula({ ...aula, data_selecionada: hojeDataStr })} className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-bold uppercase hover:bg-white transition-colors shadow-sm">Opções</button>
-                      )}
-                      <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-bold uppercase shadow-sm hover:bg-indigo-500 transition-colors">Perfil</button>
-                    </div>
-                  </div>
-                </motion.div>
-              )
-            })}
-          </div>
+                  )}
+                </div>
+              </>
+            )}
+          </aside>
         </motion.div>
 
       ) : (
+        <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#dfded7]">
+            <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5">
+              <CalendarDays size={19} className="text-[#1f4a3a]" />
+              Agenda da semana
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">Aulas organizadas por dia e horário.</p>
+          </div>
+          <div className="divide-y divide-[#dfded7]">
+            {diasVisuais.map((dia) => {
+              const eventosDoDia = eventosSemana.filter(e => e.data_evento === dia.dataStr)
+              const isFeriado = eventosDoDia.some(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')
+              const aulasDoDiaNaSemana = aulas.filter(aula => {
+                if (aula.is_reposicao) return aula.data_selecionada === dia.dataStr
+                return aula.dia === dia.nome
+              }).filter(aula => {
+                const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info
+                if (info?.status === 'Inativo' && info?.data_inativacao && dia.dataStr > info.data_inativacao) return false
+                const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
+                return statusHistorico !== 'Desmarcada'
+              }).sort((a, b) => (a.horario_inicio || '00:00').localeCompare(b.horario_inicio || '00:00'))
 
-        <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4 mt-2">
-          {diasVisuais.map((dia) => {
-            const eventosDoDia = eventosSemana.filter(e => e.data_evento === dia.dataStr)
-            const isFeriado = eventosDoDia.some(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')
-
-            const aulasDoDiaNaSemana = aulas.filter(aula => {
-              if (aula.is_reposicao) return aula.data_selecionada === dia.dataStr;
-              return aula.dia === dia.nome;
-            }).filter(aula => {
-              const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info;
-              if (info?.status === 'Inativo' && info?.data_inativacao && dia.dataStr > info.data_inativacao) return false; 
-              
-              const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status;
-              if (statusHistorico === 'Desmarcada') return false; 
-
-              return true;
-            }).sort((a, b) => {
-              const horaA = a.horario_inicio || '00:00';
-              const horaB = b.horario_inicio || '00:00';
-              return horaA.localeCompare(horaB);
-            });
-
-            return (
-              <div key={dia.nome} className="flex flex-col">
-                <div className={`mb-3 p-3 rounded-2xl bg-white/40 backdrop-blur-md border text-center transition-all shadow-[0_4px_20px_rgba(0,0,0,0.03)] ${dia.isHoje ? 'border-t-4 border-t-emerald-500 border-white/60' : 'border-t-4 border-t-indigo-500 border-white/60'}`}>
-                  <h3 className={`font-bold uppercase tracking-widest text-[10px] drop-shadow-sm ${dia.isHoje ? 'text-emerald-600' : 'text-indigo-700'}`}>{dia.nome}</h3>
-                  <p className={`text-xs font-semibold mt-1 ${dia.isHoje ? 'text-emerald-600' : 'text-slate-500'}`}>{dia.display}</p>
-                </div>
-                
-                <div className="space-y-3 flex-1 flex flex-col">
-                  {isFeriado ? (
-                    <div className={`p-6 rounded-2xl border border-rose-400/50 bg-rose-500/10 backdrop-blur-md text-rose-600 text-center flex flex-col items-center justify-center min-h-[150px] shadow-sm`}>
-                      <span className="text-4xl mb-3 opacity-90 drop-shadow-sm">🏖️</span>
-                      <p className="font-bold uppercase text-[10px] text-balance leading-tight">{eventosDoDia.find(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')?.titulo}</p>
-                      <p className="text-[9px] mt-2 opacity-80 font-bold uppercase tracking-widest bg-rose-500/20 px-2 py-1 rounded border border-rose-500/30">Sem Aulas</p>
+              return (
+                <div key={dia.dataStr} className={`grid grid-cols-1 md:grid-cols-[150px_minmax(0,1fr)] ${dia.isHoje ? 'bg-[#f4f7f3]' : 'bg-white'}`}>
+                  <div className="px-5 py-4 md:border-r border-[#ebe9e3]">
+                    <div className="flex md:flex-col items-baseline md:items-start gap-2 md:gap-0">
+                      <p className={`text-sm font-semibold ${dia.isHoje ? 'text-[#1f4a3a]' : 'text-slate-800'}`}>{dia.nome}</p>
+                      <p className="text-xs text-slate-500 md:mt-1">{dia.display}</p>
                     </div>
-                  ) : aulasDoDiaNaSemana.length === 0 ? (
-                    <div className="flex-1 min-h-[120px] p-4 rounded-2xl border border-dashed border-slate-300 bg-white/30 flex items-center justify-center text-center shadow-sm">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Horário Livre</p>
-                    </div>
-                  ) : (
-                    aulasDoDiaNaSemana.map((aula) => {
-                      const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
-                      const isPast = checkIfClassPast(dia.dataStr, aula.horario_fim);
-                      const isPendenteDeBaixa = isPast && !statusHistorico; 
+                    {dia.isHoje && <span className="inline-block mt-2 text-[9px] font-semibold uppercase tracking-wide text-[#1f4a3a]">Hoje</span>}
+                  </div>
 
-                      return (
-                        <motion.div whileHover={{ scale: 1.02 }} key={aula.id} className={`bg-white/50 backdrop-blur-md p-4 rounded-2xl border shadow-sm transition-all relative group ${isPendenteDeBaixa ? 'border-amber-300 bg-amber-50/50' : isPast ? 'opacity-40 grayscale border-white/80' : 'hover:shadow-lg border-white/80 border-l-4 ' + (dia.isHoje ? 'border-l-emerald-500' : aula.is_reposicao ? 'border-l-indigo-400' : 'border-l-indigo-500')}`}>
-                          <div className="flex justify-between items-start mb-1">
-                            <p className={`font-bold text-[9px] mb-1 ${isPast && !isPendenteDeBaixa ? 'text-slate-500 line-through' : dia.isHoje ? 'text-emerald-600' : aula.is_reposicao ? 'text-indigo-500' : 'text-indigo-700'}`}>
-                              {aula.horario_inicio?.slice(0, 5)} - {aula.horario_fim?.slice(0, 5)}
-                            </p>
-                            {isPendenteDeBaixa ? (
-                              <button onClick={() => setAulaParaDarBaixa({ ...aula, data_selecionada: dia.dataStr })} className={`text-[8px] font-bold uppercase transition-opacity text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded shadow-sm animate-pulse`}>Lançar</button>
-                            ) : (
-                              <button onClick={() => setSelectedAula({ ...aula, data_selecionada: dia.dataStr })} className={`opacity-0 group-hover:opacity-100 text-[9px] font-bold uppercase transition-opacity ${dia.isHoje ? 'text-emerald-600' : 'text-indigo-600'}`}>Editar</button>
-                            )}
-                          </div>
-                          <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className={`font-bold text-sm uppercase transition-colors block w-full text-left truncate ${isPast && !isPendenteDeBaixa ? 'text-slate-500' : 'text-slate-800 hover:text-indigo-600'}`}>
-                            {aula.aluno?.nome_completo}
-                          </button>
-                          <p className={`text-slate-500 text-[9px] mt-2 font-semibold uppercase flex flex-col`}><span className="mb-1">🎤 {aula.instrumento_aula}</span><span>📍 {aula.sala?.nome}</span></p>
-                          
-                          {/* Tags da Semana */}
-                          {isPast && !isPendenteDeBaixa && !statusHistorico ? (
-                             <div className={`absolute -top-2 -right-2 px-2 py-1 rounded-lg text-[8px] font-bold uppercase shadow-sm border backdrop-blur-md bg-slate-100 text-slate-500 border-slate-200`}>
-                                Encerrada
-                             </div>
-                          ) : statusHistorico && (
-                            <div className={`absolute -top-2 -right-2 px-2 py-1 rounded-lg text-[8px] font-bold uppercase shadow-lg border backdrop-blur-md ${getStatusColor(statusHistorico)}`}>
-                              {statusHistorico}
+                  <div className="min-w-0">
+                    {isFeriado ? (
+                      <div className="px-5 py-5 flex items-center gap-3 text-sm text-rose-700">
+                        <CalendarDays size={16} />
+                        <span className="font-medium">{eventosDoDia.find(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')?.titulo}</span>
+                        <span className="text-xs text-rose-500">Sem aulas</span>
+                      </div>
+                    ) : aulasDoDiaNaSemana.length === 0 ? (
+                      <div className="px-5 py-5 text-sm text-slate-400">Nenhuma aula programada.</div>
+                    ) : (
+                      <div className="divide-y divide-[#f0eee9]">
+                        {aulasDoDiaNaSemana.map((aula, index) => {
+                          const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
+                          const isPast = checkIfClassPast(dia.dataStr, aula.horario_fim)
+                          const isPendenteDeBaixa = isPast && !statusHistorico
+                          return (
+                            <div key={`${aula.id}-${index}`} className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-[#faf9f6] transition-colors">
+                              <div className="w-28 shrink-0 flex items-center gap-2 text-xs font-semibold text-slate-700">
+                                <Clock3 size={13} className="text-slate-400" />
+                                {aula.horario_inicio?.slice(0, 5)} — {aula.horario_fim?.slice(0, 5)}
+                              </div>
+                              <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="min-w-0 flex-1 text-left">
+                                <p className="font-semibold text-sm text-slate-900 truncate">{aula.aluno?.nome_completo}</p>
+                                <p className="text-[11px] text-slate-500 mt-0.5">{aula.instrumento_aula} · {aula.sala?.nome}{aula.is_reposicao ? ' · Reposição' : ''}</p>
+                              </button>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {statusHistorico ? (
+                                  <span className={`px-2.5 py-1.5 rounded-lg border text-[9px] font-semibold uppercase tracking-wide ${getStatusColor(statusHistorico)}`}>{statusHistorico}</span>
+                                ) : isPendenteDeBaixa ? (
+                                  <button onClick={() => { setAulaParaDarBaixa({ ...aula, data_selecionada: dia.dataStr }); setViewMode('dia'); setPainelLateral('diario') }} className="px-3 py-2 rounded-lg bg-[#b98b4f] text-white text-[10px] font-semibold">Registrar</button>
+                                ) : (
+                                  <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-[9px] font-semibold uppercase tracking-wide">Agendada</span>
+                                )}
+                                <button aria-label="Ver detalhes da aula" onClick={() => { setSelectedAula({ ...aula, data_selecionada: dia.dataStr }); setViewMode('dia') }} className="h-8 w-8 rounded-lg border border-[#dfded7] flex items-center justify-center text-slate-500 hover:text-[#1f4a3a]">
+                                  <MoreHorizontal size={16} />
+                                </button>
+                              </div>
                             </div>
-                          )}
-                        </motion.div>
-                      )
-                    })
-                  )}
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </motion.div>
+              )
+            })}
+          </div>
+        </motion.section>
       )}
 
-      {/* 🔥 MODAL DE SOLICITAÇÕES PENDENTES 🔥 */}
-      <AnimatePresence>
-        {isSolicitacoesModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[60]">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>🛎️</span> Solicitações de Reposição</h2>
-                  <p className="text-xs font-semibold text-slate-500 mt-1">Aprove ou negue os pedidos dos alunos.</p>
-                </div>
-                <button onClick={() => setIsSolicitacoesModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
-              </div>
-
-              <div className="overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
-                {solicitacoes.length === 0 ? (
-                  <div className="text-center py-12 opacity-80">
-                    <span className="text-5xl block mb-3 drop-shadow-sm grayscale">📭</span>
-                    <p className="font-bold text-slate-600 text-sm">Caixa vazia.</p>
-                    <p className="text-xs font-medium text-slate-500 mt-1">Nenhuma solicitação pendente no momento.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {solicitacoes.map(sol => (
-                      <motion.div whileHover={{ y: -2 }} key={sol.id} className={`p-5 rounded-2xl border border-indigo-200 bg-indigo-50/80 shadow-sm flex flex-col justify-between hover:shadow-md transition-all`}>
-                        <div className="mb-4">
-                          <p className="font-bold text-sm uppercase text-slate-800 tracking-tight">{sol.aluno_nome?.split(' ')[0]}</p>
-                          <p className={`text-slate-600 text-xs font-medium leading-relaxed mt-1`}>
-                            Deseja repor a aula no dia <span className="font-bold text-indigo-700 underline">{sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'Indefinido'} ({sol.novo_dia})</span> às <span className="font-bold text-indigo-700">{sol.novo_horario_inicio?.slice(0,5)}</span>.
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleAprovarSolicitacao(sol)} disabled={isSubmitting} className="flex-1 py-2.5 bg-indigo-600 text-white text-[10px] font-bold uppercase tracking-widest rounded-xl shadow-md disabled:opacity-50 hover:bg-indigo-500 transition-all">Aprovar</motion.button>
-                          <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleNegarSolicitacao(sol)} disabled={isSubmitting} className="flex-1 py-2.5 bg-white/80 text-rose-600 border border-rose-200 text-[10px] font-bold uppercase tracking-widest rounded-xl hover:bg-rose-50 hover:border-rose-300 transition-colors disabled:opacity-50 shadow-sm">Negar</motion.button>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 🔥 MODAL (LISTA) DA FILA DO DIÁRIO 🔥 */}
-      <AnimatePresence>
-        {isDiarioModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[60]">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>📖</span> Fila do Diário</h2>
-                <button onClick={() => setIsDiarioModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
-              </div>
-
-              <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
-                {aulasPendentesBaixa.length === 0 ? (
-                  <div className="text-center py-12 opacity-80">
-                    <span className="text-5xl block mb-3 drop-shadow-sm">✅</span>
-                    <p className="font-bold text-emerald-600 text-sm">Tudo em dia!</p>
-                    <p className="text-xs font-medium text-slate-500 mt-1">Nenhuma aula aguardando lançamento.</p>
-                  </div>
-                ) : aulasPendentesBaixa.map(aula => {
-                  const dataFormatada = new Date(aula.data_selecionada).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-                  return (
-                    <motion.div whileHover={{ y: -2 }} key={`${aula.id}-${aula.data_selecionada}`} className={`p-4 rounded-2xl border border-amber-200 bg-amber-50/80 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-l-4 border-l-amber-500`}>
-                      <div className="flex justify-between items-start mb-2">
-                        <p className="font-bold text-sm uppercase text-slate-800">{aula.aluno?.nome_completo.split(' ')[0]}</p>
-                        <span className="text-[9px] font-bold text-amber-700 bg-amber-100/80 border border-amber-200 px-2 py-1 rounded shadow-sm">{dataFormatada}</span>
-                      </div>
-                      <p className={`text-slate-600 text-[10px] font-medium leading-tight mb-3`}>
-                        {aula.instrumento_aula} • {aula.horario_inicio?.slice(0,5)} até {aula.horario_fim?.slice(0,5)}
-                      </p>
-                      <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setIsDiarioModalOpen(false); setAulaParaDarBaixa(aula); }} className="w-full py-2.5 bg-amber-400 text-amber-950 font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-sm hover:bg-amber-500 hover:text-white transition-all">
-                        Lançar Diário
-                      </motion.button>
-                    </motion.div>
-                  )
-                })}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL DE LANÇAMENTO (ESCRITA) DO DIÁRIO */}
-      <AnimatePresence>
-        {aulaParaDarBaixa && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[80]">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className={`bg-white/90 backdrop-blur-2xl border border-white/60 border-t-8 border-t-amber-400 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
-              <h2 className={`text-xl font-bold mb-2 text-slate-800 tracking-tight`}>Lançar Diário de Aula</h2>
-              <p className="text-sm font-semibold text-slate-500 mb-6">Aluno: <span className="text-amber-600">{aulaParaDarBaixa.aluno?.nome_completo}</span></p>
-              
-              <div className="mb-6">
-                <label className="text-xs font-bold text-slate-600 ml-1 mb-2 block uppercase tracking-widest">Anotações da Aula / Motivo da Falta</label>
-                <textarea 
-                  value={obsBaixa} 
-                  onChange={e => setObsBaixa(e.target.value)} 
-                  placeholder="Escreva o que foi ensinado, ou o motivo da falta..." 
-                  className="w-full p-4 rounded-xl bg-white/50 border border-slate-200 text-slate-800 font-medium focus:bg-white focus:border-amber-400/50 focus:ring-4 focus:ring-amber-500/10 transition-all outline-none shadow-inner resize-none h-32"
-                />
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleDarBaixa('Realizada')} disabled={isSubmitting} className={`w-full py-4 rounded-2xl bg-emerald-500 text-white font-black uppercase text-xs tracking-widest shadow-lg hover:bg-emerald-600 transition-all disabled:opacity-50`}>
-                  ✅ Aula Realizada
-                </motion.button>
-                <div className="flex gap-3">
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleDarBaixa('Falta Justificada')} disabled={isSubmitting} className={`flex-1 py-3 rounded-2xl bg-amber-50 text-amber-700 font-bold uppercase text-[10px] tracking-widest border border-amber-200 hover:bg-amber-500 hover:text-white transition-all disabled:opacity-50 shadow-sm`}>
-                    ⚠️ Falta Justificada
-                  </motion.button>
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleDarBaixa('Falta Injustificada')} disabled={isSubmitting} className={`flex-1 py-3 rounded-2xl bg-rose-50 text-rose-600 font-bold uppercase text-[10px] tracking-widest border border-rose-200 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50 shadow-sm`}>
-                    ❌ Falta Injustificada
-                  </motion.button>
-                </div>
-              </div>
-
-              <button onClick={() => setAulaParaDarBaixa(null)} className="w-full mt-4 py-3 rounded-xl font-bold uppercase text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all text-[10px] tracking-widest">
-                Cancelar e Voltar
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL DE OPÇÕES DA AULA (Normal) */}
-      <AnimatePresence>
-        {selectedAula && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className={`bg-white/70 backdrop-blur-2xl border border-white/60 border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-sm shadow-2xl relative`}>
-              <h2 className={`text-xl font-bold mb-6 text-slate-800 tracking-tight text-center`}>Opções do Horário</h2>
-              <div className="flex flex-col gap-3">
-                <motion.button whileTap={{ scale: 0.95 }} onClick={() => router.push(`/alunos/${selectedAula.aluno.id}`)} className={`py-4 rounded-2xl bg-indigo-600 text-white font-bold uppercase shadow-md text-xs hover:bg-indigo-500 transition-all`}>
-                  Acessar Perfil do Aluno
-                </motion.button>
-                
-                <motion.button whileTap={{ scale: 0.95 }} onClick={handleDesmarcarAula} disabled={isSubmitting} className={`py-4 rounded-2xl bg-amber-500 text-white font-bold uppercase shadow-sm border text-xs hover:bg-amber-600 transition-all disabled:opacity-50`}>
-                  Desmarcar Aula do Dia
-                </motion.button>
-
-                {!selectedAula.is_reposicao && (
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleRemoverDaGrade(selectedAula.id)} className={`py-4 rounded-2xl bg-rose-50 text-rose-600 font-bold uppercase shadow-sm border border-rose-100 text-xs hover:bg-rose-500 hover:text-white transition-all`}>
-                    Remover Grade Fixa
-                  </motion.button>
-                )}
-
-                <motion.button whileTap={{ scale: 0.95 }} onClick={() => setSelectedAula(null)} className={`py-4 rounded-2xl font-bold uppercase text-slate-600 hover:bg-white transition-all text-xs border border-white/80 shadow-sm mt-2`}>
-                  Fechar
-                </motion.button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   )
 }
