@@ -349,6 +349,26 @@ export default function Dashboard() {
     return 'bg-slate-100 text-slate-600 border-slate-200';
   }
 
+  const agendaHorizontal = diasVisuais.map(dia => {
+    const eventosDoDia = eventosSemana.filter(e => e.data_evento === dia.dataStr)
+    const eventoEspecial = eventosDoDia.find(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')
+    const aulasDoDia = aulas.filter(aula => {
+      if (aula.is_reposicao) return aula.data_selecionada === dia.dataStr
+      return aula.dia === dia.nome
+    }).filter(aula => {
+      const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info
+      if (info?.status === 'Inativo' && info?.data_inativacao && dia.dataStr > info.data_inativacao) return false
+      const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
+      return statusHistorico !== 'Desmarcada'
+    }).sort((a, b) => (a.horario_inicio || '00:00').localeCompare(b.horario_inicio || '00:00'))
+
+    return { ...dia, eventoEspecial, aulas: eventoEspecial ? [] : aulasDoDia }
+  })
+  const iniciosDaSemana = agendaHorizontal.flatMap(dia => dia.aulas.map((aula: any) => Number(String(aula.horario_inicio || '08:00').slice(0, 2))))
+  const primeiraHoraAgenda = iniciosDaSemana.length > 0 ? Math.max(6, Math.min(8, Math.min(...iniciosDaSemana))) : 8
+  const ultimaHoraAgenda = iniciosDaSemana.length > 0 ? Math.min(23, Math.max(21, Math.max(...iniciosDaSemana))) : 21
+  const horasAgendaSemana = Array.from({ length: ultimaHoraAgenda - primeiraHoraAgenda + 1 }, (_, index) => primeiraHoraAgenda + index)
+
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full max-w-[1500px] mx-auto pb-6">
       <motion.header variants={itemVariants} className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-5">
@@ -368,7 +388,7 @@ export default function Dashboard() {
               <button aria-label="Semana anterior" onClick={semanaAnterior} className="h-9 w-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-[#f3f4ef] hover:text-[#1f4a3a] transition-colors">
                 <ChevronLeft size={17} />
               </button>
-              <button onClick={semanaAtual} className="px-3 text-[11px] font-semibold text-slate-700 whitespace-nowrap">
+              <button onClick={semanaAtual} className="px-3 text-xs font-semibold text-slate-700 whitespace-nowrap">
                 {diasVisuais[0].display} — {diasVisuais[5].display}
               </button>
               <button aria-label="Próxima semana" onClick={proximaSemana} className="h-9 w-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-[#f3f4ef] hover:text-[#1f4a3a] transition-colors">
@@ -379,13 +399,13 @@ export default function Dashboard() {
           <div className="flex rounded-xl border border-[#dfded7] bg-white p-1 w-full sm:w-auto">
             <button
               onClick={() => { setViewMode('dia'); semanaAtual() }}
-              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[11px] font-semibold transition-colors ${viewMode === 'dia' ? 'bg-[#1f4a3a] text-white' : 'text-slate-500 hover:bg-[#f3f4ef]'}`}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'dia' ? 'bg-[#1f4a3a] text-white' : 'text-slate-500 hover:bg-[#f3f4ef]'}`}
             >
               Hoje
             </button>
             <button
               onClick={() => setViewMode('semana')}
-              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[11px] font-semibold transition-colors ${viewMode === 'semana' ? 'bg-[#1f4a3a] text-white' : 'text-slate-500 hover:bg-[#f3f4ef]'}`}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${viewMode === 'semana' ? 'bg-[#1f4a3a] text-white' : 'text-slate-500 hover:bg-[#f3f4ef]'}`}
             >
               Semana
             </button>
@@ -705,6 +725,107 @@ export default function Dashboard() {
         </motion.div>
 
       ) : (
+        <>
+        <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5">
+                <CalendarDays size={19} className="text-[#1f4a3a]" />
+                Agenda da semana
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">Dias em colunas e horários na vertical, como em uma agenda.</p>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-slate-500">
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-white border border-[#d7d7d1]" /> Agendada</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-100 border border-emerald-300" /> Realizada</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-100 border border-amber-300" /> Pendente</span>
+            </div>
+          </div>
+
+          <div className="overflow-auto custom-scrollbar max-h-[calc(100vh-235px)] min-h-[560px]">
+            <div className="min-w-[1180px]">
+              <div className="sticky top-0 z-20 grid grid-cols-[76px_repeat(6,minmax(180px,1fr))] border-b border-[#dfded7] bg-[#faf9f6]">
+                <div className="sticky left-0 z-30 bg-[#faf9f6] px-3 py-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500 flex items-center justify-center">
+                  Hora
+                </div>
+                {agendaHorizontal.map(dia => (
+                  <div key={dia.dataStr} className={`px-3 py-3.5 border-l border-[#e5e3dc] ${dia.isHoje ? 'bg-[#eaf1ea]' : dia.eventoEspecial ? 'bg-rose-50' : 'bg-[#faf9f6]'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className={`text-sm font-semibold ${dia.isHoje ? 'text-[#1f4a3a]' : 'text-slate-800'}`}>{dia.nome}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{dia.display}</p>
+                      </div>
+                      {dia.isHoje && <span className="px-2 py-1 rounded-full bg-[#1f4a3a] text-white text-[10px] font-semibold uppercase">Hoje</span>}
+                    </div>
+                    {dia.eventoEspecial && (
+                      <p className="mt-2 text-[11px] font-semibold text-rose-700 truncate" title={dia.eventoEspecial.titulo}>
+                        {dia.eventoEspecial.titulo} · sem aulas
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {horasAgendaSemana.map(hora => (
+                <div key={hora} className="grid grid-cols-[76px_repeat(6,minmax(180px,1fr))] border-b border-[#ebe9e3]">
+                  <div className="sticky left-0 z-10 bg-[#faf9f6] px-2 py-3 border-r border-[#e5e3dc] text-xs font-semibold text-slate-600 flex items-start justify-center gap-1.5 min-h-[88px]">
+                    <Clock3 size={13} className="mt-0.5 text-slate-400" />
+                    {String(hora).padStart(2, '0')}:00
+                  </div>
+
+                  {agendaHorizontal.map(dia => {
+                    const aulasDoHorario = dia.aulas.filter((aula: any) => Number(String(aula.horario_inicio || '00:00').slice(0, 2)) === hora)
+                    return (
+                      <div key={`${dia.dataStr}-${hora}`} className={`min-h-[88px] p-1.5 border-l border-[#ebe9e3] ${dia.isHoje ? 'bg-[#f5f8f4]' : dia.eventoEspecial ? 'bg-rose-50/30' : 'bg-white'}`}>
+                        <div className="space-y-1.5">
+                          {aulasDoHorario.map((aula: any, index: number) => {
+                            const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
+                            const isPast = checkIfClassPast(dia.dataStr, aula.horario_fim)
+                            const isPendenteDeBaixa = isPast && !statusHistorico
+                            const visualClass = statusHistorico === 'Realizada'
+                              ? 'bg-emerald-50 border-emerald-300 border-l-emerald-500'
+                              : statusHistorico === 'Falta Justificada'
+                                ? 'bg-orange-50 border-orange-300 border-l-orange-500'
+                                : statusHistorico
+                                  ? 'bg-rose-50 border-rose-300 border-l-rose-500'
+                                  : isPendenteDeBaixa
+                                    ? 'bg-amber-50 border-amber-300 border-l-amber-500'
+                                    : aula.is_reposicao
+                                      ? 'bg-indigo-50 border-indigo-200 border-l-indigo-500'
+                                      : 'bg-white border-[#dcdcd5] border-l-[#6f8c7b]'
+
+                            return (
+                              <div key={`${aula.id}-${index}`} className={`rounded-lg border border-l-[3px] px-2.5 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${visualClass}`}>
+                                <div className="flex items-start gap-2">
+                                  <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="min-w-0 flex-1 text-left">
+                                    <p className="text-xs font-semibold text-slate-900 truncate">{aula.aluno?.nome_completo}</p>
+                                    <p className="text-[11px] text-slate-600 mt-0.5">{aula.horario_inicio?.slice(0, 5)}–{aula.horario_fim?.slice(0, 5)}</p>
+                                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">{aula.instrumento_aula}{aula.is_reposicao ? ' · Reposição' : ''}</p>
+                                  </button>
+                                  <button aria-label="Ver detalhes da aula" onClick={() => { setSelectedAula({ ...aula, data_selecionada: dia.dataStr }); setViewMode('dia') }} className="h-6 w-6 rounded-md text-slate-500 hover:bg-white flex items-center justify-center shrink-0">
+                                    <MoreHorizontal size={14} />
+                                  </button>
+                                </div>
+                                {isPendenteDeBaixa && (
+                                  <button onClick={() => { setAulaParaDarBaixa({ ...aula, data_selecionada: dia.dataStr }); setViewMode('dia'); setPainelLateral('diario') }} className="mt-1.5 text-[10px] font-semibold text-amber-800 hover:underline">
+                                    Registrar diário
+                                  </button>
+                                )}
+                                {statusHistorico && <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 truncate">{statusHistorico}</p>}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.section>
+
+        {false && (
         <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
           <div className="px-5 py-4 border-b border-[#dfded7]">
             <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5">
@@ -785,6 +906,8 @@ export default function Dashboard() {
             })}
           </div>
         </motion.section>
+        )}
+        </>
       )}
 
     </motion.div>
