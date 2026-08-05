@@ -8,6 +8,25 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../lib/billing'
 import { ensureBrazilianNinthDigit, formatBrazilianPhone, formatCEP, formatCPFOrCNPJ, normalizeEmail, normalizeName } from '../../lib/formatters'
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  BarChart3,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  FileText,
+  Landmark,
+  MessageCircle,
+  Pencil,
+  Plus,
+  ReceiptText,
+  Settings2,
+  TrendingUp,
+  UsersRound,
+  WalletCards,
+} from 'lucide-react'
 
 const DEFAULT_PENDENTE = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Lotus Music*. Sua cobrança de *{{modelo}}* no valor de *{{valor}}* vence em {{vencimento}}.\n\n{{link}}\nChave PIX: *{{pix}}*\n\nMuito obrigado! 🎶"
 const DEFAULT_ATRASADO = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Lotus Music*. A cobrança de *{{modelo}}* no valor de *{{valor}}*, com vencimento em {{vencimento}}, está pendente.\n\n{{link}}\nChave PIX: *{{pix}}*\n\nSe precisar, fale com a gente. 🎶"
@@ -60,6 +79,8 @@ export default function RelatorioFinanceiro() {
 
   const [filtroExtrato, setFiltroExtrato] = useState('Todos')
   const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'visao' | 'cobrancas' | 'movimentacoes' | 'analises'>('visao')
+  const [filtroCobrancas, setFiltroCobrancas] = useState<'Todas' | 'Atrasado' | 'A vencer'>('Todas')
 
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (isMounted) carregarDadosFinanceiros() }, [isMounted])
@@ -351,30 +372,303 @@ export default function RelatorioFinanceiro() {
   const extratoFiltrado = extratoUnificado.filter(item => 
     filtroExtrato === 'Todos' ? true : item.tipo === filtroExtrato
   )
+  const resultadoMes = resumo.entradasMes - resumo.saidasMes
+  const cobrancasAtrasadas = alunosPendentes.filter(item => ['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(item.status))
+  const cobrancasAVencer = alunosPendentes.filter(item => !['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(item.status))
+  const cobrancasFiltradas = alunosPendentes.filter(item => {
+    if (filtroCobrancas === 'Todas') return true
+    if (filtroCobrancas === 'Atrasado') return ['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(item.status)
+    return !['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(item.status)
+  })
+  const taxaRecebimento = resumo.previsaoFaturamento > 0
+    ? Math.min(100, Math.round((resumo.entradasMes / resumo.previsaoFaturamento) * 100))
+    : 0
+  const maiorDespesa = [...dadosGraficoPizza].sort((a, b) => Number(b.value) - Number(a.value))[0]
 
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="show">
-      
-      <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
+    <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full max-w-[1500px] mx-auto pb-8">
+      <motion.header variants={itemVariants} className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-5">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-800">Financeiro</h2>
-          <p className="text-slate-500 text-sm mt-1">Balanço de {mesFormatado}</p>
-          <div className="flex flex-wrap gap-2 mt-3">
-            <span className="px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200 text-[10px] font-bold text-violet-700">{modelCounts.CREDITOS} em Créditos</span>
-            <span className="px-2.5 py-1 rounded-lg bg-cyan-50 border border-cyan-200 text-[10px] font-bold text-cyan-700">{modelCounts.MENSAL_FECHADO} em Mês fechado</span>
-            <span className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-[10px] font-bold text-indigo-700">{modelCounts.VENCIMENTO_FIXO} em Vencimento fixo</span>
+          <div className="premium-kicker mb-2">Gestão financeira</div>
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Financeiro</h1>
+          <p className="text-slate-500 text-sm mt-1.5">Recebimentos, cobranças e caixa de {mesFormatado}.</p>
+        </div>
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <button onClick={() => setIsConfigModalOpen(true)} className="flex-1 md:flex-none px-3.5 py-2.5 rounded-xl border border-[#dfded7] bg-white text-slate-600 text-xs font-semibold flex items-center justify-center gap-2 hover:text-[#1f4a3a] hover:border-[#aebfb4] transition-colors">
+            <Settings2 size={15} /> Configurações
+          </button>
+          <button onClick={handleNovaMovimentacao} className="flex-1 md:flex-none px-4 py-2.5 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2 hover:bg-[#17382c] transition-colors">
+            <Plus size={15} /> Nova movimentação
+          </button>
+        </div>
+      </motion.header>
+
+      <motion.section variants={itemVariants} className="premium-panel overflow-hidden mb-5">
+        <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_2fr]">
+          <div className="p-5 md:p-6 bg-[#153b2f] text-white">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">Caixa disponível</p>
+            <p className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">{formatCurrencyBR(resumo.saldoCaixa)}</p>
+            <div className="flex items-center gap-2 mt-4">
+              <span className={`h-7 px-2.5 rounded-full text-[10px] font-semibold flex items-center gap-1.5 ${resultadoMes >= 0 ? 'bg-white/10 text-[#d8eadf]' : 'bg-rose-500/20 text-rose-100'}`}>
+                {resultadoMes >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+                Resultado do mês: {formatCurrencyBR(resultadoMes)}
+              </span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4">
+            <div className="p-4 md:p-5 border-r border-b md:border-b-0 border-[#e5e3dd]">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Previsão</p>
+              <p className="text-xl font-semibold text-slate-900 mt-1.5">{formatCurrencyBR(resumo.previsaoFaturamento)}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{taxaRecebimento}% recebido</p>
+            </div>
+            <div className="p-4 md:p-5 border-b md:border-b-0 md:border-r border-[#e5e3dd]">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Entradas</p>
+              <p className="text-xl font-semibold text-emerald-700 mt-1.5">{formatCurrencyBR(resumo.entradasMes)}</p>
+              <p className="text-[10px] text-slate-500 mt-1">no mês</p>
+            </div>
+            <div className="p-4 md:p-5 border-r border-[#e5e3dd]">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Saídas</p>
+              <p className="text-xl font-semibold text-slate-900 mt-1.5">{formatCurrencyBR(resumo.saidasMes)}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{maiorDespesa ? `maior: ${maiorDespesa.name}` : 'sem despesas'}</p>
+            </div>
+            <div className="p-4 md:p-5">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Em atraso</p>
+              <p className={`text-xl font-semibold mt-1.5 ${resumo.inadimplencia > 0 ? 'text-rose-700' : 'text-slate-900'}`}>{formatCurrencyBR(resumo.inadimplencia)}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{cobrancasAtrasadas.length} cobrança(s)</p>
+            </div>
           </div>
         </div>
-        <div className="flex gap-3">
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={() => setIsConfigModalOpen(true)} className={`px-4 py-3 rounded-xl bg-white/40 backdrop-blur-md border border-white/60 font-bold text-sm text-slate-700 hover:bg-white/60 shadow-sm transition-all flex items-center gap-2`}>
-            <span>⚙️</span> Configurações
-          </motion.button>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={handleNovaMovimentacao} className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-lg hover:shadow-xl transition-all">
-            Nova Movimentação
-          </motion.button>
-        </div>
-      </motion.div>
+      </motion.section>
 
+      <motion.nav variants={itemVariants} aria-label="Seções financeiras" className="premium-panel p-1.5 flex gap-1 overflow-x-auto custom-scrollbar mb-5">
+        {[
+          { id: 'visao', label: 'Visão geral', icon: Landmark },
+          { id: 'cobrancas', label: 'Cobranças', icon: ReceiptText, count: alunosPendentes.length },
+          { id: 'movimentacoes', label: 'Movimentações', icon: WalletCards, count: extratoUnificado.length },
+          { id: 'analises', label: 'Análises', icon: BarChart3 },
+        ].map(tab => {
+          const Icon = tab.icon
+          const isActive = activeTab === tab.id
+          return (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as typeof activeTab)} className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 whitespace-nowrap transition-colors ${isActive ? 'bg-[#1f4a3a] text-white' : 'text-slate-500 hover:bg-[#f3f4ef] hover:text-slate-800'}`}>
+              <Icon size={15} /> {tab.label}
+              {tab.count !== undefined && <span className={`min-w-5 h-5 px-1 rounded-full text-[9px] flex items-center justify-center ${isActive ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>{tab.count}</span>}
+            </button>
+          )
+        })}
+      </motion.nav>
+
+      {activeTab === 'visao' && (
+        <motion.div variants={itemVariants} className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] gap-5 items-start">
+          <section className="premium-panel overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#dfded7] flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><AlertTriangle size={19} className="text-[#a56a32]" /> Cobranças prioritárias</h2>
+                <p className="text-xs text-slate-500 mt-1">Pendências ordenadas por urgência e vencimento.</p>
+              </div>
+              <button onClick={() => setActiveTab('cobrancas')} className="text-[11px] font-semibold text-[#1f4a3a] hover:underline">Ver todas</button>
+            </div>
+            <div className="divide-y divide-[#ebe9e3]">
+              {alunosPendentes.slice(0, 6).map(aluno => {
+                const isCritical = ['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(aluno.status)
+                return (
+                  <div key={aluno.id} className="px-5 py-4 grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_120px_auto] gap-3 items-center hover:bg-[#faf9f6] transition-colors">
+                    <div className="min-w-0">
+                      <button onClick={() => router.push(`/alunos/${aluno.alunoId}`)} className="text-sm font-semibold text-slate-900 truncate block max-w-full hover:text-[#1f4a3a]">{aluno.nome}</button>
+                      <p className="text-[11px] text-slate-500 mt-1">{aluno.modelo} · {aluno.vencimento}</p>
+                    </div>
+                    <div className="hidden sm:block text-right">
+                      <p className="text-sm font-semibold text-slate-900">{formatCurrencyBR(aluno.valor)}</p>
+                      <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-[9px] font-semibold ${isCritical ? 'bg-rose-50 text-rose-700' : 'bg-[#fbf1df] text-[#8a5e2f]'}`}>{aluno.status}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {aluno.invoiceId && <button onClick={() => window.open(`/faturas/${aluno.invoiceId}`, '_blank')} aria-label="Abrir fatura" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center hover:text-[#1f4a3a]"><FileText size={14} /></button>}
+                      <button onClick={() => enviarCobrancaWhatsApp(aluno)} aria-label="Lembrar pelo WhatsApp" className="h-8 w-8 rounded-lg bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center hover:bg-[#d7e5da]"><MessageCircle size={14} /></button>
+                    </div>
+                  </div>
+                )
+              })}
+              {alunosPendentes.length === 0 && (
+                <div className="py-14 px-6 text-center">
+                  <CheckCircle2 size={30} strokeWidth={1.5} className="mx-auto text-emerald-500 mb-3" />
+                  <p className="text-sm font-semibold text-slate-700">Nenhuma cobrança pendente</p>
+                  <p className="text-xs text-slate-500 mt-1">A carteira está em dia.</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <aside className="premium-panel overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#dfded7] flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><WalletCards size={19} className="text-[#1f4a3a]" /> Movimentações recentes</h2>
+                <p className="text-xs text-slate-500 mt-1">Últimos lançamentos deste mês.</p>
+              </div>
+              <button onClick={() => setActiveTab('movimentacoes')} className="text-[11px] font-semibold text-[#1f4a3a] hover:underline">Extrato</button>
+            </div>
+            <div className="divide-y divide-[#ebe9e3]">
+              {extratoUnificado.slice(0, 7).map(item => (
+                <button key={item.id} onClick={() => abrirEdicao(item)} className="w-full px-5 py-3.5 flex items-center gap-3 text-left hover:bg-[#faf9f6] transition-colors">
+                  <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${item.tipo === 'Entrada' ? 'bg-[#e7efe9] text-[#1f4a3a]' : 'bg-rose-50 text-rose-600'}`}>
+                    {item.tipo === 'Entrada' ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{item.descricao}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{new Date(item.data).toLocaleDateString('pt-BR')} · {item.categoria}</p>
+                  </div>
+                  <p className={`text-sm font-semibold shrink-0 ${item.tipo === 'Entrada' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.tipo === 'Entrada' ? '+' : '−'} {formatCurrencyBR(item.valor)}</p>
+                </button>
+              ))}
+              {extratoUnificado.length === 0 && <div className="py-14 px-6 text-center text-sm text-slate-500">Nenhuma movimentação no mês.</div>}
+            </div>
+          </aside>
+        </motion.div>
+      )}
+
+      {activeTab === 'cobrancas' && (
+        <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><ReceiptText size={19} className="text-[#1f4a3a]" /> Carteira de cobranças</h2>
+              <p className="text-xs text-slate-500 mt-1">Acompanhe vencimentos, faturas e contatos.</p>
+            </div>
+            <div className="flex rounded-xl border border-[#dfded7] bg-[#f7f7f3] p-1 overflow-x-auto">
+              {[
+                { id: 'Todas', label: 'Todas', count: alunosPendentes.length },
+                { id: 'Atrasado', label: 'Atrasadas', count: cobrancasAtrasadas.length },
+                { id: 'A vencer', label: 'A vencer', count: cobrancasAVencer.length },
+              ].map(option => (
+                <button key={option.id} onClick={() => setFiltroCobrancas(option.id as typeof filtroCobrancas)} className={`px-3 py-2 rounded-lg text-[10px] font-semibold whitespace-nowrap ${filtroCobrancas === option.id ? 'bg-white text-[#1f4a3a] shadow-sm' : 'text-slate-500'}`}>
+                  {option.label} · {option.count}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="max-h-[650px] overflow-y-auto custom-scrollbar">
+            <div className="hidden md:grid grid-cols-[minmax(0,1.2fr)_150px_120px_120px_110px] gap-4 px-5 py-2.5 bg-[#faf9f6] border-b border-[#ebe9e3] text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+              <span>Aluno</span><span>Modelo</span><span>Vencimento</span><span>Valor</span><span className="text-right">Ações</span>
+            </div>
+            <div className="divide-y divide-[#ebe9e3]">
+              {cobrancasFiltradas.map(aluno => {
+                const isCritical = ['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(aluno.status)
+                return (
+                  <div key={aluno.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_150px_120px_120px_110px] gap-3 md:gap-4 px-5 py-4 md:items-center hover:bg-[#faf9f6] transition-colors">
+                    <div className="min-w-0">
+                      <button onClick={() => router.push(`/alunos/${aluno.alunoId}`)} className="text-sm font-semibold text-slate-900 truncate hover:text-[#1f4a3a]">{aluno.nome}</button>
+                      <span className={`ml-2 inline-flex px-2 py-0.5 rounded-full text-[9px] font-semibold ${isCritical ? 'bg-rose-50 text-rose-700' : 'bg-[#fbf1df] text-[#8a5e2f]'}`}>{aluno.status}</span>
+                      {typeof aluno.saldo === 'number' && <p className="text-[10px] text-slate-500 mt-1">Saldo: {aluno.saldo} créditos</p>}
+                    </div>
+                    <p className="text-xs text-slate-600">{aluno.modelo}</p>
+                    <p className="text-xs text-slate-600 flex items-center gap-1.5"><Clock3 size={12} /> {aluno.vencimento}</p>
+                    <p className="text-sm font-semibold text-slate-900">{formatCurrencyBR(aluno.valor)}</p>
+                    <div className="flex md:justify-end gap-1.5">
+                      {aluno.invoiceId && <button onClick={() => window.open(`/faturas/${aluno.invoiceId}`, '_blank')} aria-label="Abrir fatura" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center"><FileText size={14} /></button>}
+                      <button onClick={() => enviarCobrancaWhatsApp(aluno)} aria-label="Enviar cobrança pelo WhatsApp" className="h-8 w-8 rounded-lg bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center"><MessageCircle size={14} /></button>
+                      <button onClick={() => router.push(`/alunos/${aluno.alunoId}`)} aria-label="Abrir perfil do aluno" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center"><ChevronRight size={14} /></button>
+                    </div>
+                  </div>
+                )
+              })}
+              {cobrancasFiltradas.length === 0 && <div className="py-16 px-6 text-center text-sm text-slate-500">Nenhuma cobrança neste filtro.</div>}
+            </div>
+          </div>
+        </motion.section>
+      )}
+
+      {activeTab === 'movimentacoes' && (
+        <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><WalletCards size={19} className="text-[#1f4a3a]" /> Extrato de {mesFormatado}</h2>
+              <p className="text-xs text-slate-500 mt-1">Entradas e saídas organizadas por data.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select value={filtroExtrato} onChange={e => setFiltroExtrato(e.target.value)} className="px-3 py-2.5 rounded-xl border border-[#dfded7] bg-white text-xs font-semibold text-slate-600 outline-none">
+                <option value="Todos">Todas</option><option value="Entrada">Entradas</option><option value="Saída">Saídas</option>
+              </select>
+              <button onClick={handleNovaMovimentacao} className="px-3.5 py-2.5 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center gap-2"><Plus size={14} /> Lançar</button>
+            </div>
+          </div>
+          <div className="max-h-[650px] overflow-y-auto custom-scrollbar">
+            <div className="hidden md:grid grid-cols-[120px_minmax(0,1fr)_160px_130px_40px] gap-4 px-5 py-2.5 bg-[#faf9f6] border-b border-[#ebe9e3] text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+              <span>Data</span><span>Descrição</span><span>Categoria</span><span>Valor</span><span />
+            </div>
+            <div className="divide-y divide-[#ebe9e3]">
+              {extratoFiltrado.map(item => (
+                <div key={item.id} className="grid grid-cols-[38px_minmax(0,1fr)_auto] md:grid-cols-[120px_minmax(0,1fr)_160px_130px_40px] gap-3 md:gap-4 px-5 py-4 items-center hover:bg-[#faf9f6] transition-colors">
+                  <div className={`md:hidden h-9 w-9 rounded-lg flex items-center justify-center ${item.tipo === 'Entrada' ? 'bg-[#e7efe9] text-[#1f4a3a]' : 'bg-rose-50 text-rose-600'}`}>{item.tipo === 'Entrada' ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}</div>
+                  <p className="hidden md:block text-xs text-slate-600">{new Date(item.data).toLocaleDateString('pt-BR')}</p>
+                  <div className="min-w-0"><p className="text-sm font-semibold text-slate-900 truncate">{item.descricao}</p><p className="md:hidden text-[10px] text-slate-500 mt-1">{new Date(item.data).toLocaleDateString('pt-BR')} · {item.categoria}</p></div>
+                  <p className="hidden md:block text-xs text-slate-600">{item.categoria}</p>
+                  <p className={`text-sm font-semibold text-right md:text-left ${item.tipo === 'Entrada' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.tipo === 'Entrada' ? '+' : '−'} {formatCurrencyBR(item.valor)}</p>
+                  <button onClick={() => abrirEdicao(item)} aria-label="Editar movimentação" className="hidden md:flex h-8 w-8 rounded-lg border border-[#dfded7] text-slate-500 items-center justify-center hover:text-[#1f4a3a]"><Pencil size={13} /></button>
+                </div>
+              ))}
+              {extratoFiltrado.length === 0 && <div className="py-16 px-6 text-center text-sm text-slate-500">Nenhuma movimentação neste filtro.</div>}
+            </div>
+          </div>
+        </motion.section>
+      )}
+
+      {activeTab === 'analises' && (
+        <motion.div variants={itemVariants} className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)] gap-5">
+          <section className="premium-panel overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#dfded7]">
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><TrendingUp size={19} className="text-[#1f4a3a]" /> Fluxo dos últimos seis meses</h2>
+              <p className="text-xs text-slate-500 mt-1">Comparação entre valores recebidos e saídas registradas.</p>
+            </div>
+            <div className="h-[360px] p-4 md:p-5">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dadosGraficoBarra} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e8e6df" vertical={false} />
+                  <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `R$${value}`} />
+                  <Tooltip cursor={{ fill: '#f6f5f0' }} contentStyle={{ backgroundColor: '#fff', borderColor: '#dfded7', borderRadius: '10px', fontSize: '12px' }} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', color: '#475569' }} />
+                  <Bar dataKey="Entradas" fill="#1f6a4d" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Saídas" fill="#b76d61" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          <div className="space-y-5">
+            <section className="premium-panel overflow-hidden">
+              <div className="px-5 py-4 border-b border-[#dfded7]">
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><BarChart3 size={19} className="text-[#1f4a3a]" /> Despesas por categoria</h2>
+              </div>
+              <div className="h-[240px] p-3">
+                {dadosGraficoPizza.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={dadosGraficoPizza} cx="50%" cy="45%" innerRadius={48} outerRadius={70} paddingAngle={4} dataKey="value" stroke="none">
+                        {dadosGraficoPizza.map((entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={(value: any) => formatCurrencyBR(Number(value))} contentStyle={{ backgroundColor: '#fff', borderColor: '#dfded7', borderRadius: '10px', fontSize: '11px' }} />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', color: '#475569' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center"><CheckCircle2 size={26} className="text-slate-300 mb-2" /><p className="text-xs text-slate-500">Sem despesas registradas.</p></div>
+                )}
+              </div>
+            </section>
+
+            <section className="premium-panel overflow-hidden">
+              <div className="px-5 py-4 border-b border-[#dfded7]">
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><UsersRound size={19} className="text-[#1f4a3a]" /> Modelos de cobrança</h2>
+              </div>
+              <div className="divide-y divide-[#ebe9e3]">
+                <div className="px-5 py-3 flex justify-between text-xs"><span className="text-slate-500">Créditos</span><span className="font-semibold text-slate-900">{modelCounts.CREDITOS}</span></div>
+                <div className="px-5 py-3 flex justify-between text-xs"><span className="text-slate-500">Mês fechado</span><span className="font-semibold text-slate-900">{modelCounts.MENSAL_FECHADO}</span></div>
+                <div className="px-5 py-3 flex justify-between text-xs"><span className="text-slate-500">Vencimento fixo</span><span className="font-semibold text-slate-900">{modelCounts.VENCIMENTO_FIXO}</span></div>
+              </div>
+            </section>
+          </div>
+        </motion.div>
+      )}
+
+      {false && (<>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
         {[
           { color: 'cyan', icon: '🏦', label: 'Saldo Atual', value: resumo.saldoCaixa },
@@ -522,6 +816,7 @@ export default function RelatorioFinanceiro() {
           </div>
         </motion.div>
       </div>
+      </>)}
 
       <AnimatePresence>
         {isConfigModalOpen && (
