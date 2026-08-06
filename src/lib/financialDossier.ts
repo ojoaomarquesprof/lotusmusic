@@ -4,6 +4,7 @@ export type FinancialChargeStatus =
   | 'Atrasado'
   | 'A vencer'
   | 'Pago'
+  | 'Desconsiderada'
   | 'Em apuração'
   | 'Erro na emissão'
   | 'Sem créditos'
@@ -26,6 +27,10 @@ export type FinancialCharge = {
   diasAtraso: number
   invoiceUrl?: string | null
   invoiceId?: string | null
+  paymentId?: string | null
+  adjustmentId?: string | null
+  adjustmentReason?: string | null
+  isAdjusted?: boolean
   saldo?: number
 }
 
@@ -40,6 +45,7 @@ type DossierInput = {
   alunos: any[]
   pagamentos: any[]
   faturas: any[]
+  ajustes?: any[]
   historicoMes?: any[]
   hoje?: Date
 }
@@ -111,6 +117,10 @@ function paymentCompetence(payment: any, invoiceById: Map<string, any>) {
   )
 }
 
+function adjustmentKey(alunoId: string, competence: string | Date | null, model: string) {
+  return `${alunoId}:${monthKey(competence)}:${model}`
+}
+
 function earliestFinancialMonth(aluno: any, info: any, pagamentos: any[], faturas: any[], todayMonth: Date) {
   const explicitStart = monthStart(info?.inicio_faturamento)
   if (explicitStart) return explicitStart
@@ -145,6 +155,7 @@ export function buildFinancialDossier({
   alunos,
   pagamentos,
   faturas,
+  ajustes = [],
   historicoMes = [],
   hoje = new Date(),
 }: DossierInput) {
@@ -152,6 +163,12 @@ export function buildFinancialDossier({
   const todayMonth = new Date(today.getFullYear(), today.getMonth(), 1)
   const invoiceById = new Map((faturas || []).map(invoice => [invoice.id, invoice]))
   const confirmedPayments = (pagamentos || []).filter(isConfirmedPayment)
+  const adjustmentsByCharge = new Map(
+    (ajustes || []).map(item => [
+      adjustmentKey(item.aluno_id, item.competencia, item.modelo_faturamento),
+      item,
+    ]),
+  )
   const charges: FinancialCharge[] = []
 
   for (const aluno of alunos || []) {
@@ -164,7 +181,6 @@ export function buildFinancialDossier({
       item.aluno_id === aluno.id
       && !['CANCELADO', 'SEM_MOVIMENTO'].includes(String(item.status).toUpperCase()),
     )
-    const paidMonths = new Set(alunoPayments.map(item => paymentCompetence(item, invoiceById)).filter(Boolean))
     const endMonth = info.status === 'Inativo' && info.data_inativacao
       ? monthStart(info.data_inativacao) || todayMonth
       : todayMonth
@@ -174,13 +190,18 @@ export function buildFinancialDossier({
       for (let competence = startMonth; competence <= endMonth; competence = addMonth(competence, 1)) {
         const competenceKey = monthKey(competence)
         const invoice = alunoInvoices.find(item => monthKey(item.competencia) === competenceKey)
-        const paid = paidMonths.has(competenceKey) || String(invoice?.status).toUpperCase() === 'PAGO'
-        const dueDate = invoice?.data_vencimento
+        const matchingPayment = alunoPayments.find(item => paymentCompetence(item, invoiceById) === competenceKey)
+        const adjustment = adjustmentsByCharge.get(adjustmentKey(aluno.id, competence, model))
+        const ignored = String(adjustment?.tipo).toUpperCase() === 'IGNORAR'
+        const paid = Boolean(matchingPayment) || String(invoice?.status).toUpperCase() === 'PAGO'
+        const dueDate = adjustment?.vencimento_ajustado
+          ? dateOnly(adjustment.vencimento_ajustado) || dueDateForCompetence(competence, Number(info.data_vencimento || 10))
+          : invoice?.data_vencimento
           ? dateOnly(invoice.data_vencimento) || dueDateForCompetence(competence, Number(info.data_vencimento || 10))
           : dueDateForCompetence(competence, Number(info.data_vencimento || 10))
         const erro = String(invoice?.status).toUpperCase() === 'ERRO'
-        const late = !paid && dueDate < today
-        const status: FinancialChargeStatus = paid ? 'Pago' : erro ? 'Erro na emissão' : late ? 'Atrasado' : 'A vencer'
+        const late = !paid && !ignored && dueDate < today
+        const status: FinancialChargeStatus = ignored ? 'Desconsiderada' : paid ? 'Pago' : erro ? 'Erro na emissão' : late ? 'Atrasado' : 'A vencer'
 
         charges.push({
           id: `fixo-${aluno.id}-${competenceKey}`,
@@ -191,7 +212,7 @@ export function buildFinancialDossier({
           competenciaLabel: monthLabel(competence),
           modelo: getBillingModelLabel(model),
           modeloCodigo: model,
-          valor: Number(invoice?.valor_total || info.valor_mensalidade || 0),
+          valor: Number(adjustment?.valor_ajustado ?? invoice?.valor_total ?? info.valor_mensalidade ?? 0),
           dataVencimento: isoDate(dueDate),
           vencimento: dueDate.toLocaleDateString('pt-BR'),
           vencimentoOrdem: dueDate.getTime(),
@@ -199,6 +220,10 @@ export function buildFinancialDossier({
           diasAtraso: late ? daysBetween(today, dueDate) : 0,
           invoiceUrl: invoice?.invoice_url || null,
           invoiceId: invoice?.id || null,
+          paymentId: matchingPayment?.id || null,
+          adjustmentId: adjustment?.id || null,
+          adjustmentReason: adjustment?.motivo || null,
+          isAdjusted: Boolean(adjustment && !ignored),
         })
       }
       continue
@@ -208,12 +233,15 @@ export function buildFinancialDossier({
       for (const invoice of alunoInvoices) {
         const competence = monthStart(invoice.competencia)
         if (!competence) continue
+        const adjustment = adjustmentsByCharge.get(adjustmentKey(aluno.id, competence, model))
+        const ignored = String(adjustment?.tipo).toUpperCase() === 'IGNORAR'
         const dueDate = dateOnly(invoice.data_vencimento)
-        const paid = String(invoice.status).toUpperCase() === 'PAGO'
-          || alunoPayments.some(item => item.fatura_id === invoice.id)
+        const matchingPayment = alunoPayments.find(item => item.fatura_id === invoice.id || paymentCompetence(item, invoiceById) === monthKey(competence))
+        const paid = String(invoice.status).toUpperCase() === 'PAGO' || Boolean(matchingPayment)
         const erro = String(invoice.status).toUpperCase() === 'ERRO'
-        const late = Boolean(!paid && dueDate && dueDate < today)
-        const status: FinancialChargeStatus = paid ? 'Pago' : erro ? 'Erro na emissão' : late ? 'Atrasado' : 'A vencer'
+        const adjustedDueDate = adjustment?.vencimento_ajustado ? dateOnly(adjustment.vencimento_ajustado) : dueDate
+        const late = Boolean(!paid && !ignored && adjustedDueDate && adjustedDueDate < today)
+        const status: FinancialChargeStatus = ignored ? 'Desconsiderada' : paid ? 'Pago' : erro ? 'Erro na emissão' : late ? 'Atrasado' : 'A vencer'
 
         charges.push({
           id: `fatura-${invoice.id}`,
@@ -224,14 +252,18 @@ export function buildFinancialDossier({
           competenciaLabel: monthLabel(competence),
           modelo: getBillingModelLabel(model),
           modeloCodigo: model,
-          valor: Number(invoice.valor_total || 0),
-          dataVencimento: dueDate ? isoDate(dueDate) : null,
-          vencimento: dueDate ? dueDate.toLocaleDateString('pt-BR') : 'A definir',
-          vencimentoOrdem: dueDate?.getTime() || competence.getTime(),
+          valor: Number(adjustment?.valor_ajustado ?? invoice.valor_total ?? 0),
+          dataVencimento: adjustedDueDate ? isoDate(adjustedDueDate) : null,
+          vencimento: adjustedDueDate ? adjustedDueDate.toLocaleDateString('pt-BR') : 'A definir',
+          vencimentoOrdem: adjustedDueDate?.getTime() || competence.getTime(),
           status,
-          diasAtraso: late && dueDate ? daysBetween(today, dueDate) : 0,
+          diasAtraso: late && adjustedDueDate ? daysBetween(today, adjustedDueDate) : 0,
           invoiceUrl: invoice.invoice_url || null,
           invoiceId: invoice.id,
+          paymentId: matchingPayment?.id || null,
+          adjustmentId: adjustment?.id || null,
+          adjustmentReason: adjustment?.motivo || null,
+          isAdjusted: Boolean(adjustment && !ignored),
         })
       }
 
@@ -311,7 +343,7 @@ export function getAgingBuckets(charges: FinancialCharge[]): AgingBucket[] {
 }
 
 export function isOpenCharge(charge: FinancialCharge) {
-  return charge.status !== 'Pago'
+  return !['Pago', 'Desconsiderada'].includes(charge.status)
 }
 
 export function isOverdueCharge(charge: FinancialCharge) {

@@ -30,11 +30,14 @@ import {
   Pencil,
   Plus,
   ReceiptText,
+  RotateCcw,
   Settings2,
+  Trash2,
   TrendingUp,
   UsersRound,
   WalletCards,
   Search,
+  X,
 } from 'lucide-react'
 
 const DEFAULT_PENDENTE = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Lotus Music*. Sua cobrança de *{{modelo}}* no valor de *{{valor}}* vence em {{vencimento}}.\n\n{{link}}\nChave PIX: *{{pix}}*\n\nMuito obrigado! 🎶"
@@ -90,10 +93,18 @@ export default function RelatorioFinanceiro() {
   const [filtroExtrato, setFiltroExtrato] = useState('Todos')
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'visao' | 'cobrancas' | 'movimentacoes' | 'analises'>('visao')
-  const [filtroCobrancas, setFiltroCobrancas] = useState<'Todas' | 'Atrasado' | 'A vencer' | 'Pago' | 'Em apuração'>('Todas')
+  const [filtroCobrancas, setFiltroCobrancas] = useState<'Todas' | 'Atrasado' | 'A vencer' | 'Pago' | 'Em apuração' | 'Desconsiderada'>('Todas')
   const [buscaCobranca, setBuscaCobranca] = useState('')
   const [competenciaCobranca, setCompetenciaCobranca] = useState('Todas')
   const [periodoExtrato, setPeriodoExtrato] = useState<'Tudo' | '12 meses' | '3 meses' | 'Mês atual'>('Tudo')
+  const [selectedCharge, setSelectedCharge] = useState<FinancialCharge | null>(null)
+  const [isChargePanelOpen, setIsChargePanelOpen] = useState(false)
+  const [isChargeActionLoading, setIsChargeActionLoading] = useState(false)
+  const [receiveDate, setReceiveDate] = useState(new Date().toISOString().slice(0, 10))
+  const [receiveMethod, setReceiveMethod] = useState('PIX')
+  const [chargeValue, setChargeValue] = useState('')
+  const [chargeDueDate, setChargeDueDate] = useState('')
+  const [chargeReason, setChargeReason] = useState('')
 
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (isMounted) carregarDadosFinanceiros() }, [isMounted])
@@ -112,6 +123,7 @@ export default function RelatorioFinanceiro() {
       { data: allFaturas },
       { data: alunos },
       { data: historicoMes },
+      { data: ajustesCobranca },
     ] = await Promise.all([
       supabase.from('configuracoes').select('chave_pix, mensagem_pendente, mensagem_atrasado, escola_nome, escola_documento, escola_email, escola_telefone, escola_cep, escola_endereco, escola_numero, escola_complemento, escola_bairro, escola_cidade, escola_estado').eq('id', 1).single(),
       supabase.from('pagamentos').select('*'),
@@ -123,6 +135,7 @@ export default function RelatorioFinanceiro() {
         .select('aluno_id, data_aula, status')
         .gte('data_aula', inicioMes)
         .lte('data_aula', `${prefixoMesAtual}-${String(fimMes).padStart(2, '0')}T23:59:59`),
+      supabase.from('ajustes_cobranca').select('*'),
     ])
 
     if (configData) {
@@ -153,6 +166,7 @@ export default function RelatorioFinanceiro() {
       alunos: alunos || [],
       pagamentos,
       faturas,
+      ajustes: ajustesCobranca || [],
       historicoMes: historicoMes || [],
       hoje,
     })
@@ -465,6 +479,123 @@ export default function RelatorioFinanceiro() {
     setIsModalOpen(true)
   }
 
+  const abrirPainelCobranca = (charge: FinancialCharge) => {
+    setSelectedCharge(charge)
+    setReceiveDate(new Date().toISOString().slice(0, 10))
+    setReceiveMethod('PIX')
+    setChargeValue(Number(charge.valor || 0).toFixed(2))
+    setChargeDueDate(charge.dataVencimento || '')
+    setChargeReason(charge.adjustmentReason || '')
+    setIsChargePanelOpen(true)
+  }
+
+  const fecharPainelCobranca = () => {
+    setIsChargePanelOpen(false)
+    setSelectedCharge(null)
+    setChargeReason('')
+  }
+
+  const handleConfirmarRecebimento = async () => {
+    if (!selectedCharge || Number(chargeValue) <= 0) return alert('Informe um valor recebido válido.')
+    setIsChargeActionLoading(true)
+    const competence = selectedCharge.competencia || `${new Date().toISOString().slice(0, 7)}-01`
+    const { error } = await supabase.from('pagamentos').insert([{
+      aluno_id: selectedCharge.alunoId,
+      fatura_id: selectedCharge.invoiceId || null,
+      valor: Number(chargeValue),
+      status: 'Pago',
+      data_pagamento: receiveDate,
+      competencia: competence,
+      metodo_pagamento: receiveMethod,
+    }])
+    if (!error && selectedCharge.invoiceId) {
+      await supabase.from('faturas').update({
+        status: 'PAGO',
+        pago_em: `${receiveDate}T12:00:00-03:00`,
+        atualizado_em: new Date().toISOString(),
+      }).eq('id', selectedCharge.invoiceId)
+    }
+    setIsChargeActionLoading(false)
+    if (error) return alert(`Não foi possível registrar o recebimento: ${error.message}`)
+    fecharPainelCobranca()
+    await carregarDadosFinanceiros()
+  }
+
+  const handleSalvarAjusteCobranca = async () => {
+    if (!selectedCharge?.competencia) return alert('Esta cobrança não possui uma competência mensal ajustável.')
+    if (!chargeReason.trim()) return alert('Informe o motivo da correção para manter o histórico organizado.')
+    if (Number(chargeValue) < 0) return alert('Informe um valor válido.')
+    setIsChargeActionLoading(true)
+    const { error } = await supabase.from('ajustes_cobranca').upsert({
+      aluno_id: selectedCharge.alunoId,
+      competencia: selectedCharge.competencia,
+      modelo_faturamento: selectedCharge.modeloCodigo,
+      tipo: 'AJUSTAR',
+      valor_ajustado: Number(chargeValue),
+      vencimento_ajustado: chargeDueDate || null,
+      motivo: chargeReason.trim(),
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'aluno_id,competencia,modelo_faturamento' })
+    setIsChargeActionLoading(false)
+    if (error) return alert(`Não foi possível corrigir a cobrança: ${error.message}`)
+    fecharPainelCobranca()
+    await carregarDadosFinanceiros()
+  }
+
+  const handleDesconsiderarCobranca = async () => {
+    if (!selectedCharge?.competencia) return alert('Esta cobrança não pode ser desconsiderada por competência.')
+    if (!chargeReason.trim()) return alert('Informe por que esta cobrança deve ser desconsiderada.')
+    if (!window.confirm(`Desconsiderar a cobrança de ${selectedCharge.competenciaLabel} para ${selectedCharge.nome}? Ela continuará disponível no filtro "Desconsideradas".`)) return
+    setIsChargeActionLoading(true)
+    const { error } = await supabase.from('ajustes_cobranca').upsert({
+      aluno_id: selectedCharge.alunoId,
+      competencia: selectedCharge.competencia,
+      modelo_faturamento: selectedCharge.modeloCodigo,
+      tipo: 'IGNORAR',
+      valor_ajustado: null,
+      vencimento_ajustado: null,
+      motivo: chargeReason.trim(),
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'aluno_id,competencia,modelo_faturamento' })
+    setIsChargeActionLoading(false)
+    if (error) return alert(`Não foi possível desconsiderar a cobrança: ${error.message}`)
+    fecharPainelCobranca()
+    await carregarDadosFinanceiros()
+  }
+
+  const handleRestaurarCobranca = async () => {
+    if (!selectedCharge?.adjustmentId) return
+    setIsChargeActionLoading(true)
+    const { error } = await supabase.from('ajustes_cobranca').delete().eq('id', selectedCharge.adjustmentId)
+    setIsChargeActionLoading(false)
+    if (error) return alert(`Não foi possível restaurar a cobrança: ${error.message}`)
+    fecharPainelCobranca()
+    await carregarDadosFinanceiros()
+  }
+
+  const handleReabrirCobranca = async () => {
+    if (!selectedCharge) return
+    if (!window.confirm(`Remover a baixa de ${selectedCharge.competenciaLabel}? O valor sairá do caixa e a cobrança voltará a ficar pendente.`)) return
+    setIsChargeActionLoading(true)
+    let errorMessage = ''
+    if (selectedCharge.paymentId) {
+      const { error } = await supabase.from('pagamentos').delete().eq('id', selectedCharge.paymentId)
+      if (error) errorMessage = error.message
+    }
+    if (!errorMessage && selectedCharge.invoiceId) {
+      const { error } = await supabase.from('faturas').update({
+        status: 'PENDENTE',
+        pago_em: null,
+        atualizado_em: new Date().toISOString(),
+      }).eq('id', selectedCharge.invoiceId)
+      if (error) errorMessage = error.message
+    }
+    setIsChargeActionLoading(false)
+    if (errorMessage) return alert(`Não foi possível reabrir a cobrança: ${errorMessage}`)
+    fecharPainelCobranca()
+    await carregarDadosFinanceiros()
+  }
+
   const handleSalvarConfig = async (e: React.FormEvent) => {
     e.preventDefault(); setIsSavingConfig(true)
     const { error } = await supabase.from('configuracoes').upsert({
@@ -547,6 +678,8 @@ export default function RelatorioFinanceiro() {
   const cobrancasAVencer = cobrancas.filter(item => ['A vencer', 'Sem créditos'].includes(item.status))
   const cobrancasPagas = cobrancas.filter(item => item.status === 'Pago')
   const cobrancasEmApuracao = cobrancas.filter(item => item.status === 'Em apuração')
+  const cobrancasDesconsideradas = cobrancas.filter(item => item.status === 'Desconsiderada')
+  const cobrancasAtivas = cobrancas.filter(item => item.status !== 'Desconsiderada')
   const agingBuckets = getAgingBuckets(cobrancas)
   const competencias = Array.from(new Map(
     cobrancas
@@ -563,6 +696,8 @@ export default function RelatorioFinanceiro() {
     if (filtroCobrancas === 'A vencer') matchesStatus = ['A vencer', 'Sem créditos'].includes(item.status)
     if (filtroCobrancas === 'Pago') matchesStatus = item.status === 'Pago'
     if (filtroCobrancas === 'Em apuração') matchesStatus = item.status === 'Em apuração'
+    if (filtroCobrancas === 'Desconsiderada') matchesStatus = item.status === 'Desconsiderada'
+    if (filtroCobrancas === 'Todas') matchesStatus = item.status !== 'Desconsiderada'
     return matchesSearch && matchesCompetence && matchesStatus
   })
   const maiorDespesa = [...dadosGraficoPizza].sort((a, b) => Number(b.value) - Number(a.value))[0]
@@ -674,9 +809,9 @@ export default function RelatorioFinanceiro() {
               {alunosPendentes.slice(0, 6).map(aluno => {
                 const isCritical = isOverdueCharge(aluno)
                 return (
-                  <div key={aluno.id} className="px-5 py-4 grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_120px_auto] gap-3 items-center hover:bg-[#faf9f6] transition-colors">
+                  <div key={aluno.id} role="button" tabIndex={0} onClick={() => abrirPainelCobranca(aluno)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') abrirPainelCobranca(aluno) }} className="px-5 py-4 grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_120px_auto] gap-3 items-center hover:bg-[#faf9f6] transition-colors cursor-pointer outline-none focus:bg-[#f5f7f3]">
                     <div className="min-w-0">
-                      <button onClick={() => router.push(`/alunos/${aluno.alunoId}`)} className="text-sm font-semibold text-slate-900 truncate block max-w-full hover:text-[#1f4a3a]">{aluno.nome}</button>
+                      <span className="text-sm font-semibold text-slate-900 truncate block max-w-full">{aluno.nome}</span>
                       <p className="text-[11px] text-slate-500 mt-1">{aluno.competenciaLabel} · {aluno.vencimento}{aluno.diasAtraso > 0 ? ` · ${aluno.diasAtraso} dias em atraso` : ''}</p>
                     </div>
                     <div className="hidden sm:block text-right">
@@ -684,8 +819,8 @@ export default function RelatorioFinanceiro() {
                       <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-[9px] font-semibold ${isCritical ? 'bg-rose-50 text-rose-700' : 'bg-[#fbf1df] text-[#8a5e2f]'}`}>{aluno.status}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {aluno.invoiceId && <button onClick={() => window.open(`/faturas/${aluno.invoiceId}`, '_blank')} aria-label="Abrir fatura" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center hover:text-[#1f4a3a]"><FileText size={14} /></button>}
-                      <button onClick={() => enviarCobrancaWhatsApp(aluno)} aria-label="Lembrar pelo WhatsApp" className="h-8 w-8 rounded-lg bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center hover:bg-[#d7e5da]"><MessageCircle size={14} /></button>
+                      {aluno.invoiceId && <button onClick={event => { event.stopPropagation(); window.open(`/faturas/${aluno.invoiceId}`, '_blank') }} aria-label="Abrir fatura" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center hover:text-[#1f4a3a]"><FileText size={14} /></button>}
+                      <button onClick={event => { event.stopPropagation(); enviarCobrancaWhatsApp(aluno) }} aria-label="Lembrar pelo WhatsApp" className="h-8 w-8 rounded-lg bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center hover:bg-[#d7e5da]"><MessageCircle size={14} /></button>
                     </div>
                   </div>
                 )
@@ -738,11 +873,12 @@ export default function RelatorioFinanceiro() {
             </div>
             <div className="flex rounded-xl border border-[#dfded7] bg-[#f7f7f3] p-1 overflow-x-auto">
               {[
-                { id: 'Todas', label: 'Todas', count: cobrancas.length },
+                { id: 'Todas', label: 'Todas', count: cobrancasAtivas.length },
                 { id: 'Atrasado', label: 'Atrasadas', count: cobrancasAtrasadas.length },
                 { id: 'A vencer', label: 'A vencer', count: cobrancasAVencer.length },
                 { id: 'Em apuração', label: 'Em apuração', count: cobrancasEmApuracao.length },
                 { id: 'Pago', label: 'Pagas', count: cobrancasPagas.length },
+                { id: 'Desconsiderada', label: 'Desconsideradas', count: cobrancasDesconsideradas.length },
               ].map(option => (
                 <button key={option.id} onClick={() => setFiltroCobrancas(option.id as typeof filtroCobrancas)} className={`px-3 py-2 rounded-lg text-[10px] font-semibold whitespace-nowrap ${filtroCobrancas === option.id ? 'bg-white text-[#1f4a3a] shadow-sm' : 'text-slate-500'}`}>
                   {option.label} · {option.count}
@@ -772,11 +908,13 @@ export default function RelatorioFinanceiro() {
               {cobrancasFiltradas.map(aluno => {
                 const isCritical = isOverdueCharge(aluno)
                 const isPaid = aluno.status === 'Pago'
+                const isIgnored = aluno.status === 'Desconsiderada'
                 return (
-                  <div key={aluno.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_120px_130px_120px_120px_110px] gap-3 md:gap-4 px-5 py-4 md:items-center hover:bg-[#faf9f6] transition-colors">
+                  <div key={aluno.id} role="button" tabIndex={0} onClick={() => abrirPainelCobranca(aluno)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') abrirPainelCobranca(aluno) }} className={`grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_120px_130px_120px_120px_110px] gap-3 md:gap-4 px-5 py-4 md:items-center hover:bg-[#faf9f6] transition-colors cursor-pointer outline-none focus:bg-[#f5f7f3] ${isIgnored ? 'opacity-60' : ''}`}>
                     <div className="min-w-0">
-                      <button onClick={() => router.push(`/alunos/${aluno.alunoId}`)} className="text-sm font-semibold text-slate-900 truncate hover:text-[#1f4a3a]">{aluno.nome}</button>
-                      <span className={`ml-2 inline-flex px-2 py-0.5 rounded-full text-[9px] font-semibold ${isCritical ? 'bg-rose-50 text-rose-700' : isPaid ? 'bg-emerald-50 text-emerald-700' : aluno.status === 'Em apuração' ? 'bg-slate-100 text-slate-600' : 'bg-[#fbf1df] text-[#8a5e2f]'}`}>{aluno.status}</span>
+                      <span className="text-sm font-semibold text-slate-900 truncate">{aluno.nome}</span>
+                      <span className={`ml-2 inline-flex px-2 py-0.5 rounded-full text-[9px] font-semibold ${isCritical ? 'bg-rose-50 text-rose-700' : isPaid ? 'bg-emerald-50 text-emerald-700' : aluno.status === 'Em apuração' || isIgnored ? 'bg-slate-100 text-slate-600' : 'bg-[#fbf1df] text-[#8a5e2f]'}`}>{aluno.status}</span>
+                      {aluno.isAdjusted && <span className="ml-1.5 inline-flex text-[9px] font-semibold text-[#1f4a3a]">Ajustada</span>}
                       {typeof aluno.saldo === 'number' && <p className="text-[10px] text-slate-500 mt-1">Saldo: {aluno.saldo} créditos</p>}
                     </div>
                     <p className="text-xs font-semibold text-slate-700">{aluno.competenciaLabel}</p>
@@ -787,9 +925,9 @@ export default function RelatorioFinanceiro() {
                     </div>
                     <p className="text-sm font-semibold text-slate-900">{formatCurrencyBR(aluno.valor)}</p>
                     <div className="flex md:justify-end gap-1.5">
-                      {aluno.invoiceId && <button onClick={() => window.open(`/faturas/${aluno.invoiceId}`, '_blank')} aria-label="Abrir fatura" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center"><FileText size={14} /></button>}
-                      {!isPaid && aluno.status !== 'Em apuração' && <button onClick={() => enviarCobrancaWhatsApp(aluno)} aria-label="Enviar cobrança pelo WhatsApp" className="h-8 w-8 rounded-lg bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center"><MessageCircle size={14} /></button>}
-                      <button onClick={() => router.push(`/alunos/${aluno.alunoId}`)} aria-label="Abrir perfil do aluno" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center"><ChevronRight size={14} /></button>
+                      {aluno.invoiceId && <button onClick={event => { event.stopPropagation(); window.open(`/faturas/${aluno.invoiceId}`, '_blank') }} aria-label="Abrir fatura" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center"><FileText size={14} /></button>}
+                      {!isPaid && !isIgnored && aluno.status !== 'Em apuração' && <button onClick={event => { event.stopPropagation(); enviarCobrancaWhatsApp(aluno) }} aria-label="Enviar cobrança pelo WhatsApp" className="h-8 w-8 rounded-lg bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center"><MessageCircle size={14} /></button>}
+                      <button onClick={event => { event.stopPropagation(); abrirPainelCobranca(aluno) }} aria-label="Gerenciar cobrança" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center"><ChevronRight size={14} /></button>
                     </div>
                   </div>
                 )
@@ -1062,6 +1200,113 @@ export default function RelatorioFinanceiro() {
         </motion.div>
       </div>
       </>)}
+
+      <AnimatePresence>
+        {isChargePanelOpen && selectedCharge && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={fecharPainelCobranca} className="fixed inset-0 z-[70] bg-[#10251d]/30 backdrop-blur-[2px] flex items-end md:items-stretch justify-end">
+            <motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} onClick={event => event.stopPropagation()} className="w-full md:max-w-[520px] max-h-[94vh] md:max-h-none bg-[#fbfaf7] border-l border-[#dcd9d0] shadow-2xl rounded-t-[2rem] md:rounded-none overflow-y-auto custom-scrollbar">
+              <div className="sticky top-0 z-10 px-5 md:px-7 py-5 bg-[#fbfaf7]/95 backdrop-blur-xl border-b border-[#dfded7] flex items-start justify-between gap-4">
+                <div>
+                  <div className="premium-kicker mb-1.5">Gestão da cobrança</div>
+                  <h2 className="text-xl font-semibold text-slate-900">{selectedCharge.nome}</h2>
+                  <p className="text-xs text-slate-500 mt-1">{selectedCharge.competenciaLabel} · {selectedCharge.modelo}</p>
+                </div>
+                <button type="button" onClick={fecharPainelCobranca} disabled={isChargeActionLoading} aria-label="Fechar painel" className="h-9 w-9 rounded-full border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center hover:text-slate-900 disabled:opacity-50"><X size={17} /></button>
+              </div>
+
+              <div className="p-5 md:p-7 space-y-5">
+                <section className="overflow-hidden rounded-2xl border border-[#d7d4cb] bg-white">
+                  <div className="p-5 bg-[#173f32] text-white flex items-end justify-between gap-4">
+                    <div>
+                      <p className="text-[9px] uppercase tracking-[0.12em] font-semibold text-white/55">Valor da cobrança</p>
+                      <p className="text-3xl font-semibold mt-1">{formatCurrencyBR(selectedCharge.valor)}</p>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold ${isOverdueCharge(selectedCharge) ? 'bg-rose-400/20 text-rose-100' : selectedCharge.status === 'Pago' ? 'bg-emerald-300/20 text-emerald-100' : 'bg-white/10 text-white/80'}`}>{selectedCharge.status}</span>
+                  </div>
+                  <div className="grid grid-cols-2 divide-x divide-[#e7e4dc]">
+                    <div className="p-4"><p className="text-[9px] uppercase tracking-[0.1em] font-semibold text-slate-400">Vencimento</p><p className="text-sm font-semibold text-slate-800 mt-1">{selectedCharge.vencimento}</p></div>
+                    <div className="p-4"><p className="text-[9px] uppercase tracking-[0.1em] font-semibold text-slate-400">Referência</p><p className="text-sm font-semibold text-slate-800 mt-1">{selectedCharge.invoiceId ? 'Fatura emitida' : 'Mensalidade prevista'}</p></div>
+                  </div>
+                  {selectedCharge.adjustmentReason && <div className="px-4 py-3 border-t border-[#e7e4dc] bg-[#faf9f6] text-[11px] text-slate-600"><strong>Registro:</strong> {selectedCharge.adjustmentReason}</div>}
+                </section>
+
+                {isOpenCharge(selectedCharge) && selectedCharge.status !== 'Em apuração' && (
+                  <section className="rounded-2xl border border-[#d7d4cb] bg-white p-5">
+                    <div className="mb-4">
+                      <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><CheckCircle2 size={17} className="text-emerald-700" /> Registrar recebimento</h3>
+                      <p className="text-[11px] text-slate-500 mt-1">Dá baixa nesta competência, entra no caixa e libera o recibo.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-semibold text-slate-500">Valor recebido</label>
+                        <input type="number" min="0.01" step="0.01" value={chargeValue} onChange={event => setChargeValue(event.target.value)} className="mt-1 w-full h-11 px-3 rounded-xl border border-[#dcd9d0] bg-[#fbfaf7] text-slate-900 font-semibold outline-none focus:border-[#6e8f7e]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500">Data</label>
+                        <input type="date" value={receiveDate} onChange={event => setReceiveDate(event.target.value)} className="mt-1 w-full h-11 px-3 rounded-xl border border-[#dcd9d0] bg-[#fbfaf7] text-xs text-slate-700 outline-none focus:border-[#6e8f7e]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500">Forma</label>
+                        <select value={receiveMethod} onChange={event => setReceiveMethod(event.target.value)} className="mt-1 w-full h-11 px-3 rounded-xl border border-[#dcd9d0] bg-[#fbfaf7] text-xs text-slate-700 outline-none focus:border-[#6e8f7e]">
+                          <option value="PIX">PIX</option><option value="Dinheiro">Dinheiro</option><option value="Cartão">Cartão</option><option value="Transferência">Transferência</option>
+                        </select>
+                      </div>
+                    </div>
+                    <button type="button" onClick={handleConfirmarRecebimento} disabled={isChargeActionLoading} className="mt-4 w-full h-11 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold hover:bg-[#17382c] disabled:opacity-50">{isChargeActionLoading ? 'Registrando...' : 'Marcar como recebido'}</button>
+                  </section>
+                )}
+
+                {selectedCharge.status === 'Pago' && (
+                  <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5">
+                    <h3 className="text-sm font-semibold text-emerald-900">Pagamento confirmado</h3>
+                    <p className="text-[11px] leading-relaxed text-emerald-800/75 mt-1">Se esta baixa foi criada por engano ou era apenas um teste, você pode removê-la. O valor sairá do caixa e a competência voltará para a carteira.</p>
+                    <button type="button" onClick={handleReabrirCobranca} disabled={isChargeActionLoading} className="mt-4 w-full h-10 rounded-xl border border-emerald-300 bg-white text-emerald-800 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><RotateCcw size={14} /> Reabrir cobrança / excluir baixa</button>
+                  </section>
+                )}
+
+                {selectedCharge.status === 'Desconsiderada' ? (
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-sm font-semibold text-slate-900">Cobrança desconsiderada</h3>
+                    <p className="text-[11px] text-slate-500 mt-1">Ela não entra nos valores em aberto ou em atraso, mas permanece registrada para auditoria.</p>
+                    <button type="button" onClick={handleRestaurarCobranca} disabled={isChargeActionLoading} className="mt-4 w-full h-10 rounded-xl border border-[#d7d4cb] text-slate-700 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><RotateCcw size={14} /> Restaurar cobrança</button>
+                  </section>
+                ) : selectedCharge.status !== 'Pago' && selectedCharge.status !== 'Em apuração' && selectedCharge.competencia && selectedCharge.modeloCodigo !== 'CREDITOS' && (
+                  <section className="rounded-2xl border border-[#d7d4cb] bg-white p-5">
+                    <div className="mb-4">
+                      <h3 className="text-sm font-semibold text-slate-900">Corrigir ou desconsiderar</h3>
+                      <p className="text-[11px] text-slate-500 mt-1">A correção fica registrada sem apagar o histórico original.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500">Valor correto</label>
+                        <input type="number" min="0" step="0.01" value={chargeValue} onChange={event => setChargeValue(event.target.value)} className="mt-1 w-full h-11 px-3 rounded-xl border border-[#dcd9d0] bg-[#fbfaf7] text-xs text-slate-700 outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500">Vencimento correto</label>
+                        <input type="date" value={chargeDueDate} onChange={event => setChargeDueDate(event.target.value)} className="mt-1 w-full h-11 px-3 rounded-xl border border-[#dcd9d0] bg-[#fbfaf7] text-xs text-slate-700 outline-none" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-semibold text-slate-500">Motivo da alteração</label>
+                        <textarea value={chargeReason} onChange={event => setChargeReason(event.target.value)} placeholder="Ex.: cadastro de teste, bolsa concedida, valor corrigido..." className="mt-1 w-full min-h-20 p-3 rounded-xl border border-[#dcd9d0] bg-[#fbfaf7] text-xs text-slate-700 outline-none resize-none" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
+                      <button type="button" onClick={handleSalvarAjusteCobranca} disabled={isChargeActionLoading} className="h-10 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold disabled:opacity-50">Salvar correção</button>
+                      <button type="button" onClick={handleDesconsiderarCobranca} disabled={isChargeActionLoading} className="h-10 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><Trash2 size={14} /> Desconsiderar cobrança</button>
+                    </div>
+                    {selectedCharge.isAdjusted && <button type="button" onClick={handleRestaurarCobranca} disabled={isChargeActionLoading} className="mt-2 w-full h-9 text-[11px] font-semibold text-slate-500 hover:text-slate-800 disabled:opacity-50">Restaurar valor e vencimento originais</button>}
+                  </section>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pb-3">
+                  {selectedCharge.invoiceId && <button type="button" onClick={() => window.open(`/faturas/${selectedCharge.invoiceId}`, '_blank')} className="h-10 rounded-xl border border-[#d7d4cb] bg-white text-slate-700 text-xs font-semibold flex items-center justify-center gap-2"><FileText size={14} /> Abrir fatura</button>}
+                  <button type="button" onClick={() => router.push(`/alunos/${selectedCharge.alunoId}`)} className="h-10 rounded-xl border border-[#d7d4cb] bg-white text-slate-700 text-xs font-semibold flex items-center justify-center gap-2"><UsersRound size={14} /> Abrir perfil do aluno</button>
+                </div>
+              </div>
+            </motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isConfigModalOpen && (
