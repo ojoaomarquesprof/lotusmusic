@@ -64,15 +64,15 @@ export default function PerfilAluno() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false); const [editStatus, setEditStatus] = useState('Ativo'); const [editNome, setEditNome] = useState(''); const [editEmail, setEditEmail] = useState(''); const [editTel, setEditTel] = useState(''); const [editCpf, setEditCpf] = useState(''); const [editDataNascimento, setEditDataNascimento] = useState('')
   const [editCep, setEditCep] = useState(''); const [editEndereco, setEditEndereco] = useState(''); const [editNumero, setEditNumero] = useState(''); const [editComplemento, setEditComplemento] = useState(''); const [editBairro, setEditBairro] = useState(''); const [editCidade, setEditCidade] = useState(''); const [editEstado, setEditEstado] = useState('')
   const [editComoConheceu, setEditComoConheceu] = useState(''); const [editIndicacaoNome, setEditIndicacaoNome] = useState(''); const [editValor, setEditValor] = useState(''); const [editVencimento, setEditVencimento] = useState('')
-  const [editModeloFaturamento, setEditModeloFaturamento] = useState<BillingModel>('VENCIMENTO_FIXO'); const [editValorPorAula, setEditValorPorAula] = useState('')
+  const [editModeloFaturamento, setEditModeloFaturamento] = useState<BillingModel>('VENCIMENTO_FIXO'); const [editValorPorAula, setEditValorPorAula] = useState(''); const [editInicioFaturamento, setEditInicioFaturamento] = useState(new Date().toISOString().slice(0, 7))
   const [editAvatarUrl, setEditAvatarUrl] = useState(''); const [editFotoArquivo, setEditFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null); const [showCropModal, setShowCropModal] = useState(false); const [imageToCrop, setImageToCrop] = useState<string | null>(null); const [crop, setCrop] = useState({ x: 0, y: 0 }); const [zoom, setZoom] = useState(1); const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
 
   const [editAgendas, setEditAgendas] = useState<any[]>([])
 
   const [isClassModalOpen, setIsClassModalOpen] = useState(false); const [dataAula, setDataAula] = useState(new Date().toISOString().split('T')[0]); const [horaInicioAula, setHoraInicioAula] = useState('08:00'); const [horaFimAula, setHoraFimAula] = useState('09:00'); const [statusAula, setStatusAula] = useState('Realizada'); const [obsAula, setObsAula] = useState('')
-  const [isPayModalOpen, setIsPayModalOpen] = useState(false); const [payData, setPayData] = useState(new Date().toISOString().split('T')[0]); const [payMetodo, setPayMetodo] = useState('PIX'); const [payValor, setPayValor] = useState(''); const [payFaturaId, setPayFaturaId] = useState('')
+  const [isPayModalOpen, setIsPayModalOpen] = useState(false); const [payData, setPayData] = useState(new Date().toISOString().split('T')[0]); const [payMetodo, setPayMetodo] = useState('PIX'); const [payValor, setPayValor] = useState(''); const [payFaturaId, setPayFaturaId] = useState(''); const [payCompetencia, setPayCompetencia] = useState(new Date().toISOString().slice(0, 7))
 
-  const [isEditPayModalOpen, setIsEditPayModalOpen] = useState(false); const [editPayId, setEditPayId] = useState(''); const [editPayData, setEditPayData] = useState(''); const [editPayMetodo, setEditPayMetodo] = useState('PIX'); const [editPayValor, setEditPayValor] = useState(''); const [editPayStatus, setEditPayStatus] = useState('Pago'); const [editPayFaturaId, setEditPayFaturaId] = useState('');
+  const [isEditPayModalOpen, setIsEditPayModalOpen] = useState(false); const [editPayId, setEditPayId] = useState(''); const [editPayData, setEditPayData] = useState(''); const [editPayMetodo, setEditPayMetodo] = useState('PIX'); const [editPayValor, setEditPayValor] = useState(''); const [editPayStatus, setEditPayStatus] = useState('Pago'); const [editPayFaturaId, setEditPayFaturaId] = useState(''); const [editPayCompetencia, setEditPayCompetencia] = useState(new Date().toISOString().slice(0, 7));
 
   const [isMsgModalOpen, setIsMsgModalOpen] = useState(false)
   const [msgTitulo, setMsgTitulo] = useState('Aviso da Secretaria')
@@ -132,7 +132,7 @@ export default function PerfilAluno() {
   const faturasDisponiveisPagamento = faturas.filter(fatura => !['PAGO', 'CANCELADO'].includes(String(fatura.status).toUpperCase()))
 
   const abrirModalEdicao = () => { 
-    setEditStatus(infoMatricula?.status || 'Ativo'); setEditNome(aluno.nome_completo || ''); setEditEmail(aluno.email || ''); setEditTel(aluno.telefone || ''); setEditCpf(aluno.cpf || ''); setEditDataNascimento(isoToDateInput(aluno.data_nascimento)); setEditCep(aluno.cep || ''); setEditEndereco(aluno.endereco || ''); setEditNumero(aluno.numero || ''); setEditComplemento(aluno.complemento || ''); setEditBairro(aluno.bairro || ''); setEditCidade(aluno.cidade || ''); setEditEstado(aluno.estado || ''); setEditComoConheceu(infoMatricula?.como_conheceu || ''); setEditIndicacaoNome(infoMatricula?.indicacao_nome || ''); setEditValor(infoMatricula?.valor_mensalidade || ''); setEditVencimento(infoMatricula?.data_vencimento || ''); setEditModeloFaturamento(getBillingModel(infoMatricula)); setEditValorPorAula(infoMatricula?.valor_por_aula || ''); setEditAvatarUrl(aluno.avatar_url || ''); setFotoPreview(aluno.avatar_url || null); setEditFotoArquivo(null);
+    setEditStatus(infoMatricula?.status || 'Ativo'); setEditNome(aluno.nome_completo || ''); setEditEmail(aluno.email || ''); setEditTel(aluno.telefone || ''); setEditCpf(aluno.cpf || ''); setEditDataNascimento(isoToDateInput(aluno.data_nascimento)); setEditCep(aluno.cep || ''); setEditEndereco(aluno.endereco || ''); setEditNumero(aluno.numero || ''); setEditComplemento(aluno.complemento || ''); setEditBairro(aluno.bairro || ''); setEditCidade(aluno.cidade || ''); setEditEstado(aluno.estado || ''); setEditComoConheceu(infoMatricula?.como_conheceu || ''); setEditIndicacaoNome(infoMatricula?.indicacao_nome || ''); setEditValor(infoMatricula?.valor_mensalidade || ''); setEditVencimento(infoMatricula?.data_vencimento || ''); setEditModeloFaturamento(getBillingModel(infoMatricula)); setEditValorPorAula(infoMatricula?.valor_por_aula || ''); setEditInicioFaturamento(String(infoMatricula?.inicio_faturamento || infoMatricula?.modelo_faturamento_desde || aluno.created_at || new Date().toISOString()).slice(0, 7)); setEditAvatarUrl(aluno.avatar_url || ''); setFotoPreview(aluno.avatar_url || null); setEditFotoArquivo(null);
     
     if (aulasFixas.length > 0) { 
       setEditAgendas(aulasFixas.map(a => ({
@@ -262,6 +262,7 @@ export default function PerfilAluno() {
       creditos_por_pagamento: 4,
       valor_por_aula: editModeloFaturamento === 'MENSAL_FECHADO' ? Number(editValorPorAula) : null,
       prazo_vencimento_dias: 7,
+      inicio_faturamento: `${editInicioFaturamento}-01`,
       status: editStatus,
       como_conheceu: editComoConheceu,
       indicacao_nome: editComoConheceu === 'Indicação' ? editIndicacaoNome : null,
@@ -324,6 +325,7 @@ export default function PerfilAluno() {
     const totalMesFechado = historicoAulas.filter(h => String(h.data_aula).startsWith(prefixo) && isBillableClass(h.status)).length * Number(infoMatricula?.valor_por_aula || 0);
     const faturaAberta = faturasDisponiveisPagamento[0]
     setPayFaturaId(faturaAberta?.id || '')
+    setPayCompetencia(String(faturaAberta?.competencia || new Date().toISOString()).slice(0, 7))
     setPayValor(faturaAberta ? Number(faturaAberta.valor_total || 0).toFixed(2) : modeloFaturamento === 'MENSAL_FECHADO' ? totalMesFechado.toFixed(2) : infoMatricula?.valor_mensalidade || '');
     setPayData(new Date().toISOString().split('T')[0]);
     setPayMetodo('PIX');
@@ -338,6 +340,7 @@ export default function PerfilAluno() {
       valor: parseFloat(payValor),
       status: 'Pago',
       data_pagamento: payData,
+      competencia: `${payCompetencia}-01`,
       metodo_pagamento: payMetodo,
     }])
     if (!error && payFaturaId) {
@@ -348,11 +351,11 @@ export default function PerfilAluno() {
     setIsPayModalOpen(false)
     carregarDados()
   }
-  const abrirModalEdicaoPagamento = (pg: any) => { setEditPayId(pg.id); setEditPayData(pg.data_pagamento.split('T')[0]); setEditPayMetodo(pg.metodo_pagamento || 'PIX'); setEditPayValor(pg.valor); setEditPayStatus(pg.status || 'Pendente'); setEditPayFaturaId(pg.fatura_id || ''); setIsEditPayModalOpen(true); }
+  const abrirModalEdicaoPagamento = (pg: any) => { setEditPayId(pg.id); setEditPayData(pg.data_pagamento.split('T')[0]); setEditPayMetodo(pg.metodo_pagamento || 'PIX'); setEditPayValor(pg.valor); setEditPayStatus(pg.status || 'Pendente'); setEditPayFaturaId(pg.fatura_id || ''); setEditPayCompetencia(String(pg.competencia || pg.data_pagamento).slice(0, 7)); setIsEditPayModalOpen(true); }
   const handleSalvarEdicaoPagamento = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
-    await supabase.from('pagamentos').update({ valor: parseFloat(editPayValor), data_pagamento: editPayData, metodo_pagamento: editPayMetodo, status: editPayStatus, fatura_id: editPayFaturaId || null }).eq('id', editPayId)
+    await supabase.from('pagamentos').update({ valor: parseFloat(editPayValor), data_pagamento: editPayData, competencia: `${editPayCompetencia}-01`, metodo_pagamento: editPayMetodo, status: editPayStatus, fatura_id: editPayFaturaId || null }).eq('id', editPayId)
     if (editPayFaturaId) {
       const confirmado = isConfirmedPayment(editPayStatus)
       await supabase.from('faturas').update({
@@ -828,7 +831,7 @@ export default function PerfilAluno() {
               <div className="max-h-[470px] overflow-y-auto custom-scrollbar divide-y divide-[#ebe9e3]">
                 {pagamentos.map(pg => (
                   <button key={pg.id} onClick={() => abrirModalEdicaoPagamento(pg)} className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-[#faf9f6] transition-colors">
-                    <div><p className="text-sm font-semibold text-slate-900">{new Date(pg.data_pagamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p><p className="text-[11px] text-slate-500 mt-1">{pg.metodo_pagamento || 'Forma não informada'}</p></div>
+                    <div><p className="text-sm font-semibold text-slate-900">{new Date(pg.data_pagamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p><p className="text-[11px] text-slate-500 mt-1">{pg.metodo_pagamento || 'Forma não informada'} · Competência {new Date(`${String(pg.competencia || pg.data_pagamento).slice(0, 7)}-01T12:00:00`).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('.', '')}</p></div>
                     <div className="text-right"><p className={`text-sm font-semibold ${isConfirmedPayment(pg) ? 'text-emerald-700' : 'text-[#a56a32]'}`}>{formatCurrencyBR(pg.valor)}</p><p className={`text-[9px] font-semibold uppercase mt-1 ${isConfirmedPayment(pg) ? 'text-emerald-600' : 'text-[#a56a32]'}`}>{isConfirmedPayment(pg) ? 'Confirmado' : 'Pendente'}</p></div>
                   </button>
                 ))}
@@ -1164,6 +1167,11 @@ export default function PerfilAluno() {
                   <label className="text-xs font-semibold text-slate-600 ml-1">Valor</label>
                   <input type="number" step="0.01" required value={payValor} onChange={e => setPayValor(e.target.value)} className={`w-full p-3.5 rounded-xl bg-white/50 border border-white/60 font-bold text-xl text-emerald-600 focus:bg-white/80 focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none shadow-inner mt-1`} />
                 </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 ml-1">Competência quitada</label>
+                  <input type="month" required value={payCompetencia} onChange={e => setPayCompetencia(e.target.value)} className={inputClass} />
+                  <p className="mt-2 text-[10px] text-slate-500">Escolha o mês ao qual este pagamento pertence. É isso que retira a mensalidade do dossiê em aberto.</p>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-semibold text-slate-600 ml-1">Data</label>
@@ -1182,7 +1190,10 @@ export default function PerfilAluno() {
                     <select value={payFaturaId} onChange={e => {
                       setPayFaturaId(e.target.value)
                       const fatura = faturasDisponiveisPagamento.find(item => item.id === e.target.value)
-                      if (fatura) setPayValor(Number(fatura.valor_total || 0).toFixed(2))
+                      if (fatura) {
+                        setPayValor(Number(fatura.valor_total || 0).toFixed(2))
+                        setPayCompetencia(String(fatura.competencia).slice(0, 7))
+                      }
                     }} className={inputClass}>
                       <option value="">Pagamento avulso</option>
                       {faturasDisponiveisPagamento.map(fatura => (
@@ -1214,6 +1225,10 @@ export default function PerfilAluno() {
                 <div>
                   <label className="text-xs font-semibold text-slate-600 ml-1">Valor Pago</label>
                   <input type="number" step="0.01" required value={editPayValor} onChange={e => setEditPayValor(e.target.value)} className={`w-full p-3.5 rounded-xl bg-white/50 border border-white/60 font-bold text-xl text-emerald-600 focus:bg-white/80 focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none shadow-inner mt-1`} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 ml-1">Competência quitada</label>
+                  <input type="month" required value={editPayCompetencia} onChange={e => setEditPayCompetencia(e.target.value)} className={inputClass} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -1418,6 +1433,11 @@ export default function PerfilAluno() {
                   <div className="space-y-4">
                     <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-emerald-600 border-emerald-500/10'}`}>Financeiro</p>
                     <div className="space-y-3 mt-4">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Início do faturamento</label>
+                        <input type="month" required value={editInicioFaturamento} onChange={e => setEditInicioFaturamento(e.target.value)} className={inputClass} />
+                        <p className="text-[10px] text-slate-500 mt-2">O dossiê mensal será calculado a partir desta competência.</p>
+                      </div>
                       <div>
                         <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Modelo de faturamento</label>
                         <select required={!isEditingInativo} disabled={isEditingInativo} value={editModeloFaturamento} onChange={e => setEditModeloFaturamento(e.target.value as BillingModel)} className={`${inputClass} disabled:opacity-50`}>

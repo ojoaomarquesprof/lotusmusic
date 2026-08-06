@@ -71,6 +71,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [vencimento, setVencimento] = useState('10');
   const [modeloFaturamento, setModeloFaturamento] = useState<BillingModel>('VENCIMENTO_FIXO');
   const [valorPorAula, setValorPorAula] = useState('62.50');
+  const [inicioFaturamento, setInicioFaturamento] = useState(new Date().toISOString().slice(0, 7));
   const [registrarPagamentoInicial, setRegistrarPagamentoInicial] = useState(false);
   const [dataPrimeiroPagamento, setDataPrimeiroPagamento] = useState(new Date().toISOString().split('T')[0]);
   
@@ -157,7 +158,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const fecharModalMatricula = () => { 
     setIsModalOpen(false); setTipoCadastro('PF'); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setDocumento(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
-    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setModeloFaturamento('VENCIMENTO_FIXO'); setValorPorAula('62.50'); setRegistrarPagamentoInicial(false); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
+    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setModeloFaturamento('VENCIMENTO_FIXO'); setValorPorAula('62.50'); setInicioFaturamento(new Date().toISOString().slice(0, 7)); setRegistrarPagamentoInicial(false); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
     setFotoArquivo(null); setFotoPreview(null); 
     setAgendas([{ id: 'new_1', dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
   }
@@ -274,6 +275,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       saldo_creditos_faturamento: 0,
       valor_por_aula: modeloFaturamento === 'MENSAL_FECHADO' ? parseFloat(valorPorAula) : null,
       prazo_vencimento_dias: 7,
+      inicio_faturamento: `${inicioFaturamento}-01`,
       como_conheceu: comoConheceu,
       indicacao_nome: comoConheceu === 'Indicação' ? indicacaoNome : null,
       status: 'Ativo'
@@ -301,6 +303,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         valor: valorBase,
         status: 'Pago',
         data_pagamento: dataPrimeiroPagamento,
+        competencia: `${inicioFaturamento}-01`,
         metodo_pagamento: 'Pagamento inicial confirmado na matrícula'
       }]);
       if (errPg) console.error("Erro ao registrar pagamento inicial:", errPg);
@@ -559,6 +562,12 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
                 <div className="space-y-4">
                   <p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest border-b border-emerald-500/20 pb-2">Financeiro & Marketing</p>
+
+                  <div className="max-w-xs">
+                    <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">INÍCIO DO FATURAMENTO</label>
+                    <input type="month" required value={inicioFaturamento} onChange={e => setInicioFaturamento(e.target.value)} className={inputClass} />
+                    <p className="mt-2 text-[10px] text-slate-500">Primeira competência que deve constar no dossiê financeiro.</p>
+                  </div>
 
                   <div>
                     <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-2">MODELO DE FATURAMENTO</label>

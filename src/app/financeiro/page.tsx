@@ -7,6 +7,13 @@ import { useStyles } from '../../lib/useStyles'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass, isConfirmedPayment } from '../../lib/billing'
+import {
+  buildFinancialDossier,
+  FinancialCharge,
+  getAgingBuckets,
+  isOpenCharge,
+  isOverdueCharge,
+} from '../../lib/financialDossier'
 import { ensureBrazilianNinthDigit, formatBrazilianPhone, formatCEP, formatCPFOrCNPJ, normalizeEmail, normalizeName } from '../../lib/formatters'
 import {
   AlertTriangle,
@@ -16,6 +23,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock3,
+  Filter,
   FileText,
   Landmark,
   MessageCircle,
@@ -26,6 +34,7 @@ import {
   TrendingUp,
   UsersRound,
   WalletCards,
+  Search,
 } from 'lucide-react'
 
 const DEFAULT_PENDENTE = "Olá, *{{nome}}*! Tudo bem?\n\nAqui é da *Lotus Music*. Sua cobrança de *{{modelo}}* no valor de *{{valor}}* vence em {{vencimento}}.\n\n{{link}}\nChave PIX: *{{pix}}*\n\nMuito obrigado! 🎶"
@@ -44,7 +53,8 @@ export default function RelatorioFinanceiro() {
 
   const [loading, setLoading] = useState(true)
   const [resumo, setResumo] = useState({ saldoCaixa: 0, previsaoFaturamento: 0, entradasMes: 0, saidasMes: 0, inadimplencia: 0 })
-  const [alunosPendentes, setAlunosPendentes] = useState<any[]>([])
+  const [cobrancas, setCobrancas] = useState<FinancialCharge[]>([])
+  const [, setAlunosPendentes] = useState<any[]>([])
   const [extratoUnificado, setExtratoUnificado] = useState<any[]>([])
   const [modelCounts, setModelCounts] = useState({ CREDITOS: 0, MENSAL_FECHADO: 0, VENCIMENTO_FIXO: 0 })
 
@@ -80,12 +90,162 @@ export default function RelatorioFinanceiro() {
   const [filtroExtrato, setFiltroExtrato] = useState('Todos')
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'visao' | 'cobrancas' | 'movimentacoes' | 'analises'>('visao')
-  const [filtroCobrancas, setFiltroCobrancas] = useState<'Todas' | 'Atrasado' | 'A vencer'>('Todas')
+  const [filtroCobrancas, setFiltroCobrancas] = useState<'Todas' | 'Atrasado' | 'A vencer' | 'Pago' | 'Em apuração'>('Todas')
+  const [buscaCobranca, setBuscaCobranca] = useState('')
+  const [competenciaCobranca, setCompetenciaCobranca] = useState('Todas')
+  const [periodoExtrato, setPeriodoExtrato] = useState<'Tudo' | '12 meses' | '3 meses' | 'Mês atual'>('Tudo')
 
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (isMounted) carregarDadosFinanceiros() }, [isMounted])
 
   async function carregarDadosFinanceiros() {
+    setLoading(true)
+    const hoje = new Date()
+    const prefixoMesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`
+    const inicioMes = `${prefixoMesAtual}-01`
+    const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate()
+
+    const [
+      { data: configData },
+      { data: allPagamentos },
+      { data: allTransacoes },
+      { data: allFaturas },
+      { data: alunos },
+      { data: historicoMes },
+    ] = await Promise.all([
+      supabase.from('configuracoes').select('chave_pix, mensagem_pendente, mensagem_atrasado, escola_nome, escola_documento, escola_email, escola_telefone, escola_cep, escola_endereco, escola_numero, escola_complemento, escola_bairro, escola_cidade, escola_estado').eq('id', 1).single(),
+      supabase.from('pagamentos').select('*'),
+      supabase.from('transacoes').select('*'),
+      supabase.from('faturas').select('*').order('data_emissao', { ascending: false }),
+      supabase.from('profiles').select('id, nome_completo, telefone, created_at, alunos_info(*)').eq('role', 'ALUNO'),
+      supabase
+        .from('historico_aulas')
+        .select('aluno_id, data_aula, status')
+        .gte('data_aula', inicioMes)
+        .lte('data_aula', `${prefixoMesAtual}-${String(fimMes).padStart(2, '0')}T23:59:59`),
+    ])
+
+    if (configData) {
+      setChavePix(configData.chave_pix || '')
+      setMsgPendente(configData.mensagem_pendente || DEFAULT_PENDENTE)
+      setMsgAtrasado(configData.mensagem_atrasado || DEFAULT_ATRASADO)
+      setSchoolData(current => ({
+        ...current,
+        escola_nome: configData.escola_nome || 'Lotus Music',
+        escola_documento: configData.escola_documento || '',
+        escola_email: configData.escola_email || '',
+        escola_telefone: configData.escola_telefone || '',
+        escola_cep: configData.escola_cep || '',
+        escola_endereco: configData.escola_endereco || '',
+        escola_numero: configData.escola_numero || '',
+        escola_complemento: configData.escola_complemento || '',
+        escola_bairro: configData.escola_bairro || '',
+        escola_cidade: configData.escola_cidade || '',
+        escola_estado: configData.escola_estado || '',
+      }))
+    }
+
+    const pagamentos = allPagamentos || []
+    const transacoes = allTransacoes || []
+    const faturas = allFaturas || []
+    const pagamentosConfirmados = pagamentos.filter(isConfirmedPayment)
+    const dossier = buildFinancialDossier({
+      alunos: alunos || [],
+      pagamentos,
+      faturas,
+      historicoMes: historicoMes || [],
+      hoje,
+    })
+    const emAberto = dossier.filter(isOpenCharge)
+    const vencidas = emAberto.filter(isOverdueCharge)
+
+    let caixaTotal = pagamentosConfirmados.reduce((total, item) => total + Number(item.valor || 0), 0)
+    transacoes.forEach(item => {
+      if (item.tipo === 'Entrada') caixaTotal += Number(item.valor || 0)
+      if (item.tipo === 'Saída') caixaTotal -= Number(item.valor || 0)
+    })
+
+    const pagamentosMes = pagamentosConfirmados.filter(item => String(item.data_pagamento).startsWith(prefixoMesAtual))
+    const transacoesMes = transacoes.filter(item => String(item.data_transacao).startsWith(prefixoMesAtual))
+    let entradasMes = pagamentosMes.reduce((total, item) => total + Number(item.valor || 0), 0)
+    let saidasMes = 0
+    transacoesMes.forEach(item => {
+      if (item.tipo === 'Entrada') entradasMes += Number(item.valor || 0)
+      if (item.tipo === 'Saída') saidasMes += Number(item.valor || 0)
+    })
+
+    const nomePorAluno = new Map((alunos || []).map(item => [item.id, item.nome_completo]))
+    const extrato = [
+      ...pagamentosConfirmados.map(item => ({
+        id: `pg-${item.id}`,
+        data: item.data_pagamento,
+        descricao: `Mensalidade: ${nomePorAluno.get(item.aluno_id) || 'Aluno'}`,
+        valor: item.valor,
+        tipo: 'Entrada',
+        categoria: 'Mensalidade',
+        competencia: item.competencia || item.data_pagamento,
+      })),
+      ...transacoes.map(item => ({
+        id: `tr-${item.id}`,
+        data: item.data_transacao,
+        descricao: item.descricao || item.categoria,
+        valor: item.valor,
+        tipo: item.tipo,
+        categoria: item.categoria,
+      })),
+    ].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+
+    const historicoGrafico: any[] = []
+    for (let index = 11; index >= 0; index--) {
+      const date = new Date(hoje.getFullYear(), hoje.getMonth() - index, 1)
+      historicoGrafico.push({
+        name: date.toLocaleString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase(),
+        mesStr: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        Entradas: 0,
+        Saídas: 0,
+      })
+    }
+    pagamentosConfirmados.forEach(item => {
+      const period = historicoGrafico.find(row => row.mesStr === String(item.data_pagamento).slice(0, 7))
+      if (period) period.Entradas += Number(item.valor || 0)
+    })
+    transacoes.forEach(item => {
+      const period = historicoGrafico.find(row => row.mesStr === String(item.data_transacao).slice(0, 7))
+      if (!period) return
+      if (item.tipo === 'Entrada') period.Entradas += Number(item.valor || 0)
+      if (item.tipo === 'Saída') period.Saídas += Number(item.valor || 0)
+    })
+
+    const despesasCategorias: Record<string, number> = {}
+    transacoesMes
+      .filter(item => item.tipo === 'Saída')
+      .forEach(item => {
+        despesasCategorias[item.categoria] = (despesasCategorias[item.categoria] || 0) + Number(item.valor || 0)
+      })
+
+    const counts = { CREDITOS: 0, MENSAL_FECHADO: 0, VENCIMENTO_FIXO: 0 }
+    ;(alunos || []).forEach(aluno => {
+      const info = Array.isArray(aluno.alunos_info) ? aluno.alunos_info[0] : aluno.alunos_info
+      if (!info || info.status === 'Inativo') return
+      counts[getBillingModel(info)] += 1
+    })
+
+    setCobrancas(dossier)
+    setExtratoUnificado(extrato)
+    setDadosGraficoBarra(historicoGrafico)
+    setDadosGraficoPizza(Object.entries(despesasCategorias).map(([name, value]) => ({ name, value })))
+    setModelCounts(counts)
+    setResumo({
+      saldoCaixa: caixaTotal,
+      previsaoFaturamento: emAberto.reduce((total, item) => total + Number(item.valor || 0), 0),
+      entradasMes,
+      saidasMes,
+      inadimplencia: vencidas.reduce((total, item) => total + Number(item.valor || 0), 0),
+    })
+    setLoading(false)
+  }
+
+  async function carregarDadosFinanceirosLegado() {
     const hoje = new Date(); const mesAtual = hoje.getMonth() + 1; const anoAtual = hoje.getFullYear(); const diaAtual = hoje.getDate()
 
     const { data: configData } = await supabase.from('configuracoes').select('chave_pix, mensagem_pendente, mensagem_atrasado, escola_nome, escola_documento, escola_email, escola_telefone, escola_cep, escola_endereco, escola_numero, escola_complemento, escola_bairro, escola_cidade, escola_estado').eq('id', 1).single()
@@ -369,21 +529,42 @@ export default function RelatorioFinanceiro() {
   
   const mesNome = new Date().toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
   const mesFormatado = mesNome.charAt(0).toUpperCase() + mesNome.slice(1)
+  const hoje = new Date()
+  const alunosPendentes = cobrancas.filter(isOpenCharge)
+  const limitePeriodoExtrato = (() => {
+    if (periodoExtrato === 'Tudo') return null
+    if (periodoExtrato === 'Mês atual') return new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+    return new Date(hoje.getFullYear(), hoje.getMonth() - (periodoExtrato === '3 meses' ? 2 : 11), 1)
+  })()
 
-  const extratoFiltrado = extratoUnificado.filter(item => 
-    filtroExtrato === 'Todos' ? true : item.tipo === filtroExtrato
-  )
-  const resultadoMes = resumo.entradasMes - resumo.saidasMes
-  const cobrancasAtrasadas = alunosPendentes.filter(item => ['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(item.status))
-  const cobrancasAVencer = alunosPendentes.filter(item => !['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(item.status))
-  const cobrancasFiltradas = alunosPendentes.filter(item => {
-    if (filtroCobrancas === 'Todas') return true
-    if (filtroCobrancas === 'Atrasado') return ['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(item.status)
-    return !['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(item.status)
+  const extratoFiltrado = extratoUnificado.filter(item => {
+    const matchesType = filtroExtrato === 'Todos' ? true : item.tipo === filtroExtrato
+    const itemDate = new Date(`${String(item.data).slice(0, 10)}T12:00:00`)
+    return matchesType && (!limitePeriodoExtrato || itemDate >= limitePeriodoExtrato)
   })
-  const taxaRecebimento = resumo.previsaoFaturamento > 0
-    ? Math.min(100, Math.round((resumo.entradasMes / resumo.previsaoFaturamento) * 100))
-    : 0
+  const resultadoMes = resumo.entradasMes - resumo.saidasMes
+  const cobrancasAtrasadas = cobrancas.filter(isOverdueCharge)
+  const cobrancasAVencer = cobrancas.filter(item => ['A vencer', 'Sem créditos'].includes(item.status))
+  const cobrancasPagas = cobrancas.filter(item => item.status === 'Pago')
+  const cobrancasEmApuracao = cobrancas.filter(item => item.status === 'Em apuração')
+  const agingBuckets = getAgingBuckets(cobrancas)
+  const competencias = Array.from(new Map(
+    cobrancas
+      .filter(item => item.competencia)
+      .map(item => [String(item.competencia).slice(0, 7), item.competenciaLabel]),
+  ).entries()).sort((a, b) => b[0].localeCompare(a[0]))
+  const buscaNormalizada = buscaCobranca.trim().toLocaleLowerCase('pt-BR')
+  const cobrancasFiltradas = cobrancas.filter(item => {
+    const matchesSearch = !buscaNormalizada || item.nome.toLocaleLowerCase('pt-BR').includes(buscaNormalizada)
+    const matchesCompetence = competenciaCobranca === 'Todas'
+      || String(item.competencia || '').startsWith(competenciaCobranca)
+    let matchesStatus = true
+    if (filtroCobrancas === 'Atrasado') matchesStatus = isOverdueCharge(item)
+    if (filtroCobrancas === 'A vencer') matchesStatus = ['A vencer', 'Sem créditos'].includes(item.status)
+    if (filtroCobrancas === 'Pago') matchesStatus = item.status === 'Pago'
+    if (filtroCobrancas === 'Em apuração') matchesStatus = item.status === 'Em apuração'
+    return matchesSearch && matchesCompetence && matchesStatus
+  })
   const maiorDespesa = [...dadosGraficoPizza].sort((a, b) => Number(b.value) - Number(a.value))[0]
 
   return (
@@ -392,7 +573,7 @@ export default function RelatorioFinanceiro() {
         <div>
           <div className="premium-kicker mb-2">Gestão financeira</div>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Financeiro</h1>
-          <p className="text-slate-500 text-sm mt-1.5">Recebimentos, cobranças e caixa de {mesFormatado}.</p>
+          <p className="text-slate-500 text-sm mt-1.5">Dossiê completo de recebimentos, competências em aberto e caixa.</p>
         </div>
         <div className="flex items-center gap-2 w-full md:w-auto">
           <button onClick={() => setIsConfigModalOpen(true)} className="flex-1 md:flex-none px-3.5 py-2.5 rounded-xl border border-[#dfded7] bg-white text-slate-600 text-xs font-semibold flex items-center justify-center gap-2 hover:text-[#1f4a3a] hover:border-[#aebfb4] transition-colors">
@@ -418,14 +599,14 @@ export default function RelatorioFinanceiro() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4">
             <div className="p-4 md:p-5 border-r border-b md:border-b-0 border-[#e5e3dd]">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Previsão</p>
+              <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">A receber</p>
               <p className="text-xl font-semibold text-slate-900 mt-1.5">{formatCurrencyBR(resumo.previsaoFaturamento)}</p>
-              <p className="text-[10px] text-slate-500 mt-1">{taxaRecebimento}% recebido</p>
+              <p className="text-[10px] text-slate-500 mt-1">{alunosPendentes.length} competência(s) aberta(s)</p>
             </div>
             <div className="p-4 md:p-5 border-b md:border-b-0 md:border-r border-[#e5e3dd]">
               <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Entradas</p>
               <p className="text-xl font-semibold text-emerald-700 mt-1.5">{formatCurrencyBR(resumo.entradasMes)}</p>
-              <p className="text-[10px] text-slate-500 mt-1">no mês</p>
+              <p className="text-[10px] text-slate-500 mt-1">recebido em {mesFormatado}</p>
             </div>
             <div className="p-4 md:p-5 border-r border-[#e5e3dd]">
               <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Saídas</p>
@@ -460,7 +641,27 @@ export default function RelatorioFinanceiro() {
       </motion.nav>
 
       {activeTab === 'visao' && (
-        <motion.div variants={itemVariants} className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] gap-5 items-start">
+        <motion.div variants={itemVariants} className="space-y-5">
+          <section className="premium-panel overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col md:flex-row md:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><Clock3 size={19} className="text-[#1f4a3a]" /> Carteira por vencimento</h2>
+                <p className="text-xs text-slate-500 mt-1">Todo o saldo aberto, separado pelo tempo de atraso.</p>
+              </div>
+              <p className="text-[11px] font-semibold text-slate-500">Posição em {hoje.toLocaleDateString('pt-BR')}</p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 divide-x divide-y md:divide-y-0 divide-[#ebe9e3]">
+              {agingBuckets.map((bucket, index) => (
+                <button key={bucket.id} onClick={() => { setFiltroCobrancas(index === 0 ? 'A vencer' : 'Atrasado'); setActiveTab('cobrancas') }} className="p-4 text-left hover:bg-[#faf9f6] transition-colors">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">{bucket.label}</p>
+                  <p className={`text-lg font-semibold mt-1.5 ${index > 0 && bucket.valor > 0 ? 'text-rose-700' : 'text-slate-900'}`}>{formatCurrencyBR(bucket.valor)}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">{bucket.quantidade} cobrança(s)</p>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] gap-5 items-start">
           <section className="premium-panel overflow-hidden">
             <div className="px-5 py-4 border-b border-[#dfded7] flex items-center justify-between gap-4">
               <div>
@@ -471,12 +672,12 @@ export default function RelatorioFinanceiro() {
             </div>
             <div className="divide-y divide-[#ebe9e3]">
               {alunosPendentes.slice(0, 6).map(aluno => {
-                const isCritical = ['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(aluno.status)
+                const isCritical = isOverdueCharge(aluno)
                 return (
                   <div key={aluno.id} className="px-5 py-4 grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_120px_auto] gap-3 items-center hover:bg-[#faf9f6] transition-colors">
                     <div className="min-w-0">
                       <button onClick={() => router.push(`/alunos/${aluno.alunoId}`)} className="text-sm font-semibold text-slate-900 truncate block max-w-full hover:text-[#1f4a3a]">{aluno.nome}</button>
-                      <p className="text-[11px] text-slate-500 mt-1">{aluno.modelo} · {aluno.vencimento}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">{aluno.competenciaLabel} · {aluno.vencimento}{aluno.diasAtraso > 0 ? ` · ${aluno.diasAtraso} dias em atraso` : ''}</p>
                     </div>
                     <div className="hidden sm:block text-right">
                       <p className="text-sm font-semibold text-slate-900">{formatCurrencyBR(aluno.valor)}</p>
@@ -503,7 +704,7 @@ export default function RelatorioFinanceiro() {
             <div className="px-5 py-4 border-b border-[#dfded7] flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><WalletCards size={19} className="text-[#1f4a3a]" /> Movimentações recentes</h2>
-                <p className="text-xs text-slate-500 mt-1">Últimos lançamentos deste mês.</p>
+                <p className="text-xs text-slate-500 mt-1">Últimos lançamentos de todo o histórico.</p>
               </div>
               <button onClick={() => setActiveTab('movimentacoes')} className="text-[11px] font-semibold text-[#1f4a3a] hover:underline">Extrato</button>
             </div>
@@ -520,51 +721,74 @@ export default function RelatorioFinanceiro() {
                   <p className={`text-sm font-semibold shrink-0 ${item.tipo === 'Entrada' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.tipo === 'Entrada' ? '+' : '−'} {formatCurrencyBR(item.valor)}</p>
                 </button>
               ))}
-              {extratoUnificado.length === 0 && <div className="py-14 px-6 text-center text-sm text-slate-500">Nenhuma movimentação no mês.</div>}
+              {extratoUnificado.length === 0 && <div className="py-14 px-6 text-center text-sm text-slate-500">Nenhuma movimentação registrada.</div>}
             </div>
           </aside>
+          </div>
         </motion.div>
       )}
 
       {activeTab === 'cobrancas' && (
         <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="px-5 py-4 border-b border-[#dfded7] space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><ReceiptText size={19} className="text-[#1f4a3a]" /> Carteira de cobranças</h2>
-              <p className="text-xs text-slate-500 mt-1">Acompanhe vencimentos, faturas e contatos.</p>
+              <p className="text-xs text-slate-500 mt-1">Histórico completo por aluno, competência e vencimento.</p>
             </div>
             <div className="flex rounded-xl border border-[#dfded7] bg-[#f7f7f3] p-1 overflow-x-auto">
               {[
-                { id: 'Todas', label: 'Todas', count: alunosPendentes.length },
+                { id: 'Todas', label: 'Todas', count: cobrancas.length },
                 { id: 'Atrasado', label: 'Atrasadas', count: cobrancasAtrasadas.length },
                 { id: 'A vencer', label: 'A vencer', count: cobrancasAVencer.length },
+                { id: 'Em apuração', label: 'Em apuração', count: cobrancasEmApuracao.length },
+                { id: 'Pago', label: 'Pagas', count: cobrancasPagas.length },
               ].map(option => (
                 <button key={option.id} onClick={() => setFiltroCobrancas(option.id as typeof filtroCobrancas)} className={`px-3 py-2 rounded-lg text-[10px] font-semibold whitespace-nowrap ${filtroCobrancas === option.id ? 'bg-white text-[#1f4a3a] shadow-sm' : 'text-slate-500'}`}>
                   {option.label} · {option.count}
                 </button>
               ))}
             </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(240px,1fr)_220px] gap-2">
+              <label className="h-10 px-3 rounded-xl border border-[#dfded7] bg-white flex items-center gap-2 focus-within:border-[#88a394]">
+                <Search size={14} className="text-slate-400" />
+                <input value={buscaCobranca} onChange={event => setBuscaCobranca(event.target.value)} placeholder="Buscar aluno..." className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400" />
+              </label>
+              <label className="h-10 px-3 rounded-xl border border-[#dfded7] bg-white flex items-center gap-2">
+                <Filter size={14} className="text-slate-400" />
+                <select value={competenciaCobranca} onChange={event => setCompetenciaCobranca(event.target.value)} className="w-full bg-transparent text-xs font-semibold text-slate-600 outline-none">
+                  <option value="Todas">Todas as competências</option>
+                  {competencias.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+            </div>
           </div>
           <div className="max-h-[650px] overflow-y-auto custom-scrollbar">
-            <div className="hidden md:grid grid-cols-[minmax(0,1.2fr)_150px_120px_120px_110px] gap-4 px-5 py-2.5 bg-[#faf9f6] border-b border-[#ebe9e3] text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
-              <span>Aluno</span><span>Modelo</span><span>Vencimento</span><span>Valor</span><span className="text-right">Ações</span>
+            <div className="hidden md:grid grid-cols-[minmax(0,1.2fr)_120px_130px_120px_120px_110px] gap-4 px-5 py-2.5 bg-[#faf9f6] border-b border-[#ebe9e3] text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400 sticky top-0 z-10">
+              <span>Aluno</span><span>Competência</span><span>Modelo</span><span>Vencimento</span><span>Valor</span><span className="text-right">Ações</span>
             </div>
             <div className="divide-y divide-[#ebe9e3]">
               {cobrancasFiltradas.map(aluno => {
-                const isCritical = ['Atrasado', 'Créditos em débito', 'Erro na emissão'].includes(aluno.status)
+                const isCritical = isOverdueCharge(aluno)
+                const isPaid = aluno.status === 'Pago'
                 return (
-                  <div key={aluno.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_150px_120px_120px_110px] gap-3 md:gap-4 px-5 py-4 md:items-center hover:bg-[#faf9f6] transition-colors">
+                  <div key={aluno.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_120px_130px_120px_120px_110px] gap-3 md:gap-4 px-5 py-4 md:items-center hover:bg-[#faf9f6] transition-colors">
                     <div className="min-w-0">
                       <button onClick={() => router.push(`/alunos/${aluno.alunoId}`)} className="text-sm font-semibold text-slate-900 truncate hover:text-[#1f4a3a]">{aluno.nome}</button>
-                      <span className={`ml-2 inline-flex px-2 py-0.5 rounded-full text-[9px] font-semibold ${isCritical ? 'bg-rose-50 text-rose-700' : 'bg-[#fbf1df] text-[#8a5e2f]'}`}>{aluno.status}</span>
+                      <span className={`ml-2 inline-flex px-2 py-0.5 rounded-full text-[9px] font-semibold ${isCritical ? 'bg-rose-50 text-rose-700' : isPaid ? 'bg-emerald-50 text-emerald-700' : aluno.status === 'Em apuração' ? 'bg-slate-100 text-slate-600' : 'bg-[#fbf1df] text-[#8a5e2f]'}`}>{aluno.status}</span>
                       {typeof aluno.saldo === 'number' && <p className="text-[10px] text-slate-500 mt-1">Saldo: {aluno.saldo} créditos</p>}
                     </div>
+                    <p className="text-xs font-semibold text-slate-700">{aluno.competenciaLabel}</p>
                     <p className="text-xs text-slate-600">{aluno.modelo}</p>
-                    <p className="text-xs text-slate-600 flex items-center gap-1.5"><Clock3 size={12} /> {aluno.vencimento}</p>
+                    <div>
+                      <p className="text-xs text-slate-600 flex items-center gap-1.5"><Clock3 size={12} /> {aluno.vencimento}</p>
+                      {aluno.diasAtraso > 0 && <p className="text-[9px] font-semibold text-rose-600 mt-1">{aluno.diasAtraso} dias em atraso</p>}
+                    </div>
                     <p className="text-sm font-semibold text-slate-900">{formatCurrencyBR(aluno.valor)}</p>
                     <div className="flex md:justify-end gap-1.5">
                       {aluno.invoiceId && <button onClick={() => window.open(`/faturas/${aluno.invoiceId}`, '_blank')} aria-label="Abrir fatura" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center"><FileText size={14} /></button>}
-                      <button onClick={() => enviarCobrancaWhatsApp(aluno)} aria-label="Enviar cobrança pelo WhatsApp" className="h-8 w-8 rounded-lg bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center"><MessageCircle size={14} /></button>
+                      {!isPaid && aluno.status !== 'Em apuração' && <button onClick={() => enviarCobrancaWhatsApp(aluno)} aria-label="Enviar cobrança pelo WhatsApp" className="h-8 w-8 rounded-lg bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center"><MessageCircle size={14} /></button>}
                       <button onClick={() => router.push(`/alunos/${aluno.alunoId}`)} aria-label="Abrir perfil do aluno" className="h-8 w-8 rounded-lg border border-[#dfded7] bg-white text-slate-500 flex items-center justify-center"><ChevronRight size={14} /></button>
                     </div>
                   </div>
@@ -580,10 +804,13 @@ export default function RelatorioFinanceiro() {
         <motion.section variants={itemVariants} className="premium-panel overflow-hidden">
           <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><WalletCards size={19} className="text-[#1f4a3a]" /> Extrato de {mesFormatado}</h2>
-              <p className="text-xs text-slate-500 mt-1">Entradas e saídas organizadas por data.</p>
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><WalletCards size={19} className="text-[#1f4a3a]" /> Extrato financeiro</h2>
+              <p className="text-xs text-slate-500 mt-1">Entradas e saídas de todo o histórico, organizadas por data.</p>
             </div>
             <div className="flex items-center gap-2">
+              <select value={periodoExtrato} onChange={e => setPeriodoExtrato(e.target.value as typeof periodoExtrato)} className="px-3 py-2.5 rounded-xl border border-[#dfded7] bg-white text-xs font-semibold text-slate-600 outline-none">
+                <option value="Tudo">Todo o período</option><option value="12 meses">Últimos 12 meses</option><option value="3 meses">Últimos 3 meses</option><option value="Mês atual">Mês atual</option>
+              </select>
               <select value={filtroExtrato} onChange={e => setFiltroExtrato(e.target.value)} className="px-3 py-2.5 rounded-xl border border-[#dfded7] bg-white text-xs font-semibold text-slate-600 outline-none">
                 <option value="Todos">Todas</option><option value="Entrada">Entradas</option><option value="Saída">Saídas</option>
               </select>
@@ -615,7 +842,7 @@ export default function RelatorioFinanceiro() {
         <motion.div variants={itemVariants} className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)] gap-5">
           <section className="premium-panel overflow-hidden">
             <div className="px-5 py-4 border-b border-[#dfded7]">
-              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><TrendingUp size={19} className="text-[#1f4a3a]" /> Fluxo dos últimos seis meses</h2>
+              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><TrendingUp size={19} className="text-[#1f4a3a]" /> Fluxo dos últimos 12 meses</h2>
               <p className="text-xs text-slate-500 mt-1">Comparação entre valores recebidos e saídas registradas.</p>
             </div>
             <div className="h-[360px] p-4 md:p-5">
@@ -634,6 +861,23 @@ export default function RelatorioFinanceiro() {
           </section>
 
           <div className="space-y-5">
+            <section className="premium-panel overflow-hidden">
+              <div className="px-5 py-4 border-b border-[#dfded7]">
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><AlertTriangle size={19} className="text-[#a56a32]" /> Envelhecimento da dívida</h2>
+              </div>
+              <div className="divide-y divide-[#ebe9e3]">
+                {agingBuckets.map((bucket, index) => (
+                  <div key={bucket.id} className="px-5 py-3 grid grid-cols-[1fr_auto] gap-4 items-center">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700">{bucket.label}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{bucket.quantidade} cobrança(s)</p>
+                    </div>
+                    <p className={`text-sm font-semibold ${index > 0 && bucket.valor > 0 ? 'text-rose-700' : 'text-slate-900'}`}>{formatCurrencyBR(bucket.valor)}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
             <section className="premium-panel overflow-hidden">
               <div className="px-5 py-4 border-b border-[#dfded7]">
                 <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><BarChart3 size={19} className="text-[#1f4a3a]" /> Despesas por categoria</h2>
