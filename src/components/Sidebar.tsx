@@ -71,6 +71,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [vencimento, setVencimento] = useState('10');
   const [modeloFaturamento, setModeloFaturamento] = useState<BillingModel>('VENCIMENTO_FIXO');
   const [valorPorAula, setValorPorAula] = useState('62.50');
+  const [registrarPagamentoInicial, setRegistrarPagamentoInicial] = useState(false);
   const [dataPrimeiroPagamento, setDataPrimeiroPagamento] = useState(new Date().toISOString().split('T')[0]);
   
   const [fotoArquivo, setFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null)
@@ -156,7 +157,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const fecharModalMatricula = () => { 
     setIsModalOpen(false); setTipoCadastro('PF'); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setDocumento(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
-    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setModeloFaturamento('VENCIMENTO_FIXO'); setValorPorAula('62.50'); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
+    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setModeloFaturamento('VENCIMENTO_FIXO'); setValorPorAula('62.50'); setRegistrarPagamentoInicial(false); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
     setFotoArquivo(null); setFotoPreview(null); 
     setAgendas([{ id: 'new_1', dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
   }
@@ -294,15 +295,13 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     }))
     await supabase.from('agenda').insert(agendaInserts)
     
-    const hojeStr = new Date().toISOString().split('T')[0];
-    
-    if (modeloFaturamento !== 'MENSAL_FECHADO' && dataPrimeiroPagamento <= hojeStr) {
+    if (modeloFaturamento !== 'MENSAL_FECHADO' && registrarPagamentoInicial) {
       const { error: errPg } = await supabase.from('pagamentos').insert([{
         aluno_id: alunoId,
         valor: valorBase,
         status: 'Pago',
         data_pagamento: dataPrimeiroPagamento,
-        metodo_pagamento: 'Pix/Dinheiro (Matrícula)'
+        metodo_pagamento: 'Pagamento inicial confirmado na matrícula'
       }]);
       if (errPg) console.error("Erro ao registrar pagamento inicial:", errPg);
     }
@@ -606,9 +605,25 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                             <input type="number" inputMode="numeric" min="1" max="31" placeholder="Ex: 10" required value={vencimento} onChange={e => setVencimento(e.target.value.replace(/\D/g, '').slice(0, 2))} className={inputClass} />
                           </div>
                         )}
-                        <div className="col-span-2 md:col-span-1">
-                          <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data do 1º Pagamento</label>
-                          <input type="date" required value={dataPrimeiroPagamento} onChange={e => setDataPrimeiroPagamento(e.target.value)} className={inputClass} />
+                        <div className="col-span-2 md:col-span-3 rounded-2xl border border-[#d9d5ca] bg-white/60 p-4">
+                          <label className="flex cursor-pointer items-start justify-between gap-4">
+                            <span>
+                              <span className="block text-xs font-bold text-slate-700">Pagamento inicial já foi recebido?</span>
+                              <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">Ative somente se o valor já entrou no caixa. Caso contrário, o aluno será cadastrado sem recibo ou pagamento confirmado.</span>
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={registrarPagamentoInicial}
+                              onChange={e => setRegistrarPagamentoInicial(e.target.checked)}
+                              className="mt-0.5 h-5 w-5 accent-emerald-700"
+                            />
+                          </label>
+                          {registrarPagamentoInicial && (
+                            <div className="mt-4 border-t border-slate-200 pt-4">
+                              <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data do recebimento</label>
+                              <input type="date" required value={dataPrimeiroPagamento} onChange={e => setDataPrimeiroPagamento(e.target.value)} className={inputClass} />
+                            </div>
+                          )}
                         </div>
                         {modeloFaturamento === 'CREDITOS' && (
                           <div className="col-span-2 md:col-span-3 p-3.5 rounded-xl bg-violet-50/70 border border-violet-200 text-xs text-violet-800 font-semibold">

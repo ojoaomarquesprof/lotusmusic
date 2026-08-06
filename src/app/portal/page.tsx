@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
 import { motion, AnimatePresence } from 'framer-motion'
-import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../lib/billing'
+import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass, isConfirmedPayment } from '../../lib/billing'
+import { downloadReceiptHistoryPdf, downloadReceiptPdf, type ReceiptPdfData } from '../../lib/receiptPdf'
 import {
   AlertCircle,
   ArrowLeft,
@@ -29,6 +30,7 @@ import {
   ReceiptText,
   Repeat2,
   RotateCcw,
+  ShieldCheck,
   UserRound,
   WalletCards,
   X,
@@ -109,6 +111,9 @@ export default function PortalAluno() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solicitacoes_reagendamento' }, () => { carregarPortal() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notificacoes_aluno' }, () => { carregarPortal() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_aulas' }, () => { carregarPortal() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pagamentos' }, () => { carregarPortal() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'faturas' }, () => { carregarPortal() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alunos_info' }, () => { carregarPortal() })
       .subscribe();
     return () => { supabase.removeChannel(channel); }
   }, [isMounted])
@@ -173,7 +178,7 @@ export default function PortalAluno() {
     const { data: perfil } = await supabase.from('profiles').select('*, alunos_info(*)').eq('id', session.user.id).single()
     if (perfil) { setAluno(perfil); setEditNome(perfil.nome_completo || ''); setFotoPreview(perfil.avatar_url || null) }
 
-    const { data: config } = await supabase.from('configuracoes').select('nome_escola, logo_url, chave_pix').eq('id', 1).single()
+    const { data: config } = await supabase.from('configuracoes').select('*').eq('id', 1).single()
     setEscola(config)
 
     const { data: ev } = await supabase.from('eventos_calendario').select('*').gte('data_evento', hojeDataStr)
@@ -293,14 +298,19 @@ export default function PortalAluno() {
       .limit(1)
     setFaturaAtual(invoices?.[0] || null)
 
-    const { data: allPgs } = await supabase.from('pagamentos').select('*').eq('aluno_id', session.user.id).order('data_pagamento', { ascending: false })
-    setHistoricoPagamentos(allPgs || [])
+    const { data: allPgs } = await supabase
+      .from('pagamentos')
+      .select('*, fatura:faturas(numero, competencia, modelo_faturamento)')
+      .eq('aluno_id', session.user.id)
+      .order('data_pagamento', { ascending: false })
+    const pagamentosConfirmados = (allPgs || []).filter(isConfirmedPayment)
+    setHistoricoPagamentos(pagamentosConfirmados)
 
     const diaVenc = info?.data_vencimento || 10
     const hoje = new Date(); const ano = hoje.getFullYear(); const mes = hoje.getMonth()
     const getDataVenc = (a: number, m: number, d: number) => { const ultimo = new Date(a, m + 1, 0).getDate(); return new Date(a, m, Math.min(d, ultimo)) }
-    const { data: pgsMes } = await supabase.from('pagamentos').select('id').eq('aluno_id', session.user.id).gte('data_pagamento', new Date(ano, mes, 1).toISOString()).lte('data_pagamento', new Date(ano, mes + 1, 0, 23, 59).toISOString())
-    const pago: boolean = Boolean(pgsMes && pgsMes.length > 0)
+    const prefixoPagamentoMes = `${ano}-${String(mes + 1).padStart(2, '0')}`
+    const pago = pagamentosConfirmados.some(pagamento => String(pagamento.data_pagamento).startsWith(prefixoPagamentoMes))
     const hojeSoDia = new Date(ano, mes, hoje.getDate())
     const vencAlvo = pago ? getDataVenc(ano, mes + 1, diaVenc) : getDataVenc(ano, mes, diaVenc)
     const diff = Math.ceil((vencAlvo.getTime() - hojeSoDia.getTime()) / (1000 * 60 * 60 * 24))
@@ -501,6 +511,16 @@ export default function PortalAluno() {
     modeloFaturamentoPortal === 'MENSAL_FECHADO'
       ? (faturaEmAberto ? Number(faturaAtual?.valor_total || 0) : apuracaoMes.valor)
       : Number(infoFinanceira?.valor_mensalidade || 0)
+
+  const criarDadosRecibo = (payment: any): ReceiptPdfData => ({
+    payment,
+    student: aluno || {},
+    school: escola || {},
+    billingModelLabel: getBillingModelLabel(payment.fatura?.modelo_faturamento || modeloFaturamentoPortal),
+  })
+
+  const baixarRecibo = (payment: any) => downloadReceiptPdf(criarDadosRecibo(payment))
+  const baixarTodosRecibos = () => downloadReceiptHistoryPdf(historicoPagamentos.map(criarDadosRecibo))
 
   const tabsPortal = [
     { id: 'inicio' as const, label: 'Início', icon: Home },
@@ -1143,8 +1163,8 @@ export default function PortalAluno() {
                       <span className="flex items-center gap-2"><WalletCards size={18} /> Copiar PIX</span><ChevronRight size={17} />
                     </button>
                   )}
-                  <button onClick={() => setIsPayHistoryModalOpen(true)} className="flex items-center justify-between rounded-2xl border border-[#d4d0c5] bg-white px-4 py-4 text-left text-sm font-bold text-[#254b40]">
-                    <span className="flex items-center gap-2"><ReceiptText size={18} /> Ver recibos</span><ChevronRight size={17} />
+                  <button onClick={() => setIsPayHistoryModalOpen(current => !current)} className="flex items-center justify-between rounded-2xl border border-[#d4d0c5] bg-white px-4 py-4 text-left text-sm font-bold text-[#254b40]">
+                    <span className="flex items-center gap-2"><ReceiptText size={18} /> {isPayHistoryModalOpen ? 'Ocultar recibos' : 'Ver recibos'}</span><ChevronRight size={17} className={isPayHistoryModalOpen ? 'rotate-90 transition-transform' : 'transition-transform'} />
                   </button>
                 </div>
               </div>
@@ -1166,6 +1186,66 @@ export default function PortalAluno() {
                 </div>
               </div>
             </section>
+
+            <AnimatePresence initial={false}>
+              {isPayHistoryModalOpen && (
+                <motion.section
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6]"
+                >
+                  <div className="flex flex-col gap-4 border-b border-[#e4e0d7] px-5 py-5 sm:flex-row sm:items-center sm:justify-between md:px-6">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e4ece7] text-[#1d5143]"><ReceiptText size={19} /></span>
+                      <div>
+                        <h2 className="font-bold">Recibos confirmados</h2>
+                        <p className="text-sm text-[#748079]">Somente valores efetivamente recebidos geram recibo.</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={baixarTodosRecibos}
+                      disabled={historicoPagamentos.length === 0}
+                      className="flex items-center justify-center gap-2 rounded-full border border-[#d4d0c5] bg-white px-4 py-2.5 text-sm font-bold text-[#254b40] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Download size={16} /> Baixar todos em PDF
+                    </button>
+                  </div>
+
+                  {historicoPagamentos.length === 0 ? (
+                    <div className="px-5 py-12 text-center md:px-6">
+                      <ShieldCheck size={28} className="mx-auto text-[#9ba69f]" />
+                      <p className="mt-3 font-bold text-[#354a41]">Nenhum recibo disponível</p>
+                      <p className="mx-auto mt-1 max-w-md text-sm text-[#748079]">Quando a escola confirmar um pagamento, o recibo aparecerá automaticamente aqui.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-[#e8e4dc]">
+                      {historicoPagamentos.map(pagamento => (
+                        <div key={pagamento.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center md:px-6">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-bold text-[#263a32]">Recibo de {new Date(pagamento.data_pagamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
+                              <span className="rounded-full bg-[#e4ece7] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#1d684f]">Confirmado</span>
+                            </div>
+                            <p className="mt-1 truncate text-sm text-[#748079]">
+                              {pagamento.metodo_pagamento || 'Forma não informada'}
+                              {pagamento.fatura?.numero ? ` · FAT-${String(pagamento.fatura.numero).padStart(6, '0')}` : ' · Pagamento avulso'}
+                            </p>
+                          </div>
+                          <p className="text-lg font-bold text-[#1d5143]">{formatCurrencyBR(pagamento.valor)}</p>
+                          <button
+                            onClick={() => baixarRecibo(pagamento)}
+                            className="flex items-center justify-center gap-2 rounded-full bg-[#1d5143] px-4 py-2.5 text-sm font-bold text-white"
+                          >
+                            <Download size={15} /> PDF
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </motion.section>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
 
@@ -1487,40 +1567,6 @@ export default function PortalAluno() {
                     {isSubmitting ? 'Salvando...' : 'Salvar Alterações'}
                   </motion.button>
               </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isPayHistoryModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[90]">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>📄</span> Histórico de Pagamentos</h2>
-                <button onClick={() => setIsPayHistoryModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
-              </div>
-              <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
-                 {historicoPagamentos.length === 0 ? (
-                   <div className="text-center py-10 opacity-60">
-                      <span className="text-4xl mb-2 grayscale block">💸</span>
-                      <p className="text-sm font-semibold text-slate-500">Nenhum pagamento registrado.</p>
-                   </div>
-                 ) : historicoPagamentos.map(pag => (
-                   <div key={pag.id} className="p-4 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all">
-                     <div className="flex items-center gap-3">
-                       <div className="h-10 w-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg shadow-inner flex-shrink-0">✓</div>
-                       <div>
-                         <p className="font-bold text-sm text-slate-800">{new Date(pag.data_pagamento).toLocaleDateString('pt-BR', {timeZone:'UTC'})}</p>
-                         <p className="text-xs font-semibold text-slate-500 mt-0.5">R$ {pag.valor}</p>
-                       </div>
-                     </div>
-                     {pag.recibo_url && (
-                       <a href={pag.recibo_url} target="_blank" rel="noopener noreferrer" className="h-8 w-8 bg-white/80 border border-white rounded-xl flex items-center justify-center text-slate-600 shadow-sm hover:bg-slate-50 transition-all flex-shrink-0 group-hover:scale-105" title="Ver Recibo">⬇️</a>
-                     )}
-                   </div>
-                 ))}
-              </div>
             </motion.div>
           </motion.div>
         )}

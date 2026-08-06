@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import { motion, AnimatePresence } from 'framer-motion'
-import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../lib/billing'
+import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass, isConfirmedPayment } from '../../lib/billing'
 import { ensureBrazilianNinthDigit, formatBrazilianPhone, formatCEP, formatCPFOrCNPJ, normalizeEmail, normalizeName } from '../../lib/formatters'
 import {
   AlertTriangle,
@@ -110,11 +110,12 @@ export default function RelatorioFinanceiro() {
     }
 
     const { data: allPagamentos } = await supabase.from('pagamentos').select('*')
+    const pagamentosConfirmados = (allPagamentos || []).filter(isConfirmedPayment)
     const { data: allTransacoes } = await supabase.from('transacoes').select('*')
     const { data: allFaturas } = await supabase.from('faturas').select('*').order('data_emissao', { ascending: false })
     
     let caixaTotal = 0; 
-    allPagamentos?.forEach(p => caixaTotal += Number(p.valor)); 
+    pagamentosConfirmados.forEach(p => caixaTotal += Number(p.valor));
     allTransacoes?.forEach(t => { if (t.tipo === 'Entrada') caixaTotal += Number(t.valor); if (t.tipo === 'Saída') caixaTotal -= Number(t.valor) })
 
     // FIX: Filtragem por prefixo string para evitar bugs de fuso horário em dias 01 ou 31.
@@ -129,7 +130,7 @@ export default function RelatorioFinanceiro() {
       .gte('data_aula', inicioMes)
       .lte('data_aula', `${prefixoMesAtual}-${String(fimMes).padStart(2, '0')}T23:59:59`)
     
-    const pgsMes = allPagamentos?.filter(p => p.data_pagamento.startsWith(prefixoMesAtual)) || []
+    const pgsMes = pagamentosConfirmados.filter(p => p.data_pagamento.startsWith(prefixoMesAtual))
     const transMes = allTransacoes?.filter(t => t.data_transacao.startsWith(prefixoMesAtual)) || []
 
     let entradasM = 0; let saidasM = 0; let pendentesTemp: any[] = []; let previsaoTotal = 0;
@@ -252,7 +253,7 @@ export default function RelatorioFinanceiro() {
       })
     }
 
-    allPagamentos?.forEach(p => {
+    pagamentosConfirmados.forEach(p => {
       const mesStr = p.data_pagamento.substring(0, 7) // Pega YYYY-MM direto da string
       const hist = historicoGrafico.find(h => h.mesStr === mesStr)
       if (hist) hist.Entradas += Number(p.valor)

@@ -8,7 +8,7 @@ import Cropper from 'react-easy-crop'
 import { motion, AnimatePresence } from 'framer-motion'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { BILLING_MODELS, BillingModel, formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../../lib/billing'
+import { BILLING_MODELS, BillingModel, formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass, isConfirmedPayment } from '../../../lib/billing'
 import { dateInputToISO, ensureBrazilianNinthDigit, formatBrazilianPhone, formatCEP, formatCPFOrCNPJ, formatDateInput, isoToDateInput, normalizeEmail, normalizeName } from '../../../lib/formatters'
 import { getWeekdayName, formatInvoiceNumber } from '../../../lib/invoices'
 import { CreateInvoiceModal } from '../../../components/CreateInvoiceModal'
@@ -70,9 +70,9 @@ export default function PerfilAluno() {
   const [editAgendas, setEditAgendas] = useState<any[]>([])
 
   const [isClassModalOpen, setIsClassModalOpen] = useState(false); const [dataAula, setDataAula] = useState(new Date().toISOString().split('T')[0]); const [horaInicioAula, setHoraInicioAula] = useState('08:00'); const [horaFimAula, setHoraFimAula] = useState('09:00'); const [statusAula, setStatusAula] = useState('Realizada'); const [obsAula, setObsAula] = useState('')
-  const [isPayModalOpen, setIsPayModalOpen] = useState(false); const [payData, setPayData] = useState(new Date().toISOString().split('T')[0]); const [payMetodo, setPayMetodo] = useState('PIX'); const [payValor, setPayValor] = useState('')
+  const [isPayModalOpen, setIsPayModalOpen] = useState(false); const [payData, setPayData] = useState(new Date().toISOString().split('T')[0]); const [payMetodo, setPayMetodo] = useState('PIX'); const [payValor, setPayValor] = useState(''); const [payFaturaId, setPayFaturaId] = useState('')
 
-  const [isEditPayModalOpen, setIsEditPayModalOpen] = useState(false); const [editPayId, setEditPayId] = useState(''); const [editPayData, setEditPayData] = useState(''); const [editPayMetodo, setEditPayMetodo] = useState('PIX'); const [editPayValor, setEditPayValor] = useState('');
+  const [isEditPayModalOpen, setIsEditPayModalOpen] = useState(false); const [editPayId, setEditPayId] = useState(''); const [editPayData, setEditPayData] = useState(''); const [editPayMetodo, setEditPayMetodo] = useState('PIX'); const [editPayValor, setEditPayValor] = useState(''); const [editPayStatus, setEditPayStatus] = useState('Pago'); const [editPayFaturaId, setEditPayFaturaId] = useState('');
 
   const [isMsgModalOpen, setIsMsgModalOpen] = useState(false)
   const [msgTitulo, setMsgTitulo] = useState('Aviso da Secretaria')
@@ -128,6 +128,8 @@ export default function PerfilAluno() {
 
   const infoMatricula = Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info; const isAlunoInativo = infoMatricula?.status === 'Inativo'; const isEditingInativo = editStatus === 'Inativo'
   const modeloFaturamento = getBillingModel(infoMatricula)
+  const pagamentosConfirmados = pagamentos.filter(isConfirmedPayment)
+  const faturasDisponiveisPagamento = faturas.filter(fatura => !['PAGO', 'CANCELADO'].includes(String(fatura.status).toUpperCase()))
 
   const abrirModalEdicao = () => { 
     setEditStatus(infoMatricula?.status || 'Ativo'); setEditNome(aluno.nome_completo || ''); setEditEmail(aluno.email || ''); setEditTel(aluno.telefone || ''); setEditCpf(aluno.cpf || ''); setEditDataNascimento(isoToDateInput(aluno.data_nascimento)); setEditCep(aluno.cep || ''); setEditEndereco(aluno.endereco || ''); setEditNumero(aluno.numero || ''); setEditComplemento(aluno.complemento || ''); setEditBairro(aluno.bairro || ''); setEditCidade(aluno.cidade || ''); setEditEstado(aluno.estado || ''); setEditComoConheceu(infoMatricula?.como_conheceu || ''); setEditIndicacaoNome(infoMatricula?.indicacao_nome || ''); setEditValor(infoMatricula?.valor_mensalidade || ''); setEditVencimento(infoMatricula?.data_vencimento || ''); setEditModeloFaturamento(getBillingModel(infoMatricula)); setEditValorPorAula(infoMatricula?.valor_por_aula || ''); setEditAvatarUrl(aluno.avatar_url || ''); setFotoPreview(aluno.avatar_url || null); setEditFotoArquivo(null);
@@ -320,15 +322,58 @@ export default function PerfilAluno() {
   const abrirModalPagamento = () => {
     const prefixo = new Date().toISOString().slice(0, 7);
     const totalMesFechado = historicoAulas.filter(h => String(h.data_aula).startsWith(prefixo) && isBillableClass(h.status)).length * Number(infoMatricula?.valor_por_aula || 0);
-    setPayValor(modeloFaturamento === 'MENSAL_FECHADO' ? totalMesFechado.toFixed(2) : infoMatricula?.valor_mensalidade || '');
+    const faturaAberta = faturasDisponiveisPagamento[0]
+    setPayFaturaId(faturaAberta?.id || '')
+    setPayValor(faturaAberta ? Number(faturaAberta.valor_total || 0).toFixed(2) : modeloFaturamento === 'MENSAL_FECHADO' ? totalMesFechado.toFixed(2) : infoMatricula?.valor_mensalidade || '');
     setPayData(new Date().toISOString().split('T')[0]);
     setPayMetodo('PIX');
     setIsPayModalOpen(true)
   }
-  const handleSalvarPagamento = async (e: React.FormEvent) => { e.preventDefault(); await supabase.from('pagamentos').insert([{ aluno_id: id, valor: parseFloat(payValor), status: 'Pago', data_pagamento: payData, metodo_pagamento: payMetodo }]); setIsPayModalOpen(false); carregarDados() }
-  const abrirModalEdicaoPagamento = (pg: any) => { setEditPayId(pg.id); setEditPayData(pg.data_pagamento.split('T')[0]); setEditPayMetodo(pg.metodo_pagamento || 'PIX'); setEditPayValor(pg.valor); setIsEditPayModalOpen(true); }
-  const handleSalvarEdicaoPagamento = async (e: React.FormEvent) => { e.preventDefault(); setIsSubmitting(true); await supabase.from('pagamentos').update({ valor: parseFloat(editPayValor), data_pagamento: editPayData, metodo_pagamento: editPayMetodo }).eq('id', editPayId); setIsSubmitting(false); setIsEditPayModalOpen(false); carregarDados(); }
-  const handleExcluirPagamento = async (id: string) => { if (!window.confirm("🚨 Apagar definitivamente este registro de pagamento?")) return; await supabase.from('pagamentos').delete().eq('id', id); setIsEditPayModalOpen(false); carregarDados(); }
+  const handleSalvarPagamento = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    const { error } = await supabase.from('pagamentos').insert([{
+      aluno_id: id,
+      fatura_id: payFaturaId || null,
+      valor: parseFloat(payValor),
+      status: 'Pago',
+      data_pagamento: payData,
+      metodo_pagamento: payMetodo,
+    }])
+    if (!error && payFaturaId) {
+      await supabase.from('faturas').update({ status: 'PAGO', pago_em: `${payData}T12:00:00-03:00`, atualizado_em: new Date().toISOString() }).eq('id', payFaturaId)
+    }
+    setIsSubmitting(false)
+    if (error) return alert(`Erro ao registrar pagamento: ${error.message}`)
+    setIsPayModalOpen(false)
+    carregarDados()
+  }
+  const abrirModalEdicaoPagamento = (pg: any) => { setEditPayId(pg.id); setEditPayData(pg.data_pagamento.split('T')[0]); setEditPayMetodo(pg.metodo_pagamento || 'PIX'); setEditPayValor(pg.valor); setEditPayStatus(pg.status || 'Pendente'); setEditPayFaturaId(pg.fatura_id || ''); setIsEditPayModalOpen(true); }
+  const handleSalvarEdicaoPagamento = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    await supabase.from('pagamentos').update({ valor: parseFloat(editPayValor), data_pagamento: editPayData, metodo_pagamento: editPayMetodo, status: editPayStatus, fatura_id: editPayFaturaId || null }).eq('id', editPayId)
+    if (editPayFaturaId) {
+      const confirmado = isConfirmedPayment(editPayStatus)
+      await supabase.from('faturas').update({
+        status: confirmado ? 'PAGO' : 'PENDENTE',
+        pago_em: confirmado ? `${editPayData}T12:00:00-03:00` : null,
+        atualizado_em: new Date().toISOString(),
+      }).eq('id', editPayFaturaId)
+    }
+    setIsSubmitting(false)
+    setIsEditPayModalOpen(false)
+    carregarDados()
+  }
+  const handleExcluirPagamento = async (paymentId: string) => {
+    if (!window.confirm("🚨 Apagar definitivamente este registro de pagamento?")) return
+    await supabase.from('pagamentos').delete().eq('id', paymentId)
+    if (editPayFaturaId) {
+      await supabase.from('faturas').update({ status: 'PENDENTE', pago_em: null, atualizado_em: new Date().toISOString() }).eq('id', editPayFaturaId)
+    }
+    setIsEditPayModalOpen(false)
+    carregarDados()
+  }
   const handleUploadMaterial = async (e: React.ChangeEvent<HTMLInputElement>) => { if (!e.target.files || e.target.files.length === 0) return; const file = e.target.files[0]; setIsSubmitting(true); const fileExt = file.name.split('.').pop(); const fileName = `${id}/${crypto.randomUUID()}.${fileExt}`; const { error: uploadError } = await supabase.storage.from('materiais').upload(fileName, file); if (uploadError) { alert("Erro ao enviar arquivo: " + uploadError.message); setIsSubmitting(false); return; } const { data: publicUrlData } = supabase.storage.from('materiais').getPublicUrl(fileName); await supabase.from('materiais_aluno').insert([{ aluno_id: id, nome_arquivo: file.name, url_arquivo: publicUrlData.publicUrl, tipo_arquivo: file.type || 'Desconhecido' }]); carregarDados(); setIsSubmitting(false); alert("✅ Material enviado com sucesso!"); }
   const excluirMaterial = async (matId: string) => { if (!window.confirm("Apagar este material? O aluno não poderá mais acessar.")) return; await supabase.from('materiais_aluno').delete().eq('id', matId); carregarDados(); }
 
@@ -378,7 +423,7 @@ export default function PerfilAluno() {
   const gerarPdfAulas = () => {
     const doc = new jsPDF();
     doc.text(`Histórico de Aulas - ${aluno.nome_completo}`, 14, 15);
-    const ultimoPagamento = pagamentos.length > 0 ? pagamentos[0].data_pagamento : null;
+    const ultimoPagamento = pagamentosConfirmados.length > 0 ? pagamentosConfirmados[0].data_pagamento : null;
     let aulasFeitas = 0;
     
     if (ultimoPagamento) { 
@@ -399,7 +444,7 @@ export default function PerfilAluno() {
     const doc = new jsPDF();
     doc.text(`Histórico de Pagamentos - ${aluno.nome_completo}`, 14, 15);
     const diaVencimento = infoMatricula?.data_vencimento || 10;
-    const tableData = pagamentos.map(p => {
+    const tableData = pagamentosConfirmados.map(p => {
         const dataPgStr = p.data_pagamento.split('T')[0];
         const pgDateObj = new Date(dataPgStr);
         const vencimentoStr = `${pgDateObj.getUTCFullYear()}-${String(pgDateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(diaVencimento).padStart(2, '0')}`;
@@ -412,7 +457,7 @@ export default function PerfilAluno() {
   }
 
   // CÁLCULO DE AULAS DESDE O ÚLTIMO PAGAMENTO
-  const ultimoPagamentoObj = pagamentos.length > 0 ? pagamentos[0] : null;
+  const ultimoPagamentoObj = pagamentosConfirmados.length > 0 ? pagamentosConfirmados[0] : null;
   let aulasDesdeUltimoPagamento = 0;
   if (ultimoPagamentoObj) {
     const dataPg = ultimoPagamentoObj.data_pagamento.split('T')[0];
@@ -430,7 +475,7 @@ export default function PerfilAluno() {
   const valorApuradoNoMes = aulasRealizadasNoMes * Number(infoMatricula?.valor_por_aula || 0);
   const faturasEmAberto = faturas.filter(f => !['PAGO', 'CANCELADA'].includes(String(f.status).toUpperCase()));
   const valorEmAberto = faturasEmAberto.reduce((total, fatura) => total + Number(fatura.valor_total || 0), 0);
-  const totalRecebido = pagamentos.reduce((total, pagamento) => total + Number(pagamento.valor || 0), 0);
+  const totalRecebido = pagamentosConfirmados.reduce((total, pagamento) => total + Number(pagamento.valor || 0), 0);
   const registrosDePresenca = historicoAulas.filter(h => ['Realizada', 'Falta', 'Falta Injustificada', 'Falta Justificada'].includes(h.status));
   const aulasRealizadasTotal = registrosDePresenca.filter(h => h.status === 'Realizada').length;
   const taxaPresenca = registrosDePresenca.length > 0 ? Math.round((aulasRealizadasTotal / registrosDePresenca.length) * 100) : 0;
@@ -739,7 +784,7 @@ export default function PerfilAluno() {
             <div className="p-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-5 lg:items-center">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div><p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Em aberto</p><p className="text-xl font-semibold text-[#a56a32] mt-1">{formatCurrencyBR(valorEmAberto)}</p><p className="text-[10px] text-slate-500 mt-1">{faturasEmAberto.length} fatura(s)</p></div>
-                <div><p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Total recebido</p><p className="text-xl font-semibold text-slate-900 mt-1">{formatCurrencyBR(totalRecebido)}</p><p className="text-[10px] text-slate-500 mt-1">{pagamentos.length} pagamento(s)</p></div>
+                <div><p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Total recebido</p><p className="text-xl font-semibold text-slate-900 mt-1">{formatCurrencyBR(totalRecebido)}</p><p className="text-[10px] text-slate-500 mt-1">{pagamentosConfirmados.length} pagamento(s) confirmado(s)</p></div>
                 <div><p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Modelo</p><p className="text-sm font-semibold text-slate-900 mt-1">{getBillingModelLabel(modeloFaturamento)}</p><p className="text-[10px] text-slate-500 mt-1">{modeloFaturamento === 'MENSAL_FECHADO' ? `${formatCurrencyBR(infoMatricula?.valor_por_aula)}/aula` : formatCurrencyBR(infoMatricula?.valor_mensalidade)}</p></div>
                 <div><p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Vencimento</p><p className="text-xl font-semibold text-slate-900 mt-1">{modeloFaturamento === 'VENCIMENTO_FIXO' ? `Dia ${infoMatricula?.data_vencimento || '—'}` : 'Variável'}</p><p className="text-[10px] text-slate-500 mt-1">{modeloFaturamento === 'CREDITOS' ? 'ao zerar créditos' : modeloFaturamento === 'MENSAL_FECHADO' ? '7 dias após fechar' : 'mensal'}</p></div>
               </div>
@@ -784,7 +829,7 @@ export default function PerfilAluno() {
                 {pagamentos.map(pg => (
                   <button key={pg.id} onClick={() => abrirModalEdicaoPagamento(pg)} className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-[#faf9f6] transition-colors">
                     <div><p className="text-sm font-semibold text-slate-900">{new Date(pg.data_pagamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p><p className="text-[11px] text-slate-500 mt-1">{pg.metodo_pagamento || 'Forma não informada'}</p></div>
-                    <div className="text-right"><p className="text-sm font-semibold text-emerald-700">{formatCurrencyBR(pg.valor)}</p><p className="text-[9px] font-semibold uppercase text-emerald-600 mt-1">Pago</p></div>
+                    <div className="text-right"><p className={`text-sm font-semibold ${isConfirmedPayment(pg) ? 'text-emerald-700' : 'text-[#a56a32]'}`}>{formatCurrencyBR(pg.valor)}</p><p className={`text-[9px] font-semibold uppercase mt-1 ${isConfirmedPayment(pg) ? 'text-emerald-600' : 'text-[#a56a32]'}`}>{isConfirmedPayment(pg) ? 'Confirmado' : 'Pendente'}</p></div>
                   </button>
                 ))}
                 {pagamentos.length === 0 && <div className="py-12 px-6 text-center text-sm text-slate-500">Nenhum pagamento registrado.</div>}
@@ -1048,8 +1093,8 @@ export default function PerfilAluno() {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="font-bold text-emerald-600 text-xl tracking-tight">R$ {pg.valor}</p>
-                      <p className="text-[9px] font-bold uppercase text-emerald-700 bg-emerald-100 inline-block px-2 py-1 rounded mt-1 shadow-sm border border-emerald-200">Pago</p>
+                      <p className={`font-bold text-xl tracking-tight ${isConfirmedPayment(pg) ? 'text-emerald-600' : 'text-amber-700'}`}>R$ {pg.valor}</p>
+                      <p className={`text-[9px] font-bold uppercase inline-block px-2 py-1 rounded mt-1 shadow-sm border ${isConfirmedPayment(pg) ? 'text-emerald-700 bg-emerald-100 border-emerald-200' : 'text-amber-800 bg-amber-100 border-amber-200'}`}>{isConfirmedPayment(pg) ? 'Confirmado' : 'Pendente'}</p>
                     </div>
                     <motion.button whileTap={{ scale: 0.9 }} onClick={() => abrirModalEdicaoPagamento(pg)} className="opacity-0 group-hover:opacity-100 h-10 w-10 flex items-center justify-center bg-white border border-slate-200 shadow-sm rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-all text-sm" title="Editar Registro">✏️</motion.button>
                   </div>
@@ -1131,9 +1176,25 @@ export default function PerfilAluno() {
                     </select>
                   </div>
                 </div>
+                {faturasDisponiveisPagamento.length > 0 && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 ml-1">Fatura relacionada</label>
+                    <select value={payFaturaId} onChange={e => {
+                      setPayFaturaId(e.target.value)
+                      const fatura = faturasDisponiveisPagamento.find(item => item.id === e.target.value)
+                      if (fatura) setPayValor(Number(fatura.valor_total || 0).toFixed(2))
+                    }} className={inputClass}>
+                      <option value="">Pagamento avulso</option>
+                      {faturasDisponiveisPagamento.map(fatura => (
+                        <option key={fatura.id} value={fatura.id}>{formatInvoiceNumber(fatura.numero, fatura.id)} - {formatCurrencyBR(fatura.valor_total)}</option>
+                      ))}
+                    </select>
+                    <p className="mt-2 text-[10px] text-slate-500">Ao confirmar, a fatura escolhida também será marcada como paga.</p>
+                  </div>
+                )}
                 <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40">
                   <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setIsPayModalOpen(false)} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white`}>Cancelar</motion.button>
-                  <motion.button whileTap={{ scale: 0.95 }} type="submit" className="px-10 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm shadow-md hover:bg-emerald-500 transition-all">Confirmar Pagamento</motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm shadow-md hover:bg-emerald-500 transition-all disabled:opacity-50">{isSubmitting ? 'Confirmando...' : 'Confirmar Pagamento'}</motion.button>
                 </div>
               </form>
             </motion.div>
@@ -1146,7 +1207,7 @@ export default function PerfilAluno() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-emerald-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
               <div className="flex justify-between items-center mb-6">
-                <h2 className={`text-2xl font-bold tracking-tight text-slate-800 drop-shadow-sm`}>Editar Recibo</h2>
+                <h2 className={`text-2xl font-bold tracking-tight text-slate-800 drop-shadow-sm`}>Revisar pagamento</h2>
                 <button type="button" onClick={() => handleExcluirPagamento(editPayId)} className="h-10 w-10 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all shadow-sm" title="Apagar Registro Definitivamente">🗑️</button>
               </div>
               <form onSubmit={handleSalvarEdicaoPagamento} className="space-y-5">
@@ -1165,6 +1226,13 @@ export default function PerfilAluno() {
                       <option value="PIX">PIX</option><option value="Cartão">Cartão</option><option value="Dinheiro">Dinheiro</option><option value="Transferência">Transferência</option>
                     </select>
                   </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 ml-1">Situação</label>
+                  <select required value={editPayStatus} onChange={e => setEditPayStatus(e.target.value)} className={inputClass}>
+                    <option value="Pago">Confirmado - gera recibo e entra no caixa</option>
+                    <option value="Pendente">Pendente - não gera recibo nem entra no caixa</option>
+                  </select>
                 </div>
                 <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40">
                   <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setIsEditPayModalOpen(false)} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white disabled:opacity-50`}>Cancelar</motion.button>

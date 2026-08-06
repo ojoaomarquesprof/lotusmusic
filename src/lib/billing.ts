@@ -43,6 +43,14 @@ export function isBillableClass(status?: string | null) {
   return status === 'Realizada' || status === 'Reposição'
 }
 
+export function isConfirmedPayment(paymentOrStatus?: { status?: string | null } | string | null) {
+  const status = typeof paymentOrStatus === 'string'
+    ? paymentOrStatus
+    : paymentOrStatus?.status
+  const normalized = String(status || '').trim().toLocaleLowerCase('pt-BR')
+  return ['pago', 'recebido', 'received', 'confirmed', 'confirmado'].includes(normalized)
+}
+
 export function formatCurrencyBR(value: number | string | null | undefined) {
   return Number(value || 0).toLocaleString('pt-BR', {
     style: 'currency',

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
+import { isConfirmedPayment } from '../../lib/billing'
 import { formatCPFOrCNPJ } from '../../lib/formatters'
 import Cropper from 'react-easy-crop'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -447,7 +448,7 @@ export default function Gerencia() {
         .lte('data_transacao', dataFimStr)
 
       const extrato = [
-        ...(pagamentos || []).map(p => ({ data: p.data_pagamento, descricao: `Mensalidade: ${p.aluno?.nome_completo || 'Aluno'}`, valor: p.valor, tipo: 'Entrada' })),
+        ...(pagamentos || []).filter(isConfirmedPayment).map(p => ({ data: p.data_pagamento, descricao: `Mensalidade: ${p.aluno?.nome_completo || 'Aluno'}`, valor: p.valor, tipo: 'Entrada' })),
         ...(transacoes || []).map(t => ({ data: t.data_transacao, descricao: t.descricao || t.categoria, valor: t.valor, tipo: t.tipo }))
       ].sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
 
