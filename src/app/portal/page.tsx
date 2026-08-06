@@ -6,6 +6,27 @@ import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../lib/billing'
+import {
+  AlertCircle,
+  Bell,
+  BookOpen,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  Clock3,
+  CreditCard,
+  Download,
+  FileText,
+  FolderOpen,
+  Home,
+  LogOut,
+  MapPin,
+  Music2,
+  ReceiptText,
+  RotateCcw,
+  UserRound,
+  WalletCards,
+} from 'lucide-react'
 
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
 const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } } as const
@@ -35,6 +56,7 @@ export default function PortalAluno() {
   const [isNotificacaoModalOpen, setIsNotificacaoModalOpen] = useState(false)
   const [isClassDetailsModalOpen, setIsClassDetailsModalOpen] = useState(false)
   const [selectedClassDetails, setSelectedClassDetails] = useState<any>(null)
+  const [activePortalTab, setActivePortalTab] = useState<'inicio' | 'agenda' | 'financeiro' | 'estudos'>('inicio')
   
   const [notificacaoTab, setNotificacaoTab] = useState('NaoLidas') 
   const [todasNotificacoes, setTodasNotificacoes] = useState<any[]>([]) 
@@ -380,277 +402,650 @@ export default function PortalAluno() {
   const notificacoesNaoLidas = todasNotificacoes.filter(n => !n.is_read)
   const notificacoesLidas = todasNotificacoes.filter(n => n.is_read)
   const notificacoesExibidas = notificacaoTab === 'NaoLidas' ? notificacoesNaoLidas : notificacoesLidas
+  const saldoCreditosFaturamento = Number(infoFinanceira?.saldo_creditos_faturamento || 0)
+  const faturaEmAberto = faturaAtual && ['PENDENTE', 'VENCIDO', 'ERRO'].includes(faturaAtual.status)
+  const podeCopiarPix =
+    (modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && !statusMensalidade.pago) ||
+    (modeloFaturamentoPortal === 'CREDITOS' && saldoCreditosFaturamento <= 0) ||
+    (modeloFaturamentoPortal === 'MENSAL_FECHADO' && faturaEmAberto && !faturaAtual?.invoice_url)
+
+  const aulasComData = aulas
+    .map(aula => {
+      let dadosData
+
+      if (aula.is_reposicao) {
+        const [ano, mes, dia] = String(aula.nova_data).split('-').map(Number)
+        const dataObj = new Date(ano, mes - 1, dia)
+        const dataExtenso = dataObj.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
+        dadosData = {
+          dataFormatada: dataExtenso.charAt(0).toUpperCase() + dataExtenso.slice(1),
+          dataBaseString: aula.nova_data,
+        }
+      } else {
+        dadosData = calcularDataProximaAula(aula.dia, aula.horario_inicio)
+      }
+
+      const status = historico.find(h => String(h.data_aula).slice(0, 10) === dadosData.dataBaseString)?.status
+      const isDesmarcada = status === 'Desmarcada' || status === 'Falta Justificada'
+      const podeReagendar =
+        modeloFaturamentoPortal === 'VENCIMENTO_FIXO' &&
+        !solicitacaoPendente &&
+        !isDesmarcada &&
+        !aula.is_reposicao &&
+        checkCanReschedule(dadosData.dataBaseString, aula.horario_inicio)
+
+      return {
+        ...aula,
+        ...dadosData,
+        status,
+        isDesmarcada,
+        podeReagendar,
+        dataOrdenacao: new Date(`${dadosData.dataBaseString}T${aula.horario_inicio || '00:00'}`).getTime(),
+      }
+    })
+    .sort((a, b) => a.dataOrdenacao - b.dataOrdenacao)
+
+  const proximaAula = aulasComData.find(aula => !aula.isDesmarcada) || aulasComData[0]
+  const aulaBaseReposicao = aulas.find(aula => !aula.is_reposicao)
+  const valorResumoFinanceiro =
+    modeloFaturamentoPortal === 'MENSAL_FECHADO'
+      ? (faturaEmAberto ? Number(faturaAtual?.valor_total || 0) : apuracaoMes.valor)
+      : Number(infoFinanceira?.valor_mensalidade || 0)
+
+  const tabsPortal = [
+    { id: 'inicio' as const, label: 'Início', icon: Home },
+    { id: 'agenda' as const, label: 'Agenda', icon: CalendarDays },
+    { id: 'financeiro' as const, label: 'Financeiro', icon: WalletCards },
+    { id: 'estudos' as const, label: 'Estudos', icon: BookOpen },
+  ]
 
   return (
-    <div className={`min-h-screen text-slate-800 font-sans pb-20 bg-slate-50 relative overflow-hidden z-0`}>
-      
-      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
-          <div className="absolute top-[-10%] left-[-20%] w-[60vw] h-[60vw] max-w-[600px] max-h-[600px] rounded-full bg-indigo-300/30 blur-[100px] animate-pulse" style={{ animationDuration: '8s' }} />
-          <div className="absolute top-[20%] right-[-10%] w-[50vw] h-[50vw] max-w-[500px] max-h-[500px] rounded-full bg-cyan-300/30 blur-[100px] animate-pulse" style={{ animationDuration: '12s' }} />
-          <div className="absolute bottom-[-10%] left-[20%] w-[40vw] h-[40vw] max-w-[400px] max-h-[400px] rounded-full bg-amber-300/20 blur-[100px] animate-pulse" style={{ animationDuration: '10s' }} />
-      </div>
-
-      <header className={`bg-white/40 backdrop-blur-2xl p-6 rounded-b-[2.5rem] border-b border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.04)] sticky top-0 z-40`}>
-        <div className="flex justify-between items-center mb-6">
-          {escola?.logo_url ? <img src={escola.logo_url} className="h-8 max-w-[120px] object-contain drop-shadow-sm" /> : <h1 className="text-xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-500">{escola?.nome_escola || 'Escola'}</h1>}
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4 cursor-pointer w-fit group" onClick={() => setIsProfileModalOpen(true)}>
-            <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-500 to-cyan-400 flex items-center justify-center text-white text-2xl font-bold shadow-md shadow-indigo-500/20 overflow-hidden relative border-2 border-white">
-              {aluno?.avatar_url ? <img src={aluno.avatar_url} className="w-full h-full object-cover" /> : aluno?.nome_completo?.charAt(0)}
-              <div className="absolute inset-0 bg-black/30 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm">✏️</div>
+    <div className="min-h-screen bg-[#f3f1eb] pb-28 font-sans text-[#17241f] md:pb-10">
+      <header className="sticky top-0 z-40 border-b border-[#d9d5ca] bg-[#f8f7f2]/95 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 md:px-7 md:py-4">
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="hidden h-11 w-32 items-center md:flex">
+              {escola?.logo_url ? (
+                <img src={escola.logo_url} alt={escola?.nome_escola || 'Escola'} className="max-h-10 max-w-32 object-contain" />
+              ) : (
+                <p className="truncate text-sm font-bold text-[#1d5143]">{escola?.nome_escola || 'Escola'}</p>
+              )}
             </div>
-            <div>
-              <p className={`text-slate-500 text-xs font-semibold`}>Olá,</p>
-              <h2 className="text-2xl font-bold leading-tight text-slate-800 tracking-tight">{aluno?.nome_completo?.split(' ')[0]}</h2>
-            </div>
+            <button onClick={() => setIsProfileModalOpen(true)} className="group flex min-w-0 items-center gap-3 text-left">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1d5143] text-base font-bold text-white ring-2 ring-white">
+                {aluno?.avatar_url ? (
+                  <img src={aluno.avatar_url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  aluno?.nome_completo?.charAt(0)
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9a743d]">Portal do aluno</p>
+                <p className="truncate text-base font-bold text-[#17241f] group-hover:text-[#1d5143]">
+                  Olá, {aluno?.nome_completo?.split(' ')[0]}
+                </p>
+              </div>
+            </button>
           </div>
 
-          <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => { setIsNotificacaoModalOpen(true); setNotificacaoTab(notificacoesNaoLidas.length > 0 ? 'NaoLidas' : 'Lidas'); }} className="relative h-12 w-12 rounded-full bg-white/60 backdrop-blur-md border border-white/80 shadow-sm flex items-center justify-center hover:bg-white text-slate-600 transition-all">
-            <span className="text-xl drop-shadow-sm">🔔</span>
-            {notificacoesNaoLidas.length > 0 && <span className="absolute -top-1 -right-1 h-5 w-5 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-bounce">{notificacoesNaoLidas.length}</span>}
-          </motion.button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setIsNotificacaoModalOpen(true)
+                setNotificacaoTab(notificacoesNaoLidas.length > 0 ? 'NaoLidas' : 'Lidas')
+              }}
+              className="relative flex h-11 w-11 items-center justify-center rounded-full border border-[#d9d5ca] bg-white text-[#385449] transition hover:border-[#1d5143]"
+              aria-label="Abrir notificações"
+            >
+              <Bell size={19} strokeWidth={1.8} />
+              {notificacoesNaoLidas.length > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#b64b45] px-1 text-[10px] font-bold text-white">
+                  {notificacoesNaoLidas.length}
+                </span>
+              )}
+            </button>
+            <button onClick={handleSair} className="hidden h-11 items-center gap-2 rounded-full border border-[#d9d5ca] bg-white px-4 text-sm font-semibold text-[#53635c] transition hover:text-[#b64b45] md:flex">
+              <LogOut size={17} />
+              Sair
+            </button>
+          </div>
         </div>
+
+        <nav className="mx-auto hidden max-w-6xl gap-1 px-7 pb-3 md:flex" aria-label="Navegação do portal">
+          {tabsPortal.map(tab => {
+            const Icone = tab.icon
+            const ativo = activePortalTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActivePortalTab(tab.id)}
+                className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  ativo ? 'bg-[#1d5143] text-white' : 'text-[#607069] hover:bg-[#ebe8df] hover:text-[#1d5143]'
+                }`}
+              >
+                <Icone size={17} strokeWidth={1.8} />
+                {tab.label}
+              </button>
+            )
+          })}
+        </nav>
       </header>
 
-      <motion.main variants={containerVariants} initial="hidden" animate="show" className="p-4 md:p-5 max-w-md mx-auto space-y-6 mt-2 relative z-10">
-        
-        {solicitacaoPendente && (
-          <motion.div variants={itemVariants} className="bg-gradient-to-r from-amber-400 to-orange-400 p-[1px] rounded-3xl shadow-lg shadow-amber-500/20 animate-pulse">
-            <div className="bg-white/90 backdrop-blur-md rounded-[23px] p-4 flex items-center gap-4">
-              <div className="h-10 w-10 rounded-full bg-amber-50 flex items-center justify-center text-xl shadow-inner flex-shrink-0">⏳</div>
+      <motion.main variants={containerVariants} initial="hidden" animate="show" className="mx-auto max-w-6xl px-4 py-6 md:px-7 md:py-8">
+        {activePortalTab === 'inicio' && (
+          <div className="space-y-6">
+            <motion.section variants={itemVariants} className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
               <div>
-                <p className="font-bold text-sm text-amber-700 tracking-tight">Análise Pendente</p>
-                <p className="text-xs font-medium text-slate-600 leading-tight mt-0.5">Pedido para <span className="font-bold">{new Date(solicitacaoPendente.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} ({solicitacaoPendente.novo_dia})</span> às {solicitacaoPendente.novo_horario_inicio?.slice(0,5)}.</p>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a17a42]">Seu dia na Lotus</p>
+                <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[#17241f] md:text-4xl">
+                  Tudo o que importa, em um só lugar.
+                </h1>
               </div>
-            </div>
-          </motion.div>
-        )}
+              <p className="max-w-md text-sm leading-6 text-[#63716b]">
+                Acompanhe aulas, cobranças, anotações e materiais sem precisar procurar em várias telas.
+              </p>
+            </motion.section>
 
-        {/* --- BANNER DE CRÉDITOS --- */}
-        {getBillingModel(Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info) === 'VENCIMENTO_FIXO' && creditos > 0 && !solicitacaoPendente && (
-          <motion.div variants={itemVariants} className="bg-gradient-to-r from-indigo-500 to-cyan-500 p-[1px] rounded-[2rem] shadow-lg mb-6">
-            <div className="bg-white/10 backdrop-blur-md rounded-[31px] p-6 flex flex-col md:flex-row items-center justify-between gap-4">
-               <div className="flex items-center gap-4">
-                 <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center text-2xl shadow-inner border border-white/30 text-white">🌟</div>
-                 <div>
-                    <h3 className="text-white font-bold text-lg leading-tight">Você tem {creditos} {creditos === 1 ? 'aula' : 'aulas'} para repor!</h3>
-                    <p className="text-white/80 text-xs font-medium mt-1">Escolha um horário e agende sua reposição.</p>
-                 </div>
-               </div>
-               <motion.button 
-                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                  onClick={() => {
-                     const aulaBase = aulas.find(a => !a.is_reposicao);
-                     if(aulaBase) abrirModalReagendamento('Reposição', { ...aulaBase, usando_credito: true });
-                     else alert('Nenhuma aula fixa encontrada para basear a reposição.');
-                  }}
-                  className="w-full md:w-auto px-6 py-3 bg-white text-indigo-600 font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition-all"
-               >
-                  Agendar Reposição
-               </motion.button>
-            </div>
-          </motion.div>
-        )}
+            {solicitacaoPendente && (
+              <motion.button
+                variants={itemVariants}
+                onClick={() => setActivePortalTab('agenda')}
+                className="flex w-full items-center justify-between gap-4 rounded-2xl border border-[#dfc896] bg-[#fff8e7] p-4 text-left"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ead7a8] text-[#6d532e]">
+                    <Clock3 size={19} />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-bold text-[#604c2e]">Solicitação em análise</span>
+                    <span className="mt-0.5 block text-sm text-[#7d6948]">
+                      {new Date(solicitacaoPendente.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} às {solicitacaoPendente.novo_horario_inicio?.slice(0, 5)}
+                    </span>
+                  </span>
+                </span>
+                <ChevronRight size={19} className="shrink-0 text-[#8c744e]" />
+              </motion.button>
+            )}
 
-        <motion.section variants={itemVariants}>
-          <h3 className="text-sm font-semibold text-slate-500 mb-3 ml-2 flex items-center gap-2 drop-shadow-sm"><span className="text-lg">🎯</span> Sua Próxima Aula</h3>
-          {aulas.length === 0 ? (
-            <div className="p-8 rounded-[2rem] border border-dashed border-slate-300 bg-white/40 backdrop-blur-md text-center shadow-sm"><p className="text-sm font-medium text-slate-500">Nenhuma aula agendada.</p></div>
-          ) : (
-            aulas.map(aula => {
-              let dadosData;
-              
-              if (aula.is_reposicao) {
-                 const [a, m, d] = aula.nova_data.split('-');
-                 const dateObj = new Date(parseInt(a), parseInt(m)-1, parseInt(d));
-                 const displayStr = dateObj.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' })
-                 const formatada = displayStr.charAt(0).toUpperCase() + displayStr.slice(1)
-                 dadosData = { dataFormatada: formatada + ' (Reposição)', dataBaseString: aula.nova_data }
-              } else {
-                 dadosData = calcularDataProximaAula(aula.dia, aula.horario_inicio);
-              }
-              
-              const statusAteProxima = historico.find(h => h.data_aula === dadosData.dataBaseString)?.status;
-              const isDesmarcada = statusAteProxima === 'Desmarcada' || statusAteProxima === 'Falta Justificada';
-
-              const canRescheduleInTime = checkCanReschedule(dadosData.dataBaseString, aula.horario_inicio);
-              
-              // Se a aula já for reposição ou já foi cancelada, escondemos o botão.
-              const infoPortal = Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info;
-              const deveMostrarBotaoReagendar = getBillingModel(infoPortal) === 'VENCIMENTO_FIXO' && !solicitacaoPendente && !isDesmarcada && canRescheduleInTime && !aula.is_reposicao;
-
-              return (
-                <motion.div whileHover={{ y: -4 }} key={aula.id} className={`bg-white/50 backdrop-blur-xl p-6 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border relative overflow-hidden group mb-4 transition-all ${isDesmarcada ? 'border-rose-400 opacity-90' : aula.is_reposicao ? 'border-amber-400' : 'border-white/60'}`}>
-                  {isDesmarcada ? (
-                    <div className="absolute -right-6 -top-6 w-32 h-32 bg-rose-500/20 rounded-full blur-2xl pointer-events-none"></div>
-                  ) : aula.is_reposicao ? (
-                    <div className="absolute -right-6 -top-6 w-32 h-32 bg-amber-500/20 rounded-full blur-2xl pointer-events-none"></div>
-                  ) : (
-                    <div className="absolute -right-6 -top-6 w-32 h-32 bg-indigo-300/20 rounded-full blur-2xl pointer-events-none"></div>
-                  )}
-                  
-                  <div className={`inline-block border px-3 py-1 rounded-xl font-bold text-xs mb-4 shadow-sm ${isDesmarcada ? 'bg-rose-100 text-rose-800 border-rose-200' : aula.is_reposicao ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-indigo-50 text-indigo-800 border-indigo-200'}`}>
-                    {dadosData.dataFormatada}
+            <div className="grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
+              <motion.section variants={itemVariants} className="overflow-hidden rounded-[28px] bg-[#173f35] text-white shadow-[0_18px_45px_rgba(23,63,53,0.15)]">
+                <div className="border-b border-white/10 px-5 py-4 md:px-7">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-white/75">
+                      <CalendarDays size={18} />
+                      Próxima aula
+                    </p>
+                    {proximaAula?.is_reposicao && (
+                      <span className="rounded-full bg-[#d8b575] px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#173f35]">Reposição</span>
+                    )}
                   </div>
-                  
-                  <div className="flex justify-between items-end mb-6 relative z-10">
-                    <div>
-                      <p className={`font-bold text-3xl tracking-tight leading-none mb-1 ${isDesmarcada ? 'text-rose-800 line-through opacity-70' : 'text-slate-800'}`}>
-                        {aula.horario_inicio.slice(0,5)} <span className="text-slate-400 text-xl font-medium">- {aula.horario_fim.slice(0,5)}</span>
-                      </p>
-                      <p className={`text-xs font-semibold flex items-center gap-1 mt-2 ${isDesmarcada ? 'text-rose-600' : 'text-slate-600'}`}>
-                        <span className="bg-white/80 shadow-sm p-1 rounded-md text-sm">🎤</span> {aula.instrumento_aula}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Professor</p>
-                      <p className="font-bold text-sm text-indigo-700 bg-indigo-50/80 border border-indigo-100 px-2 py-1 rounded-lg mt-1 shadow-sm">{aula.professor_nome ? aula.professor_nome.split(' ')[0] : '--'}</p>
+                </div>
+
+                {proximaAula ? (
+                  <div className="px-5 py-6 md:px-7 md:py-7">
+                    <p className="text-sm font-medium capitalize text-[#d8b575]">{proximaAula.dataFormatada}</p>
+                    <div className="mt-3 flex flex-wrap items-end justify-between gap-5">
+                      <div>
+                        <p className="text-4xl font-semibold tracking-[-0.05em] md:text-5xl">
+                          {proximaAula.horario_inicio?.slice(0, 5)}
+                          <span className="ml-2 text-xl font-normal text-white/50 md:text-2xl">— {proximaAula.horario_fim?.slice(0, 5)}</span>
+                        </p>
+                        <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-white/75">
+                          <span className="flex items-center gap-2"><Music2 size={16} />{proximaAula.instrumento_aula || 'Aula de música'}</span>
+                          <span className="flex items-center gap-2"><UserRound size={16} />Prof. {proximaAula.professor_nome || 'A definir'}</span>
+                          <span className="flex items-center gap-2"><MapPin size={16} />{proximaAula.sala?.nome || 'Lotus Music'}</span>
+                        </div>
+                      </div>
+                      <button onClick={() => setActivePortalTab('agenda')} className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-[#173f35] transition hover:bg-[#f0eee7]">
+                        Ver agenda
+                        <ChevronRight size={17} />
+                      </button>
                     </div>
                   </div>
-                  
-                  {deveMostrarBotaoReagendar && (
-                    <motion.button 
-                      whileTap={{ scale: 0.98 }} 
-                      onClick={() => {
-                        abrirModalReagendamento('Reposição', aula, dadosData.dataBaseString)
-                      }} 
-                      className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 bg-white/60 border border-white/80 text-slate-700 hover:bg-white`}
-                    >
-                      <span>📅</span> Desmarcar e Reagendar
-                    </motion.button>
-                  )}
-                </motion.div>
-              )
-            })
-          )}
-        </motion.section>
+                ) : (
+                  <div className="px-7 py-10">
+                    <p className="text-lg font-semibold">Nenhuma aula agendada</p>
+                    <p className="mt-1 text-sm text-white/60">Quando uma aula for marcada, ela aparecerá aqui.</p>
+                  </div>
+                )}
+              </motion.section>
 
-        <motion.section variants={itemVariants}>
-          <h3 className="text-sm font-semibold text-slate-500 mb-3 ml-2 flex items-center gap-2 drop-shadow-sm"><span className="text-lg">💳</span> Painel Financeiro</h3>
-          <div className="bg-white/50 backdrop-blur-xl p-6 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border border-white/60 relative overflow-hidden">
-            {modeloFaturamentoPortal === 'CREDITOS' ? (
-              Number(infoFinanceira?.saldo_creditos_faturamento || 0) > 0 ? (
-                <div className="bg-violet-50/80 backdrop-blur-sm border border-violet-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
-                  <div className="h-12 w-12 rounded-full bg-violet-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">🎟️</div>
-                  <div><p className="font-bold text-sm text-violet-800 tracking-tight">{infoFinanceira.saldo_creditos_faturamento} créditos disponíveis</p><p className="text-xs font-medium text-violet-600 mt-0.5">O próximo pagamento será necessário quando o saldo acabar.</p></div>
+              <motion.button
+                variants={itemVariants}
+                onClick={() => setActivePortalTab('financeiro')}
+                className="rounded-[28px] border border-[#d9d5ca] bg-[#fbfaf6] p-5 text-left shadow-[0_14px_35px_rgba(39,50,45,0.07)] md:p-6"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e4ece7] text-[#1d5143]">
+                    <WalletCards size={21} />
+                  </span>
+                  <span className="rounded-full border border-[#d8d4c9] px-3 py-1 text-[11px] font-bold text-[#5f6d67]">
+                    {getBillingModelLabel(modeloFaturamentoPortal)}
+                  </span>
                 </div>
-              ) : (
-                <div className="bg-rose-50/80 backdrop-blur-sm border border-rose-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
-                  <div className="h-12 w-12 rounded-full bg-rose-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">!</div>
-                  <div><p className="font-bold text-sm text-rose-800 tracking-tight">Renovação necessária</p><p className="text-xs font-medium text-rose-600 mt-0.5">Seu saldo de aulas chegou a {infoFinanceira?.saldo_creditos_faturamento || 0}.</p></div>
+                <div className="mt-8">
+                  <p className="text-xs font-bold uppercase tracking-[0.15em] text-[#8b938f]">
+                    {modeloFaturamentoPortal === 'CREDITOS'
+                      ? 'Saldo disponível'
+                      : modeloFaturamentoPortal === 'MENSAL_FECHADO'
+                        ? (faturaEmAberto ? 'Fatura atual' : 'Parcial do mês')
+                        : (statusMensalidade.pago ? 'Mensalidade em dia' : 'Mensalidade')}
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[#17241f]">
+                    {modeloFaturamentoPortal === 'CREDITOS' ? `${saldoCreditosFaturamento} crédito${saldoCreditosFaturamento === 1 ? '' : 's'}` : formatCurrencyBR(valorResumoFinanceiro)}
+                  </p>
+                  <p className="mt-3 text-sm leading-5 text-[#66736d]">
+                    {modeloFaturamentoPortal === 'CREDITOS'
+                      ? (saldoCreditosFaturamento > 0 ? 'Você paga novamente quando os créditos acabarem.' : 'Seu pacote precisa ser renovado.')
+                      : modeloFaturamentoPortal === 'MENSAL_FECHADO'
+                        ? (faturaEmAberto ? `${faturaAtual.quantidade_aulas || 0} aula(s) incluída(s) nesta fatura.` : `${apuracaoMes.aulas} aula(s) realizada(s) neste mês.`)
+                        : (statusMensalidade.pago ? `Próximo vencimento em ${statusMensalidade.dataVencimentoStr}.` : `Vencimento em ${statusMensalidade.dataVencimentoStr}.`)}
+                  </p>
                 </div>
-              )
-            ) : modeloFaturamentoPortal === 'MENSAL_FECHADO' ? (
-              faturaAtual?.status === 'PAGO' ? (
-                <div className="bg-emerald-50/80 backdrop-blur-sm border border-emerald-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
-                  <div className="h-12 w-12 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">✓</div>
-                  <div><p className="font-bold text-sm text-emerald-800 tracking-tight">Última fatura paga</p><p className="text-xs font-medium text-emerald-600 mt-0.5">{faturaAtual.quantidade_aulas} aula(s) — {formatCurrencyBR(faturaAtual.valor_total)}</p></div>
-                </div>
-              ) : faturaAtual && ['PENDENTE', 'VENCIDO', 'ERRO'].includes(faturaAtual.status) ? (
-                <div className={`${faturaAtual.status === 'VENCIDO' ? 'bg-rose-50/80 border-rose-200/50' : 'bg-amber-50/80 border-amber-200/50'} backdrop-blur-sm border p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm`}>
-                  <div className={`h-12 w-12 rounded-full ${faturaAtual.status === 'VENCIDO' ? 'bg-rose-500' : 'bg-amber-500'} text-white flex items-center justify-center text-xl shadow-md flex-shrink-0`}>📄</div>
-                  <div><p className={`font-bold text-sm ${faturaAtual.status === 'VENCIDO' ? 'text-rose-800' : 'text-amber-800'} tracking-tight`}>{faturaAtual.status === 'VENCIDO' ? 'Fatura vencida' : 'Fatura disponível'}</p><p className={`text-xs font-medium ${faturaAtual.status === 'VENCIDO' ? 'text-rose-600' : 'text-amber-700'} mt-0.5`}>{faturaAtual.quantidade_aulas} aula(s) — {formatCurrencyBR(faturaAtual.valor_total)}</p></div>
-                </div>
-              ) : (
-                <div className="bg-cyan-50/80 backdrop-blur-sm border border-cyan-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
-                  <div className="h-12 w-12 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">🧮</div>
-                  <div><p className="font-bold text-sm text-cyan-800 tracking-tight">Mês em apuração</p><p className="text-xs font-medium text-cyan-600 mt-0.5">{apuracaoMes.aulas} aula(s) realizada(s) até agora.</p></div>
-                </div>
-              )
-            ) : statusMensalidade.pago ? (
-              <div className="bg-emerald-50/80 backdrop-blur-sm border border-emerald-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
-                <div className="h-12 w-12 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">✓</div>
-                <div><p className="font-bold text-sm text-emerald-800 tracking-tight">Mensalidade Paga</p><p className="text-xs font-medium text-emerald-600 mt-0.5">Tudo certo. Próxima: {statusMensalidade.dataVencimentoStr}</p></div>
-              </div>
-            ) : statusMensalidade.diasRestantes < 0 ? (
-              <div className="bg-rose-50/80 backdrop-blur-sm border border-rose-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm animate-pulse">
-                <div className="h-12 w-12 rounded-full bg-rose-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">!</div>
-                <div><p className="font-bold text-sm text-rose-800 tracking-tight">Em Atraso</p><p className="text-xs font-medium text-rose-600 mt-0.5">Venceu dia {statusMensalidade.dataVencimentoStr}.</p></div>
-              </div>
-            ) : (
-              <div className="bg-indigo-50/80 backdrop-blur-sm border border-indigo-200/50 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-sm">
-                <div className="h-12 w-12 rounded-full bg-indigo-500 text-white flex items-center justify-center text-xl shadow-md flex-shrink-0">📅</div>
-                <div><p className="font-bold text-sm text-indigo-800 tracking-tight">Vence dia {statusMensalidade.dataVencimentoStr}</p><p className="text-xs font-medium text-indigo-600 mt-0.5">Faltam {statusMensalidade.diasRestantes} dias.</p></div>
-              </div>
-            )}
-            
-            <div className="flex justify-between items-end mb-6 bg-white/40 border border-white/60 p-4 rounded-2xl shadow-inner">
-              <div>
-                <p className="text-xs text-slate-500 font-semibold mb-1">{modeloFaturamentoPortal === 'MENSAL_FECHADO' ? (faturaAtual && ['PENDENTE', 'VENCIDO', 'PAGO'].includes(faturaAtual.status) ? 'Última fatura' : 'Parcial do mês') : modeloFaturamentoPortal === 'CREDITOS' ? 'Pacote com 4 créditos' : 'Valor vigente'}</p>
-                <p className="text-3xl font-bold tracking-tight text-slate-800 leading-none">{formatCurrencyBR(modeloFaturamentoPortal === 'MENSAL_FECHADO' ? (faturaAtual && ['PENDENTE', 'VENCIDO', 'PAGO'].includes(faturaAtual.status) ? faturaAtual.valor_total : apuracaoMes.valor) : infoFinanceira?.valor_mensalidade)}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-slate-500 font-semibold mb-1">Modelo</p>
-                <p className="font-bold text-xs text-slate-700 bg-white/80 px-2 py-1 rounded-lg shadow-sm border border-white">{getBillingModelLabel(modeloFaturamentoPortal)}</p>
-              </div>
+                <span className="mt-6 flex items-center gap-1 text-sm font-bold text-[#1d5143]">
+                  Abrir financeiro <ChevronRight size={17} />
+                </span>
+              </motion.button>
             </div>
 
-            {faturaAtual && !['SEM_MOVIMENTO', 'CANCELADO'].includes(faturaAtual.status) && (
-              <motion.button whileTap={{ scale: 0.98 }} onClick={() => window.open(`/faturas/${faturaAtual.id}`, '_blank')} className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white font-bold text-sm mb-3 shadow-md hover:shadow-lg transition-all">📄 Ver fatura detalhada</motion.button>
-            )}
-            {faturaAtual?.invoice_url && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && (
-              <motion.button whileTap={{ scale: 0.98 }} onClick={() => window.open(faturaAtual.invoice_url, '_blank')} className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-bold text-sm mb-3 shadow-md hover:shadow-lg transition-all">💳 Abrir cobrança</motion.button>
-            )}
-            {((modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && !statusMensalidade.pago) || (modeloFaturamentoPortal === 'CREDITOS' && Number(infoFinanceira?.saldo_creditos_faturamento || 0) <= 0) || (modeloFaturamentoPortal === 'MENSAL_FECHADO' && faturaAtual && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && !faturaAtual.invoice_url)) && (
-              <motion.button whileTap={{ scale: 0.98 }} onClick={copiarPix} className="w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-cyan-500 text-white font-bold text-sm mb-3 shadow-md hover:shadow-lg transition-all">🔗 Copiar Chave PIX</motion.button>
-            )}
-            <motion.button whileTap={{ scale: 0.98 }} onClick={() => setIsPayHistoryModalOpen(true)} className="w-full py-4 rounded-2xl font-bold text-sm text-slate-600 bg-white/60 border border-white/80 hover:bg-white shadow-sm transition-all">📄 Ver Recibos</motion.button>
+            <div className="grid gap-5 lg:grid-cols-2">
+              <motion.section variants={itemVariants} className="rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6]">
+                <div className="flex items-center justify-between border-b border-[#e4e0d7] px-5 py-4">
+                  <div>
+                    <h2 className="text-lg font-bold">Diário recente</h2>
+                    <p className="text-sm text-[#748079]">Presenças e anotações das últimas aulas.</p>
+                  </div>
+                  <button onClick={() => setActivePortalTab('estudos')} className="text-sm font-bold text-[#1d5143]">Ver tudo</button>
+                </div>
+                <div className="divide-y divide-[#e8e4dc] px-5">
+                  {historico.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-[#748079]">Nenhum registro de aula ainda.</p>
+                  ) : historico.slice(0, 3).map(h => {
+                    const concluida = h.status === 'Realizada' || h.status === 'Reposição'
+                    return (
+                      <button key={h.id} onClick={() => abrirDetalhesAula(h)} className="flex w-full items-center gap-3 py-4 text-left">
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${concluida ? 'bg-[#e2eee8] text-[#1d684f]' : 'bg-[#f7e6e2] text-[#a3423d]'}`}>
+                          {concluida ? <Check size={17} /> : <AlertCircle size={17} />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-bold">{new Date(h.data_aula).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
+                          <span className="mt-0.5 block truncate text-sm text-[#748079]">{h.observacoes || h.status}</span>
+                        </span>
+                        <ChevronRight size={17} className="text-[#a8aea9]" />
+                      </button>
+                    )
+                  })}
+                </div>
+              </motion.section>
+
+              <motion.section variants={itemVariants} className="rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6]">
+                <div className="flex items-center justify-between border-b border-[#e4e0d7] px-5 py-4">
+                  <div>
+                    <h2 className="text-lg font-bold">Materiais para estudar</h2>
+                    <p className="text-sm text-[#748079]">Arquivos enviados pela escola.</p>
+                  </div>
+                  <button onClick={() => setActivePortalTab('estudos')} className="text-sm font-bold text-[#1d5143]">Ver tudo</button>
+                </div>
+                <div className="divide-y divide-[#e8e4dc] px-5">
+                  {materiais.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-[#748079]">Nenhum material disponível.</p>
+                  ) : materiais.slice(0, 3).map(material => (
+                    <a key={material.id} href={material.url_arquivo} target="_blank" rel="noreferrer" className="flex items-center gap-3 py-4">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eee9dc] text-[#88652f]">
+                        {String(material.tipo_arquivo).includes('pdf') ? <FileText size={17} /> : <Music2 size={17} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold">{material.nome_arquivo}</span>
+                        <span className="mt-0.5 block text-sm text-[#748079]">{new Date(material.data_envio).toLocaleDateString('pt-BR')}</span>
+                      </span>
+                      <Download size={17} className="text-[#1d5143]" />
+                    </a>
+                  ))}
+                </div>
+              </motion.section>
+            </div>
           </div>
-        </motion.section>
+        )}
 
-        <motion.section variants={itemVariants}>
-          <h3 className="text-sm font-semibold text-slate-500 mb-3 ml-2 flex items-center gap-2 drop-shadow-sm"><span className="text-lg">📖</span> Diário de Aulas</h3>
-          <div className="bg-white/50 backdrop-blur-xl rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border border-white/60 p-2 space-y-2">
-            {historico.length === 0 ? <p className="p-6 text-center text-sm font-medium text-slate-500">Nenhum registro.</p> : historico.map(h => {
-              const isAjuste = h.status === 'Ajuste de Saldo';
-              return (
-                <motion.div whileTap={{ scale: 0.98 }} onClick={() => abrirDetalhesAula(h)} key={h.id} className={`p-4 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all cursor-pointer group ${isAjuste ? 'opacity-80' : ''}`}>
+        {activePortalTab === 'agenda' && (
+          <motion.div variants={itemVariants} className="space-y-5">
+            <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a17a42]">Agenda</p>
+                <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">Suas próximas aulas</h1>
+                <p className="mt-2 text-sm text-[#66736d]">Horários, professores e locais organizados em uma linha do tempo.</p>
+              </div>
+              {modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && creditos > 0 && !solicitacaoPendente && (
+                <button
+                  onClick={() => aulaBaseReposicao ? abrirModalReagendamento('Reposição', { ...aulaBaseReposicao, usando_credito: true }) : alert('Nenhuma aula fixa encontrada para basear a reposição.')}
+                  className="flex items-center justify-center gap-2 rounded-full bg-[#1d5143] px-5 py-3 text-sm font-bold text-white"
+                >
+                  <RotateCcw size={17} />
+                  Usar {creditos === 1 ? 'crédito' : `um dos ${creditos} créditos`}
+                </button>
+              )}
+            </section>
+
+            <section className="rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6] p-4 md:p-5">
+              <div className="flex gap-3">
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#eee9dc] text-[#88652f]">
+                  <FileText size={17} />
+                </span>
+                <div>
+                  <p className="text-sm font-bold">
+                    {modeloFaturamentoPortal === 'CREDITOS'
+                      ? 'As aulas usam o saldo do seu pacote'
+                      : modeloFaturamentoPortal === 'MENSAL_FECHADO'
+                        ? 'Você paga somente pelas aulas realizadas'
+                        : 'Desmarcações elegíveis geram reposição'}
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-[#68756f]">
+                    {modeloFaturamentoPortal === 'CREDITOS'
+                      ? 'Cada aula realizada consome um crédito. Este modelo não acumula reposições.'
+                      : modeloFaturamentoPortal === 'MENSAL_FECHADO'
+                        ? 'As aulas realizadas entram na fatura do fechamento mensal; faltas e desmarcações não criam reposição.'
+                        : 'Solicite a troca com pelo menos 6 horas de antecedência. Créditos de reposição ficam disponíveis por 30 dias.'}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {solicitacaoPendente && (
+              <section className="rounded-[24px] border border-[#dfc896] bg-[#fff8e7] p-5">
+                <p className="text-sm font-bold text-[#604c2e]">Reagendamento em análise</p>
+                <p className="mt-1 text-sm text-[#7d6948]">
+                  A escola está avaliando sua solicitação para {new Date(solicitacaoPendente.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}, às {solicitacaoPendente.novo_horario_inicio?.slice(0, 5)}.
+                </p>
+              </section>
+            )}
+
+            <section className="overflow-hidden rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6]">
+              {aulasComData.length === 0 ? (
+                <div className="px-5 py-14 text-center">
+                  <CalendarDays size={28} className="mx-auto text-[#9da59f]" />
+                  <p className="mt-3 font-bold">Nenhuma aula agendada</p>
+                  <p className="mt-1 text-sm text-[#748079]">Seus próximos compromissos aparecerão aqui.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-[#e4e0d7]">
+                  {aulasComData.map((aula, index) => (
+                    <div key={aula.id} className={`grid gap-4 px-5 py-5 md:grid-cols-[140px_1fr_auto] md:items-center md:px-6 ${aula.isDesmarcada ? 'bg-[#fbf4f1]' : ''}`}>
+                      <div className="flex items-center gap-3 md:block">
+                        <span className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold md:mb-2 ${index === 0 ? 'bg-[#1d5143] text-white' : 'bg-[#e8e5dc] text-[#596861]'}`}>
+                          {index + 1}
+                        </span>
+                        <div>
+                          <p className="text-sm font-bold capitalize">{aula.dataFormatada}</p>
+                          {aula.is_reposicao && <p className="mt-0.5 text-xs font-bold text-[#9a743d]">Aula de reposição</p>}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 text-lg font-semibold">
+                          <Clock3 size={18} className="text-[#1d5143]" />
+                          {aula.horario_inicio?.slice(0, 5)} — {aula.horario_fim?.slice(0, 5)}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-[#68756f]">
+                          <span>{aula.instrumento_aula || 'Aula de música'}</span>
+                          <span>Prof. {aula.professor_nome || 'A definir'}</span>
+                          <span>{aula.sala?.nome || 'Lotus Music'}</span>
+                        </div>
+                      </div>
+                      <div>
+                        {aula.isDesmarcada ? (
+                          <span className="inline-flex rounded-full bg-[#f3ded9] px-3 py-1.5 text-xs font-bold text-[#9d3e39]">Desmarcada</span>
+                        ) : aula.podeReagendar ? (
+                          <button
+                            onClick={() => abrirModalReagendamento('Reposição', aula, aula.dataBaseString)}
+                            className="flex items-center gap-2 rounded-full border border-[#cfcabd] bg-white px-4 py-2.5 text-sm font-bold text-[#365248] transition hover:border-[#1d5143]"
+                          >
+                            <RotateCcw size={16} />
+                            Reagendar
+                          </button>
+                        ) : (
+                          <span className="inline-flex rounded-full bg-[#e4ece7] px-3 py-1.5 text-xs font-bold text-[#1d684f]">Agendada</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </motion.div>
+        )}
+
+        {activePortalTab === 'financeiro' && (
+          <motion.div variants={itemVariants} className="space-y-5">
+            <section>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a17a42]">Financeiro</p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">Cobranças sem surpresa</h1>
+              <p className="mt-2 text-sm text-[#66736d]">Seu modelo, saldo, faturas e recibos explicados no mesmo lugar.</p>
+            </section>
+
+            <section className="overflow-hidden rounded-[28px] bg-[#173f35] text-white shadow-[0_18px_45px_rgba(23,63,53,0.15)]">
+              <div className="flex flex-col gap-6 px-5 py-6 md:flex-row md:items-end md:justify-between md:px-8 md:py-8">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#d8b575]">{getBillingModelLabel(modeloFaturamentoPortal)}</p>
+                  <p className="mt-4 text-sm text-white/65">
+                    {modeloFaturamentoPortal === 'CREDITOS'
+                      ? 'Créditos disponíveis'
+                      : modeloFaturamentoPortal === 'MENSAL_FECHADO'
+                        ? (faturaEmAberto ? 'Valor da fatura' : 'Parcial do mês')
+                        : 'Valor da mensalidade'}
+                  </p>
+                  <p className="mt-1 text-4xl font-semibold tracking-[-0.05em] md:text-5xl">
+                    {modeloFaturamentoPortal === 'CREDITOS' ? saldoCreditosFaturamento : formatCurrencyBR(valorResumoFinanceiro)}
+                    {modeloFaturamentoPortal === 'CREDITOS' && <span className="ml-2 text-xl font-normal text-white/55">de 4</span>}
+                  </p>
+                </div>
+                <div className="max-w-md text-sm leading-6 text-white/70">
+                  {modeloFaturamentoPortal === 'CREDITOS' && (
+                    <p>{saldoCreditosFaturamento > 0 ? 'Cada aula realizada consome um crédito. O próximo pacote só será cobrado quando o saldo acabar.' : 'Seu saldo terminou. Renove o pacote para liberar mais 4 aulas.'}</p>
+                  )}
+                  {modeloFaturamentoPortal === 'MENSAL_FECHADO' && (
+                    <p>{faturaEmAberto ? `Esta fatura reúne ${faturaAtual.quantidade_aulas || 0} aula(s) realizadas. Confira o detalhamento antes de pagar.` : `Você realizou ${apuracaoMes.aulas} aula(s) neste mês. A fatura é fechada no último dia e vence 7 dias depois.`}</p>
+                  )}
+                  {modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && (
+                    <p>{statusMensalidade.pago ? `Mensalidade em dia. O próximo vencimento será em ${statusMensalidade.dataVencimentoStr}.` : statusMensalidade.diasRestantes < 0 ? `Mensalidade vencida em ${statusMensalidade.dataVencimentoStr}.` : `Vencimento em ${statusMensalidade.dataVencimentoStr}, daqui a ${statusMensalidade.diasRestantes} dia(s).`}</p>
+                  )}
+                </div>
+              </div>
+
+              {modeloFaturamentoPortal === 'CREDITOS' && (
+                <div className="grid grid-cols-4 gap-2 border-t border-white/10 px-5 py-5 md:px-8">
+                  {[1, 2, 3, 4].map(indice => (
+                    <div key={indice} className={`h-2 rounded-full ${indice <= Math.min(4, Math.max(0, saldoCreditosFaturamento)) ? 'bg-[#d8b575]' : 'bg-white/15'}`} />
+                  ))}
+                </div>
+              )}
+              {modeloFaturamentoPortal === 'MENSAL_FECHADO' && (
+                <div className="grid grid-cols-2 divide-x divide-white/10 border-t border-white/10">
+                  <div className="px-5 py-4 md:px-8">
+                    <p className="text-xs text-white/55">Aulas contabilizadas</p>
+                    <p className="mt-1 text-lg font-bold">{faturaEmAberto ? faturaAtual.quantidade_aulas || 0 : apuracaoMes.aulas}</p>
+                  </div>
+                  <div className="px-5 py-4 md:px-8">
+                    <p className="text-xs text-white/55">{faturaEmAberto ? 'Situação' : 'Fechamento'}</p>
+                    <p className="mt-1 text-lg font-bold">{faturaEmAberto ? (faturaAtual.status === 'VENCIDO' ? 'Vencida' : 'Aguardando pagamento') : 'Último dia do mês'}</p>
+                  </div>
+                </div>
+              )}
+              {modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && (
+                <div className="grid grid-cols-2 divide-x divide-white/10 border-t border-white/10">
+                  <div className="px-5 py-4 md:px-8">
+                    <p className="text-xs text-white/55">Situação</p>
+                    <p className="mt-1 text-lg font-bold">{statusMensalidade.pago ? 'Em dia' : statusMensalidade.diasRestantes < 0 ? 'Em atraso' : 'A vencer'}</p>
+                  </div>
+                  <div className="px-5 py-4 md:px-8">
+                    <p className="text-xs text-white/55">Reposições válidas</p>
+                    <p className="mt-1 text-lg font-bold">{creditos}</p>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && creditos > 0 && (
+              <section className="flex flex-col justify-between gap-4 rounded-[24px] border border-[#dfc896] bg-[#fff8e7] p-5 sm:flex-row sm:items-center">
+                <div>
+                  <p className="font-bold text-[#604c2e]">{creditos} {creditos === 1 ? 'reposição disponível' : 'reposições disponíveis'}</p>
+                  <p className="mt-1 text-sm text-[#7d6948]">Use dentro do prazo de 30 dias para não perder o crédito.</p>
+                </div>
+                {!solicitacaoPendente && (
+                  <button
+                    onClick={() => aulaBaseReposicao ? abrirModalReagendamento('Reposição', { ...aulaBaseReposicao, usando_credito: true }) : alert('Nenhuma aula fixa encontrada para basear a reposição.')}
+                    className="flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#604c2e] px-4 py-2.5 text-sm font-bold text-white"
+                  >
+                    <RotateCcw size={16} /> Agendar
+                  </button>
+                )}
+              </section>
+            )}
+
+            <section className="grid gap-5 lg:grid-cols-[1fr_0.75fr]">
+              <div className="rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6] p-5 md:p-6">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e4ece7] text-[#1d5143]"><CreditCard size={19} /></span>
+                  <div>
+                    <h2 className="font-bold">Ações financeiras</h2>
+                    <p className="text-sm text-[#748079]">Fatura, cobrança e comprovantes.</p>
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {faturaAtual && !['SEM_MOVIMENTO', 'CANCELADO'].includes(faturaAtual.status) && (
+                    <button onClick={() => window.open(`/faturas/${faturaAtual.id}`, '_blank')} className="flex items-center justify-between rounded-2xl border border-[#d4d0c5] bg-white px-4 py-4 text-left text-sm font-bold text-[#254b40]">
+                      <span className="flex items-center gap-2"><FileText size={18} /> Ver fatura</span><ChevronRight size={17} />
+                    </button>
+                  )}
+                  {faturaAtual?.invoice_url && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && (
+                    <button onClick={() => window.open(faturaAtual.invoice_url, '_blank')} className="flex items-center justify-between rounded-2xl bg-[#1d5143] px-4 py-4 text-left text-sm font-bold text-white">
+                      <span className="flex items-center gap-2"><CreditCard size={18} /> Abrir cobrança</span><ChevronRight size={17} />
+                    </button>
+                  )}
+                  {podeCopiarPix && (
+                    <button onClick={copiarPix} className="flex items-center justify-between rounded-2xl bg-[#1d5143] px-4 py-4 text-left text-sm font-bold text-white">
+                      <span className="flex items-center gap-2"><WalletCards size={18} /> Copiar PIX</span><ChevronRight size={17} />
+                    </button>
+                  )}
+                  <button onClick={() => setIsPayHistoryModalOpen(true)} className="flex items-center justify-between rounded-2xl border border-[#d4d0c5] bg-white px-4 py-4 text-left text-sm font-bold text-[#254b40]">
+                    <span className="flex items-center gap-2"><ReceiptText size={18} /> Ver recibos</span><ChevronRight size={17} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6] p-5 md:p-6">
+                <h2 className="font-bold">Últimos pagamentos</h2>
+                <div className="mt-3 divide-y divide-[#e4e0d7]">
+                  {historicoPagamentos.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-[#748079]">Nenhum pagamento registrado.</p>
+                  ) : historicoPagamentos.slice(0, 4).map(pagamento => (
+                    <div key={pagamento.id} className="flex items-center justify-between gap-3 py-3">
+                      <div>
+                        <p className="text-sm font-bold">{new Date(pagamento.data_pagamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
+                        <p className="text-xs text-[#748079]">Pagamento confirmado</p>
+                      </div>
+                      <p className="text-sm font-bold text-[#1d684f]">{formatCurrencyBR(pagamento.valor)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </motion.div>
+        )}
+
+        {activePortalTab === 'estudos' && (
+          <motion.div variants={itemVariants} className="space-y-5">
+            <section>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a17a42]">Estudos</p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">Continue de onde parou</h1>
+              <p className="mt-2 text-sm text-[#66736d]">Revise o diário das aulas e acesse os materiais compartilhados.</p>
+            </section>
+
+            <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+              <section className="overflow-hidden rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6]">
+                <div className="border-b border-[#e4e0d7] px-5 py-5 md:px-6">
                   <div className="flex items-center gap-3">
-                    <div className={`h-10 w-10 rounded-full flex items-center justify-center text-lg shadow-inner ${(h.status === 'Realizada' || h.status === 'Reposição') ? 'bg-emerald-50 text-emerald-600' : (h.status === 'Desmarcada' || h.status === 'Falta' || h.status === 'Falta Injustificada') ? 'bg-rose-50 text-rose-600' : (h.status === 'Crédito' || h.status === 'Falta Justificada') ? 'bg-purple-50 text-purple-600' : isAjuste ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-600'}`}>
-                      {(h.status === 'Realizada' || h.status === 'Reposição') ? '✓' : (h.status === 'Desmarcada' || h.status === 'Falta' || h.status === 'Falta Injustificada') ? '✖' : isAjuste ? '➖' : '📅'}
-                    </div>
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e4ece7] text-[#1d5143]"><BookOpen size={19} /></span>
                     <div>
-                      <p className="font-bold text-sm text-slate-800">{new Date(h.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
-                      <p className="text-[11px] font-semibold text-slate-500 mt-0.5">{h.status}</p>
+                      <h2 className="text-lg font-bold">Diário de aulas</h2>
+                      <p className="text-sm text-[#748079]">Toque em uma aula para ler as anotações.</p>
                     </div>
-                  </div>
-                  <div className="text-slate-400 opacity-60 group-hover:opacity-100 transition-opacity">
-                      <span className="text-xl">👁️</span>
-                  </div>
-                </motion.div>
-              )
-            })}
-          </div>
-        </motion.section>
-
-        <motion.section variants={itemVariants}>
-          <h3 className="text-sm font-semibold text-slate-500 mb-3 ml-2 flex items-center gap-2 drop-shadow-sm"><span className="text-lg">📁</span> Repositório (Arquivos)</h3>
-          <div className="bg-white/50 backdrop-blur-xl rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)] border border-white/60 p-2 space-y-2">
-            {materiais.length === 0 ? <p className="p-6 text-center text-sm font-medium text-slate-500">Nenhum arquivo disponível.</p> : materiais.map(m => (
-              <div key={m.id} className="p-3 rounded-2xl bg-white/60 border border-white/80 flex justify-between items-center shadow-sm hover:shadow-md transition-all group">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="h-12 w-12 rounded-xl bg-cyan-50/80 border border-cyan-100 text-cyan-600 flex items-center justify-center text-xl flex-shrink-0 shadow-inner">{m.tipo_arquivo.includes('pdf') ? '📄' : '🎵'}</div>
-                  <div className="overflow-hidden pr-2">
-                    <p className="font-bold text-sm text-slate-800 truncate">{m.nome_arquivo}</p>
-                    <p className="text-xs font-medium text-slate-500 mt-0.5">{new Date(m.data_envio).toLocaleDateString('pt-BR')}</p>
                   </div>
                 </div>
-                <a href={m.url_arquivo} target="_blank" download className="h-10 w-10 bg-white/80 border border-white rounded-xl flex items-center justify-center text-cyan-600 shadow-sm hover:bg-cyan-50 transition-all flex-shrink-0 group-hover:scale-105">⬇️</a>
-              </div>
-            ))}
-          </div>
-        </motion.section>
+                <div className="max-h-[560px] divide-y divide-[#e8e4dc] overflow-y-auto px-5">
+                  {historico.length === 0 ? (
+                    <p className="py-12 text-center text-sm text-[#748079]">Nenhum registro de aula.</p>
+                  ) : historico.map(h => {
+                    const concluida = h.status === 'Realizada' || h.status === 'Reposição'
+                    const ajuste = h.status === 'Ajuste de Saldo'
+                    return (
+                      <button key={h.id} onClick={() => abrirDetalhesAula(h)} className="flex w-full items-center gap-4 py-4 text-left">
+                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${concluida ? 'bg-[#e2eee8] text-[#1d684f]' : ajuste ? 'bg-[#e9e9e5] text-[#65716b]' : 'bg-[#f7e6e2] text-[#a3423d]'}`}>
+                          {concluida ? <Check size={18} /> : <AlertCircle size={18} />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-bold">{new Date(h.data_aula).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
+                          <span className="mt-0.5 block truncate text-sm text-[#748079]">{h.observacoes || h.status}</span>
+                        </span>
+                        <span className="rounded-full bg-[#eeece5] px-2.5 py-1 text-[11px] font-bold text-[#65716b]">{h.status}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
 
+              <section className="overflow-hidden rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6]">
+                <div className="border-b border-[#e4e0d7] px-5 py-5 md:px-6">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eee9dc] text-[#88652f]"><FolderOpen size={19} /></span>
+                    <div>
+                      <h2 className="text-lg font-bold">Materiais</h2>
+                      <p className="text-sm text-[#748079]">{materiais.length} arquivo(s) disponível(is).</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="max-h-[560px] divide-y divide-[#e8e4dc] overflow-y-auto px-5">
+                  {materiais.length === 0 ? (
+                    <div className="py-12 text-center">
+                      <FolderOpen size={27} className="mx-auto text-[#9da59f]" />
+                      <p className="mt-3 text-sm font-bold">Nenhum material disponível</p>
+                      <p className="mt-1 text-sm text-[#748079]">Os arquivos enviados pela escola aparecerão aqui.</p>
+                    </div>
+                  ) : materiais.map(material => (
+                    <a key={material.id} href={material.url_arquivo} target="_blank" rel="noreferrer" download className="flex items-center gap-4 py-4">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eee9dc] text-[#88652f]">
+                        {String(material.tipo_arquivo).includes('pdf') ? <FileText size={18} /> : <Music2 size={18} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold">{material.nome_arquivo}</span>
+                        <span className="mt-0.5 block text-sm text-[#748079]">Enviado em {new Date(material.data_envio).toLocaleDateString('pt-BR')}</span>
+                      </span>
+                      <Download size={18} className="shrink-0 text-[#1d5143]" />
+                    </a>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <button onClick={handleSair} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[#ddc7c4] bg-[#fbf3f1] py-3.5 text-sm font-bold text-[#a3423d] md:hidden">
+              <LogOut size={17} /> Sair do portal
+            </button>
+          </motion.div>
+        )}
       </motion.main>
 
-      {/* FOOTER FIXO */}
-      <footer className="bg-white/40 backdrop-blur-2xl p-4 border-t border-white/60 shadow-[0_-8px_32px_rgba(0,0,0,0.04)] fixed bottom-0 w-full flex justify-center z-40">
-        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} onClick={handleSair} className="px-8 py-3.5 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 font-bold text-xs hover:bg-rose-100 shadow-sm transition-all flex items-center gap-2">
-          <span className="text-sm">🚪</span> Sair do App
-        </motion.button>
-      </footer>
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-[#d8d4c9] bg-[#fbfaf6]/95 px-2 pb-[max(0.55rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl md:hidden" aria-label="Navegação do portal">
+        <div className="mx-auto grid max-w-md grid-cols-4">
+          {tabsPortal.map(tab => {
+            const Icone = tab.icon
+            const ativo = activePortalTab === tab.id
+            return (
+              <button key={tab.id} onClick={() => setActivePortalTab(tab.id)} className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-bold transition ${ativo ? 'bg-[#e4ece7] text-[#1d5143]' : 'text-[#7a8680]'}`}>
+                <Icone size={19} strokeWidth={ativo ? 2.2 : 1.8} />
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+      </nav>
 
       {/* --- MODAIS --- */}
       <AnimatePresence>
@@ -803,7 +1198,7 @@ export default function PortalAluno() {
               <form onSubmit={handleAtualizarPerfil} className="space-y-4 overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
                   <div className="flex flex-col items-center gap-2 mb-4">
                     <div className="w-20 h-20 rounded-full bg-slate-200 overflow-hidden relative shadow-md">
-                       {fotoPreview ? <img src={fotoPreview} className="w-full h-full object-cover"/> : <span className="text-3xl flex items-center justify-center h-full">📷</span>}
+                       {fotoPreview ? <img src={fotoPreview} alt="Foto de perfil do aluno" className="w-full h-full object-cover"/> : <span className="text-3xl flex items-center justify-center h-full">📷</span>}
                     </div>
                     <input type="file" accept="image/*" onChange={(e) => {
                        const file = e.target.files?.[0];
