@@ -37,6 +37,11 @@ import {
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
 const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } } as const
 
+const horarioEmMinutos = (horario?: string) => {
+  const [hora, minuto] = String(horario || '').split(':').map(Number)
+  return Number.isFinite(hora) && Number.isFinite(minuto) ? (hora * 60) + minuto : Number.MAX_SAFE_INTEGER
+}
+
 export default function PortalAluno() {
   const { s, toggleTheme } = useStyles()
   const router = useRouter()
@@ -148,7 +153,11 @@ export default function PortalAluno() {
         })
         return !isOcupado
       })
-      setVagasDoDiaSelecionado(vagasReais); setSelectedSlot(null)
+      const vagasOrdenadas = [...vagasReais].sort((a, b) => {
+        const diferencaInicio = horarioEmMinutos(a.hora_inicio) - horarioEmMinutos(b.hora_inicio)
+        return diferencaInicio || horarioEmMinutos(a.hora_fim) - horarioEmMinutos(b.hora_fim)
+      })
+      setVagasDoDiaSelecionado(vagasOrdenadas); setSelectedSlot(null)
     } else { 
       setVagasDoDiaSelecionado([]); setDiaBloqueadoMsg(null) 
     }
