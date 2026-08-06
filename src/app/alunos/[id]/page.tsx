@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   Bell,
   BookOpenCheck,
+  Camera,
   CalendarClock,
   CheckCircle2,
   ChevronRight,
@@ -30,10 +31,12 @@ import {
   MoreHorizontal,
   Phone,
   ReceiptText,
+  Send,
   Trash2,
   Upload,
   UserRound,
   WalletCards,
+  X,
 } from 'lucide-react'
 
 const createImage = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url })
@@ -68,6 +71,7 @@ export default function PerfilAluno() {
   const [editAvatarUrl, setEditAvatarUrl] = useState(''); const [editFotoArquivo, setEditFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null); const [showCropModal, setShowCropModal] = useState(false); const [imageToCrop, setImageToCrop] = useState<string | null>(null); const [crop, setCrop] = useState({ x: 0, y: 0 }); const [zoom, setZoom] = useState(1); const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
 
   const [editAgendas, setEditAgendas] = useState<any[]>([])
+  const [editAgendamentoCadastro, setEditAgendamentoCadastro] = useState<'AGORA' | 'DEPOIS'>('AGORA')
 
   const [isClassModalOpen, setIsClassModalOpen] = useState(false); const [dataAula, setDataAula] = useState(new Date().toISOString().split('T')[0]); const [horaInicioAula, setHoraInicioAula] = useState('08:00'); const [horaFimAula, setHoraFimAula] = useState('09:00'); const [statusAula, setStatusAula] = useState('Realizada'); const [obsAula, setObsAula] = useState('')
   const [isPayModalOpen, setIsPayModalOpen] = useState(false); const [payData, setPayData] = useState(new Date().toISOString().split('T')[0]); const [payMetodo, setPayMetodo] = useState('PIX'); const [payValor, setPayValor] = useState(''); const [payFaturaId, setPayFaturaId] = useState(''); const [payCompetencia, setPayCompetencia] = useState(new Date().toISOString().slice(0, 7))
@@ -135,6 +139,7 @@ export default function PerfilAluno() {
     setEditStatus(infoMatricula?.status || 'Ativo'); setEditNome(aluno.nome_completo || ''); setEditEmail(aluno.email || ''); setEditTel(aluno.telefone || ''); setEditCpf(aluno.cpf || ''); setEditDataNascimento(isoToDateInput(aluno.data_nascimento)); setEditCep(aluno.cep || ''); setEditEndereco(aluno.endereco || ''); setEditNumero(aluno.numero || ''); setEditComplemento(aluno.complemento || ''); setEditBairro(aluno.bairro || ''); setEditCidade(aluno.cidade || ''); setEditEstado(aluno.estado || ''); setEditComoConheceu(infoMatricula?.como_conheceu || ''); setEditIndicacaoNome(infoMatricula?.indicacao_nome || ''); setEditValor(infoMatricula?.valor_mensalidade || ''); setEditVencimento(infoMatricula?.data_vencimento || ''); setEditModeloFaturamento(getBillingModel(infoMatricula)); setEditValorPorAula(infoMatricula?.valor_por_aula || ''); setEditInicioFaturamento(String(infoMatricula?.inicio_faturamento || infoMatricula?.modelo_faturamento_desde || aluno.created_at || new Date().toISOString()).slice(0, 7)); setEditAvatarUrl(aluno.avatar_url || ''); setFotoPreview(aluno.avatar_url || null); setEditFotoArquivo(null);
     
     if (aulasFixas.length > 0) { 
+      setEditAgendamentoCadastro('AGORA')
       setEditAgendas(aulasFixas.map(a => ({
         id: a.id,
         dia: a.dia,
@@ -145,6 +150,7 @@ export default function PerfilAluno() {
         instrumento_aula: a.instrumento_aula
       })))
     } else { 
+      setEditAgendamentoCadastro('DEPOIS')
       setEditAgendas([{ id: `new_${crypto.randomUUID()}`, dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
     }
     
@@ -186,14 +192,16 @@ export default function PerfilAluno() {
       return alert("Informe um CPF ou CNPJ válido para o faturamento.");
     }
     
-    if (!isEditingInativo) {
-      if (editAgendas.some(ag => !ag.professor_id || !ag.sala_id || !ag.instrumento_aula)) {
+    const agendasParaSalvar = !isEditingInativo && editAgendamentoCadastro === 'AGORA' ? editAgendas : [];
+
+    if (!isEditingInativo && agendasParaSalvar.length > 0) {
+      if (agendasParaSalvar.some(ag => !ag.professor_id || !ag.sala_id || !ag.instrumento_aula)) {
         setIsSubmitting(false);
         return alert("Preencha modalidade, sala e professor de TODOS os horários de aula.");
       }
 
-      const conflitoNoFormulario = editAgendas.find((ag, index) =>
-        editAgendas.some((outraAgenda, outroIndex) =>
+      const conflitoNoFormulario = agendasParaSalvar.find((ag, index) =>
+        agendasParaSalvar.some((outraAgenda, outroIndex) =>
           index !== outroIndex &&
           ag.dia === outraAgenda.dia &&
           (ag.professor_id === outraAgenda.professor_id || String(ag.sala_id) === String(outraAgenda.sala_id)) &&
@@ -221,7 +229,7 @@ export default function PerfilAluno() {
 
       const idsAlunosAtivos = (alunosAtivos || []).map(alunoAtivo => alunoAtivo.id);
 
-      for (let ag of editAgendas) {
+      for (let ag of agendasParaSalvar) {
         if (idsAlunosAtivos.length === 0) break;
 
         const { data: conflitos, error: conflitosError } = await supabase
@@ -274,13 +282,13 @@ export default function PerfilAluno() {
     }
     
     if (!isEditingInativo) {
-      const idsAtuais = editAgendas.filter(a => !String(a.id).startsWith('new_')).map(a => a.id);
+      const idsAtuais = agendasParaSalvar.filter(a => !String(a.id).startsWith('new_')).map(a => a.id);
       const deletados = aulasFixas.filter(a => !idsAtuais.includes(a.id));
       for (let del of deletados) {
           await supabase.from('agenda').delete().eq('id', del.id);
       }
 
-      for (let ag of editAgendas) {
+      for (let ag of agendasParaSalvar) {
         const agendaData = { professor_id: ag.professor_id, aluno_id: id as string, sala_id: parseInt(ag.sala_id), dia: ag.dia, horario_inicio: ag.horario_inicio, horario_fim: ag.horario_fim, instrumento_aula: ag.instrumento_aula }; 
         if (String(ag.id).startsWith('new_')) {
           await supabase.from('agenda').insert([agendaData])
@@ -382,10 +390,15 @@ export default function PerfilAluno() {
 
   const handleEnviarMensagem = async (e: React.FormEvent) => {
     e.preventDefault();
+    const titulo = msgTitulo.trim();
+    const mensagem = msgTexto.trim();
+    if (!titulo || !mensagem) return;
     setIsSubmitting(true);
-    await supabase.from('notificacoes_aluno').insert([{ aluno_id: id, titulo: msgTitulo, mensagem: msgTexto }])
-    alert("✅ Mensagem enviada para o aluno!");
-    setIsMsgModalOpen(false); setMsgTexto(''); setIsSubmitting(false);
+    const { error } = await supabase.from('notificacoes_aluno').insert([{ aluno_id: id, titulo, mensagem }])
+    setIsSubmitting(false);
+    if (error) return alert("Não foi possível enviar o aviso: " + error.message);
+    alert("✅ Aviso enviado para o aluno!");
+    setIsMsgModalOpen(false); setMsgTitulo('Aviso da Secretaria'); setMsgTexto('');
   }
 
   const handleConcederCredito = async () => {
@@ -485,7 +498,9 @@ export default function PerfilAluno() {
   const ultimoRegistroAula = historicoAulas.find(h => h.status !== 'Ajuste de Saldo');
   const whatsappUrl = aluno?.telefone ? `https://wa.me/55${String(aluno.telefone).replace(/\D/g, '')}` : null;
 
-  const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
+  const inputClass = "premium-form-control";
+  const labelClass = "mb-1.5 block text-xs font-semibold text-slate-600";
+  const formSectionClass = "rounded-2xl border border-[#dfded7] bg-white p-5 md:p-6";
 
   if (!isMounted) return null;
   if (loading) return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
@@ -1113,26 +1128,49 @@ export default function PerfilAluno() {
       {/* Modais */}
       <AnimatePresence>
         {isMsgModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-amber-500 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl relative`}>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className={`text-2xl font-bold tracking-tight text-slate-800 drop-shadow-sm`}>Enviar Aviso</h2>
-                <button onClick={() => setIsMsgModalOpen(false)} className="text-slate-400 hover:text-slate-700 font-bold">✖</button>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-[#0d1d17]/55 p-4 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.97, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 18 }} className="w-full max-w-lg overflow-hidden rounded-[26px] border border-white/60 bg-[#f8f7f2] shadow-2xl">
+              <div className="flex items-start justify-between gap-5 border-b border-[#dfded7] bg-[#fbfaf6] px-6 py-5">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e7efe9] text-[#1f4a3a]">
+                    <Bell size={19} strokeWidth={1.8} />
+                  </span>
+                  <div>
+                    <div className="premium-kicker">Comunicação direta</div>
+                    <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Enviar aviso</h2>
+                    <p className="mt-1 text-sm text-slate-500">Para {aluno?.nome_completo || 'o aluno'}</p>
+                  </div>
+                </div>
+                <button type="button" aria-label="Fechar envio de aviso" onClick={() => setIsMsgModalOpen(false)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#dfded7] bg-white text-slate-500 transition hover:border-[#bfc7c1] hover:text-[#1f4a3a]">
+                  <X size={18} />
+                </button>
               </div>
-              <p className="text-sm font-medium text-slate-500 mb-6 leading-tight">Essa mensagem aparecerá instantaneamente no aplicativo do aluno.</p>
               
-              <form onSubmit={handleEnviarMensagem} className="space-y-5">
+              <form onSubmit={handleEnviarMensagem}>
+                <div className="space-y-5 px-6 py-6">
+                  <div className="flex gap-3 rounded-xl border border-[#d7e1da] bg-[#edf4ef] p-4 text-sm leading-5 text-[#315949]">
+                    <Bell size={17} className="mt-0.5 shrink-0" />
+                    <p>O aviso ficará disponível na Central de avisos do portal e o aluno verá a atualização no sininho.</p>
+                  </div>
                 <div>
-                  <label className="text-xs font-semibold text-slate-600 ml-1">Título (Assunto)</label>
-                  <input required value={msgTitulo} onChange={e => setMsgTitulo(e.target.value)} className={inputClass} />
+                  <label className={labelClass}>Assunto</label>
+                  <input required maxLength={80} value={msgTitulo} onChange={e => setMsgTitulo(e.target.value)} placeholder="Ex.: Alteração no horário da aula" className={inputClass} />
+                  <p className="mt-1.5 text-right text-[11px] text-slate-400">{msgTitulo.length}/80</p>
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-slate-600 ml-1">Sua Mensagem</label>
-                  <textarea required value={msgTexto} onChange={e => setMsgTexto(e.target.value)} placeholder="Digite o aviso aqui..." className={`${inputClass} h-32 resize-none`} />
+                  <label className={labelClass}>Mensagem</label>
+                  <textarea required maxLength={600} value={msgTexto} onChange={e => setMsgTexto(e.target.value)} placeholder="Escreva uma mensagem clara e objetiva para o aluno..." className={`${inputClass} h-36 resize-none`} />
+                  <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>O envio é imediato.</span>
+                    <span>{msgTexto.length}/600</span>
+                  </div>
                 </div>
-                <div className="pt-4">
-                  <motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="w-full py-4 rounded-2xl bg-amber-400 text-amber-950 font-bold text-sm shadow-md hover:bg-amber-500 transition-all disabled:opacity-50">
-                    {isSubmitting ? 'Enviando...' : '🔔 Disparar Notificação'}
+                </div>
+                <div className="flex flex-col-reverse gap-3 border-t border-[#dfded7] bg-[#fbfaf6] px-6 py-4 sm:flex-row sm:justify-end">
+                  <button type="button" onClick={() => setIsMsgModalOpen(false)} disabled={isSubmitting} className="h-11 rounded-xl border border-[#d9d7ce] bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-[#f8f7f3] disabled:opacity-50">Cancelar</button>
+                  <motion.button whileTap={{ scale: 0.97 }} type="submit" disabled={isSubmitting || !msgTitulo.trim() || !msgTexto.trim()} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[#1f4a3a] px-6 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(31,74,58,0.18)] transition hover:bg-[#173b2e] disabled:cursor-not-allowed disabled:opacity-45">
+                    <Send size={16} />
+                    {isSubmitting ? 'Enviando...' : 'Enviar aviso'}
                   </motion.button>
                 </div>
               </form>
@@ -1312,153 +1350,193 @@ export default function PerfilAluno() {
 
       <AnimatePresence>
         {isEditModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-md flex items-center justify-center p-4 z-50">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-indigo-500 p-8 rounded-[2.5rem] w-full max-w-4xl shadow-2xl relative overflow-y-auto max-h-[90vh] custom-scrollbar`}>
-              <h2 className={`text-3xl font-bold tracking-tight mb-8 text-slate-800 drop-shadow-sm`}>Editar Ficha do Aluno</h2>
-              <form onSubmit={handleSalvarEdicao} className="space-y-8">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-[#0d1d17]/55 p-3 backdrop-blur-sm md:p-4">
+            <motion.div initial={{ scale: 0.97, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 18 }} className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[#f8f7f2] shadow-2xl">
+              <div className="flex shrink-0 items-start justify-between gap-5 border-b border-[#dfded7] bg-[#fbfaf6] px-5 py-5 md:px-7">
+                <div>
+                  <div className="premium-kicker">Editar aluno</div>
+                  <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{editNome || aluno?.nome_completo}</h2>
+                  <p className="mt-1 text-sm text-slate-500">Cadastro, agenda e faturamento em um único fluxo.</p>
+                </div>
+                <button type="button" aria-label="Fechar edição do aluno" onClick={() => setIsEditModalOpen(false)} disabled={isSubmitting} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#dfded7] bg-white text-slate-500 transition hover:border-[#bfc7c1] hover:text-[#1f4a3a] disabled:opacity-50">
+                  <X size={18} />
+                </button>
+              </div>
+              <form onSubmit={handleSalvarEdicao} className="flex min-h-0 flex-1 flex-col">
+                <div className="premium-scrollarea min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 md:px-7">
                 
-                <div className={`flex justify-center mb-6 ${isEditingInativo ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <label htmlFor="edit-foto-upload" className="cursor-pointer group flex flex-col items-center gap-2">
-                    <div className={`relative w-28 h-28 rounded-full border-4 border-indigo-500/20 bg-white/60 shadow-md overflow-hidden flex items-center justify-center transition-all group-hover:border-indigo-500`}>
-                      {fotoPreview ? <img src={fotoPreview} alt="Preview" className="w-full h-full object-cover" /> : <span className="text-4xl opacity-50">📷</span>}
-                      <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-10">
-                        <span className="text-white text-[9px] font-black uppercase tracking-widest text-center px-2">Alterar<br/>Foto</span>
-                      </div>
+                <section className={formSectionClass}>
+                  <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">1</span>
+                      <div><h3 className="text-base font-semibold text-slate-900">Situação e identidade</h3><p className="mt-0.5 text-xs text-slate-500">Dados principais e acesso do aluno.</p></div>
                     </div>
-                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest group-hover:underline mt-1">Adicionar Nova Foto</span>
+                  <label htmlFor="edit-foto-upload" className={`group flex items-center gap-3 rounded-xl border border-[#dfded7] bg-[#faf9f6] p-2 pr-4 transition hover:border-[#b9c8bf] ${isEditingInativo ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>
+                    <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-[#e7efe9] text-[#1f4a3a] shadow-sm">
+                      {fotoPreview ? <img src={fotoPreview} alt="Preview" className="h-full w-full object-cover" /> : <Camera size={22} strokeWidth={1.7} />}
+                    </div>
+                    <span><span className="block text-xs font-semibold text-slate-700">{fotoPreview ? 'Alterar foto' : 'Adicionar foto'}</span><span className="mt-0.5 block text-[11px] text-slate-500">Opcional</span></span>
                     <input id="edit-foto-upload" type="file" accept="image/*" disabled={isEditingInativo} className="hidden" onChange={handleFileChange} />
                   </label>
-                </div>
+                  </div>
                 
-                <div className="space-y-4">
-                  <label className="text-[11px] font-semibold uppercase text-indigo-600 tracking-wider border-b border-indigo-500/10 pb-2 block">Situação do Aluno</label>
-                  <select required value={editStatus} onChange={e => setEditStatus(e.target.value)} className={`w-full p-3.5 rounded-xl border font-bold text-sm transition-all focus:outline-none shadow-sm ${editStatus === 'Inativo' ? 'text-rose-600 bg-rose-50 border-rose-200 focus:border-rose-400' : 'text-emerald-600 bg-emerald-50 border-emerald-200 focus:border-emerald-400'}`}>
-                    <option value="Ativo" className="text-emerald-600 font-bold">🟢 Matrícula Ativa</option>
-                    <option value="Inativo" className="text-rose-600 font-bold">🔴 Matrícula Inativa</option>
+                <div className="mt-6 space-y-3">
+                  <label className={labelClass}>Situação da matrícula</label>
+                  <select required value={editStatus} onChange={e => setEditStatus(e.target.value)} className={inputClass}>
+                    <option value="Ativo">Matrícula ativa</option>
+                    <option value="Inativo">Matrícula inativa</option>
                   </select>
-                  {isEditingInativo && <p className="text-xs text-rose-500 font-medium mt-1 ml-2">⚠️ O aluno ficará oculto do Dashboard a partir de hoje, mas seu histórico continuará salvo.</p>}
+                  {isEditingInativo && <div className="rounded-xl border border-[#ead3d0] bg-[#fbefed] px-4 py-3 text-xs leading-5 text-[#8c4d45]">O aluno ficará fora da operação diária, mas o histórico acadêmico e financeiro continuará preservado.</div>}
                 </div>
 
-                <div className="space-y-4">
-                  <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-indigo-600 border-indigo-500/10'}`}>Dados Pessoais</p>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <input placeholder="Nome" required={!isEditingInativo} disabled={isEditingInativo} value={editNome} onChange={e => setEditNome(e.target.value)} onBlur={() => setEditNome(normalizeName(editNome))} autoComplete="name" className={`md:col-span-2 ${inputClass} disabled:opacity-50`} />
+                <div className="mt-6 space-y-4">
+                  <p className="border-b border-[#ebe9e3] pb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#1f4a3a]">Dados pessoais</p>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="md:col-span-2"><label className={labelClass}>Nome completo</label><input placeholder="Nome completo" required={!isEditingInativo} disabled={isEditingInativo} value={editNome} onChange={e => setEditNome(e.target.value)} onBlur={() => setEditNome(normalizeName(editNome))} autoComplete="name" className={`${inputClass} disabled:opacity-50`} /></div>
                     <div>
-                      <label className="text-xs font-semibold text-slate-500 ml-1 block mb-1">Data Nasc.</label>
-                      <input type="text" inputMode="numeric" placeholder="DD/MM/AAAA" maxLength={10} required={!isEditingInativo} disabled={isEditingInativo} value={editDataNascimento} onChange={e => setEditDataNascimento(formatDateInput(e.target.value))} autoComplete="bday" className={`${inputClass} !mt-0 disabled:opacity-50`} />
+                      <label className={labelClass}>Data de nascimento</label>
+                      <input type="text" inputMode="numeric" placeholder="DD/MM/AAAA" maxLength={10} required={!isEditingInativo} disabled={isEditingInativo} value={editDataNascimento} onChange={e => setEditDataNascimento(formatDateInput(e.target.value))} autoComplete="bday" className={`${inputClass} disabled:opacity-50`} />
                     </div>
-                    <input placeholder="CPF ou CNPJ" inputMode="numeric" required={!isEditingInativo} disabled={isEditingInativo} value={editCpf} onChange={e => setEditCpf(formatCPFOrCNPJ(e.target.value))} maxLength={18} className={`${inputClass} disabled:opacity-50`} />
-                    <input placeholder="E-mail" type="email" required={!isEditingInativo} disabled={isEditingInativo} value={editEmail} onChange={e => setEditEmail(e.target.value)} onBlur={() => setEditEmail(normalizeEmail(editEmail))} autoComplete="email" className={`${inputClass} disabled:opacity-50`} />
-                    <input placeholder="WhatsApp" inputMode="tel" required={!isEditingInativo} disabled={isEditingInativo} value={editTel} onChange={e => setEditTel(formatBrazilianPhone(e.target.value))} onBlur={() => setEditTel(ensureBrazilianNinthDigit(editTel))} maxLength={15} autoComplete="tel" className={`${inputClass} disabled:opacity-50`} />
+                    <div><label className={labelClass}>CPF ou CNPJ</label><input placeholder="CPF ou CNPJ" inputMode="numeric" required={!isEditingInativo} disabled={isEditingInativo} value={editCpf} onChange={e => setEditCpf(formatCPFOrCNPJ(e.target.value))} maxLength={18} className={`${inputClass} disabled:opacity-50`} /></div>
+                    <div><label className={labelClass}>E-mail</label><input placeholder="E-mail" type="email" required={!isEditingInativo} disabled={isEditingInativo} value={editEmail} onChange={e => setEditEmail(e.target.value)} onBlur={() => setEditEmail(normalizeEmail(editEmail))} autoComplete="email" className={`${inputClass} disabled:opacity-50`} /></div>
+                    <div><label className={labelClass}>WhatsApp</label><input placeholder="WhatsApp" inputMode="tel" required={!isEditingInativo} disabled={isEditingInativo} value={editTel} onChange={e => setEditTel(formatBrazilianPhone(e.target.value))} onBlur={() => setEditTel(ensureBrazilianNinthDigit(editTel))} maxLength={15} autoComplete="tel" className={`${inputClass} disabled:opacity-50`} /></div>
                   </div>
                 </div>
+                </section>
 
-                <div className="space-y-4">
-                  <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-indigo-600 border-indigo-500/10'}`}>Endereço</p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <input placeholder="CEP" inputMode="numeric" required={!isEditingInativo} disabled={isEditingInativo} value={editCep} onChange={handleEditCepChange} maxLength={9} autoComplete="postal-code" className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
-                    <input placeholder="Endereço / Rua" required={!isEditingInativo} disabled={isEditingInativo} value={editEndereco} onChange={e => setEditEndereco(e.target.value)} autoComplete="address-line1" className={`col-span-2 md:col-span-2 ${inputClass} disabled:opacity-50`} />
-                    <input id="edit-input-numero" placeholder="Número" required={!isEditingInativo} disabled={isEditingInativo} value={editNumero} onChange={e => setEditNumero(e.target.value.toUpperCase())} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
-                    <input placeholder="Complemento" disabled={isEditingInativo} value={editComplemento} onChange={e => setEditComplemento(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
-                    <input placeholder="Bairro" required={!isEditingInativo} disabled={isEditingInativo} value={editBairro} onChange={e => setEditBairro(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
-                    <input placeholder="Cidade" required={!isEditingInativo} disabled={isEditingInativo} value={editCidade} onChange={e => setEditCidade(e.target.value)} className={`col-span-2 md:col-span-1 ${inputClass} disabled:opacity-50`} />
-                    <input placeholder="UF" required={!isEditingInativo} disabled={isEditingInativo} value={editEstado} onChange={e => setEditEstado(e.target.value.replace(/[^a-z]/gi, '').toUpperCase())} maxLength={2} className={`col-span-2 md:col-span-1 uppercase ${inputClass} disabled:opacity-50`} />
+                <section className={formSectionClass}>
+                  <div className="mb-5 flex items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">2</span>
+                    <div><h3 className="text-base font-semibold text-slate-900">Endereço</h3><p className="mt-0.5 text-xs text-slate-500">O CEP completa automaticamente os dados disponíveis.</p></div>
                   </div>
-                </div>
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                    <div className="col-span-2 md:col-span-1"><label className={labelClass}>CEP</label><input placeholder="CEP" inputMode="numeric" required={!isEditingInativo} disabled={isEditingInativo} value={editCep} onChange={handleEditCepChange} maxLength={9} autoComplete="postal-code" className={`${inputClass} disabled:opacity-50`} /></div>
+                    <div className="col-span-2 md:col-span-2"><label className={labelClass}>Endereço / Rua</label><input placeholder="Endereço / Rua" required={!isEditingInativo} disabled={isEditingInativo} value={editEndereco} onChange={e => setEditEndereco(e.target.value)} autoComplete="address-line1" className={`${inputClass} disabled:opacity-50`} /></div>
+                    <div className="col-span-2 md:col-span-1"><label className={labelClass}>Número</label><input id="edit-input-numero" placeholder="Número" required={!isEditingInativo} disabled={isEditingInativo} value={editNumero} onChange={e => setEditNumero(e.target.value.toUpperCase())} className={`${inputClass} disabled:opacity-50`} /></div>
+                    <div className="col-span-2 md:col-span-1"><label className={labelClass}>Complemento</label><input placeholder="Complemento" disabled={isEditingInativo} value={editComplemento} onChange={e => setEditComplemento(e.target.value)} className={`${inputClass} disabled:opacity-50`} /></div>
+                    <div className="col-span-2 md:col-span-1"><label className={labelClass}>Bairro</label><input placeholder="Bairro" required={!isEditingInativo} disabled={isEditingInativo} value={editBairro} onChange={e => setEditBairro(e.target.value)} className={`${inputClass} disabled:opacity-50`} /></div>
+                    <div className="col-span-2 md:col-span-1"><label className={labelClass}>Cidade</label><input placeholder="Cidade" required={!isEditingInativo} disabled={isEditingInativo} value={editCidade} onChange={e => setEditCidade(e.target.value)} className={`${inputClass} disabled:opacity-50`} /></div>
+                    <div className="col-span-2 md:col-span-1"><label className={labelClass}>UF</label><input placeholder="UF" required={!isEditingInativo} disabled={isEditingInativo} value={editEstado} onChange={e => setEditEstado(e.target.value.replace(/[^a-z]/gi, '').toUpperCase())} maxLength={2} className={`uppercase ${inputClass} disabled:opacity-50`} /></div>
+                  </div>
+                </section>
 
-                <div className="space-y-4">
-                  <div className={`flex items-center justify-between border-b pb-2 ${isEditingInativo ? 'border-slate-500/10' : 'border-indigo-500/10'}`}>
-                    <p className={`text-[11px] font-semibold uppercase tracking-wider ${isEditingInativo ? 'text-slate-500' : 'text-indigo-600'}`}>Agendamento (Horários Fixos)</p>
-                    <button type="button" onClick={addEditAgenda} disabled={isEditingInativo} className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 shadow-sm transition-all disabled:opacity-50">+ Add Horário</button>
+                <section className={formSectionClass}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">3</span>
+                      <div><h3 className="text-base font-semibold text-slate-900">Agenda individual</h3><p className="mt-0.5 text-xs text-slate-500">Mantenha um horário fixo ou deixe o aluno disponível para uma turma.</p></div>
+                    </div>
+                    {editAgendamentoCadastro === 'AGORA' && <button type="button" onClick={addEditAgenda} disabled={isEditingInativo} className="h-9 rounded-lg border border-[#cbdad0] bg-[#edf4ef] px-3 text-xs font-semibold text-[#1f4a3a] transition hover:bg-[#e2ede6] disabled:opacity-50">+ Adicionar horário</button>}
                   </div>
 
-                  {editAgendas.map((ag, index) => (
-                    <div key={ag.id} className="p-5 rounded-2xl border border-indigo-100 bg-indigo-50/50 shadow-sm relative">
+                  <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <button type="button" disabled={isEditingInativo} onClick={() => setEditAgendamentoCadastro('AGORA')} className={`rounded-xl border p-4 text-left transition disabled:opacity-50 ${editAgendamentoCadastro === 'AGORA' ? 'border-[#8eaa9b] bg-[#edf4ef] ring-2 ring-[#1f4a3a]/10' : 'border-[#dfded7] bg-white hover:border-[#bfc9c2]'}`}>
+                      <span className="block text-sm font-semibold text-slate-800">Manter horário individual</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">O aluno possui uma ou mais aulas fixas próprias.</span>
+                    </button>
+                    <button type="button" disabled={isEditingInativo} onClick={() => setEditAgendamentoCadastro('DEPOIS')} className={`rounded-xl border p-4 text-left transition disabled:opacity-50 ${editAgendamentoCadastro === 'DEPOIS' ? 'border-[#8eaa9b] bg-[#edf4ef] ring-2 ring-[#1f4a3a]/10' : 'border-[#dfded7] bg-white hover:border-[#bfc9c2]'}`}>
+                      <span className="block text-sm font-semibold text-slate-800">Sem horário individual</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">Permite incluir o aluno em uma turma ou definir a agenda depois.</span>
+                    </button>
+                  </div>
+
+                  {editAgendamentoCadastro === 'AGORA' ? editAgendas.map((ag, index) => (
+                    <div key={ag.id} className="relative mt-4 rounded-2xl border border-[#d7e1da] bg-[#f4f7f4] p-5">
                       {editAgendas.length > 1 && !isEditingInativo && (
-                        <button type="button" onClick={() => removeEditAgenda(index)} className="absolute -top-3 -right-2 bg-rose-100 text-rose-600 border border-rose-200 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md hover:bg-rose-500 hover:text-white transition-all">✕</button>
+                        <button type="button" aria-label="Remover horário" onClick={() => removeEditAgenda(index)} className="absolute -right-2 -top-3 flex h-8 w-8 items-center justify-center rounded-full border border-[#ecd0cd] bg-[#fbefed] text-[#a24a4a] shadow-sm transition hover:bg-[#a24a4a] hover:text-white"><X size={14} /></button>
                       )}
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                         <div>
-                          <label className="text-xs font-semibold text-slate-500 ml-1">Dia</label>
+                          <label className={labelClass}>Dia</label>
                           <select required={!isEditingInativo} disabled={isEditingInativo} value={ag.dia} onChange={e => handleEditAgendaChange(index, 'dia', e.target.value)} className={`${inputClass} disabled:opacity-50`}>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select>
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-slate-500 ml-1">Horário</label>
+                          <label className={labelClass}>Horário</label>
                           <select required={!isEditingInativo} disabled={isEditingInativo} value={ag.horario_inicio} onChange={e => handleEditAgendaChange(index, 'horario_inicio', e.target.value)} className={`${inputClass} disabled:opacity-50`}>
                             {HORARIOS_DISPONIVEIS.map(h => <option key={h} value={h}>{h}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-slate-500 ml-1">Professor</label>
+                          <label className={labelClass}>Professor</label>
                           <select required={!isEditingInativo} disabled={isEditingInativo} value={ag.professor_id} onChange={e => handleEditAgendaChange(index, 'professor_id', e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option>{professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}</select>
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-slate-500 ml-1">Sala</label>
+                          <label className={labelClass}>Sala</label>
                           <select required={!isEditingInativo} disabled={isEditingInativo} value={ag.sala_id} onChange={e => handleEditAgendaChange(index, 'sala_id', e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option>{salasList.map(sl => <option key={sl.id} value={sl.id}>{sl.nome}</option>)}</select>
                         </div>
                       </div>
                       <div className="pt-4">
-                        <label className="text-xs font-semibold text-slate-500 ml-1 mb-2 block">Modalidade</label>
+                        <label className={labelClass}>Modalidade</label>
                         <div className="flex flex-wrap gap-2">
                           {modalidadesLista.map(m => (
-                            <motion.button whileTap={{ scale: 0.95 }} key={m.nome} type="button" disabled={isEditingInativo} onClick={() => handleEditAgendaChange(index, 'instrumento_aula', m.nome)} className={`px-5 py-2.5 rounded-xl text-[11px] font-bold uppercase border transition-all disabled:opacity-50 ${ag.instrumento_aula === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-md scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}>
+                            <motion.button whileTap={{ scale: 0.97 }} key={m.nome} type="button" disabled={isEditingInativo} onClick={() => handleEditAgendaChange(index, 'instrumento_aula', m.nome)} className={`rounded-lg border px-4 py-2.5 text-xs font-semibold transition-all disabled:opacity-50 ${ag.instrumento_aula === m.nome ? 'border-[#1f4a3a] bg-[#1f4a3a] text-white' : 'border-[#dfded7] bg-white text-slate-600 hover:border-[#aebdb4]'}`}>
                               {ag.instrumento_aula === m.nome && <span className="mr-2">✓</span>} {m.nome}
                             </motion.button>
                           ))}
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  )) : (
+                    <div className="mt-4 rounded-2xl border border-dashed border-[#c9d7cf] bg-[#eef5f0] px-5 py-6 text-center">
+                      <p className="text-sm font-semibold text-[#1f4a3a]">Aluno sem agenda individual</p>
+                      <p className="mt-1 text-xs text-[#607269]">Ao salvar, os horários individuais atuais serão removidos. A participação em turmas não será alterada.</p>
+                    </div>
+                  )}
+                </section>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <section className={formSectionClass}>
+                  <div className="mb-5 flex items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">4</span>
+                    <div><h3 className="text-base font-semibold text-slate-900">Faturamento e origem</h3><p className="mt-0.5 text-xs text-slate-500">Modelo financeiro e informações comerciais do cadastro.</p></div>
+                  </div>
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   <div className="space-y-4">
-                    <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-amber-600 border-amber-500/10'}`}>Marketing</p>
+                    <p className="border-b border-[#ebe9e3] pb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#1f4a3a]">Origem do aluno</p>
                     <div className="flex flex-col gap-3">
                       <div>
-                        <label className="text-xs font-semibold text-slate-500 ml-1">Como conheceu?</label>
+                        <label className={labelClass}>Como conheceu a escola?</label>
                         <select required={!isEditingInativo} disabled={isEditingInativo} value={editComoConheceu} onChange={e => setEditComoConheceu(e.target.value)} className={`${inputClass} disabled:opacity-50`}><option value="">Selecione...</option><option value="Instagram">Instagram</option><option value="Google">Google</option><option value="Indicação">Indicação</option><option value="Outros">Outros</option></select>
                       </div>
                       <AnimatePresence>
                         {editComoConheceu === 'Indicação' && (
                           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-                            <label className="text-xs font-semibold text-slate-500 ml-1">Quem indicou?</label>
-                            <input required={!isEditingInativo} disabled={isEditingInativo} value={editIndicacaoNome} onChange={e => setEditIndicacaoNome(e.target.value)} className={`${inputClass} border-amber-300 focus:border-amber-500/50 disabled:opacity-50`} />
+                            <label className={labelClass}>Quem indicou?</label>
+                            <input required={!isEditingInativo} disabled={isEditingInativo} value={editIndicacaoNome} onChange={e => setEditIndicacaoNome(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
                           </motion.div>
                         )}
                       </AnimatePresence>
                     </div>
                   </div>
                   <div className="space-y-4">
-                    <p className={`text-[11px] font-semibold uppercase tracking-wider border-b pb-2 ${isEditingInativo ? 'text-slate-500 border-slate-500/10' : 'text-emerald-600 border-emerald-500/10'}`}>Financeiro</p>
+                    <p className="border-b border-[#ebe9e3] pb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#1f4a3a]">Configuração financeira</p>
                     <div className="space-y-3 mt-4">
                       <div>
-                        <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Início do faturamento</label>
+                        <label className={labelClass}>Início do faturamento</label>
                         <input type="month" required value={editInicioFaturamento} onChange={e => setEditInicioFaturamento(e.target.value)} className={inputClass} />
-                        <p className="text-[10px] text-slate-500 mt-2">O dossiê mensal será calculado a partir desta competência.</p>
+                        <p className="mt-2 text-xs text-slate-500">O dossiê mensal será calculado a partir desta competência.</p>
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Modelo de faturamento</label>
+                        <label className={labelClass}>Modelo de faturamento</label>
                         <select required={!isEditingInativo} disabled={isEditingInativo} value={editModeloFaturamento} onChange={e => setEditModeloFaturamento(e.target.value as BillingModel)} className={`${inputClass} disabled:opacity-50`}>
                           {BILLING_MODELS.map(model => <option key={model.value} value={model.value}>{model.label}</option>)}
                         </select>
                       </div>
                       {editModeloFaturamento === 'MENSAL_FECHADO' ? (
                         <div>
-                          <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Valor por aula (R$)</label>
+                          <label className={labelClass}>Valor por aula (R$)</label>
                           <input type="number" inputMode="decimal" min="0.01" step="0.01" required={!isEditingInativo} disabled={isEditingInativo} value={editValorPorAula} onChange={e => setEditValorPorAula(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
-                          <p className="text-[10px] text-cyan-700 font-semibold mt-2">Fecha no último dia do mês e vence em 7 dias.</p>
+                          <p className="mt-2 rounded-lg bg-[#edf4ef] px-3 py-2 text-xs font-medium text-[#315949]">Fecha no último dia do mês e vence em 7 dias.</p>
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 gap-3">
                           <div className={editModeloFaturamento === 'CREDITOS' ? 'col-span-2' : ''}>
-                            <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">{editModeloFaturamento === 'CREDITOS' ? 'Pacote com 4 créditos (R$)' : 'Mensalidade (R$)'}</label>
+                            <label className={labelClass}>{editModeloFaturamento === 'CREDITOS' ? 'Pacote com 4 créditos (R$)' : 'Mensalidade (R$)'}</label>
                             <input type="number" inputMode="decimal" min="0.01" step="0.01" required={!isEditingInativo} disabled={isEditingInativo} value={editValor} onChange={e => setEditValor(e.target.value)} className={`${inputClass} disabled:opacity-50`} />
                           </div>
                           {editModeloFaturamento === 'VENCIMENTO_FIXO' && (
                             <div>
-                              <label className="text-xs font-semibold text-slate-500 ml-1 uppercase">Dia Vencimento</label>
+                              <label className={labelClass}>Dia do vencimento</label>
                               <input type="number" inputMode="numeric" min="1" max="31" required={!isEditingInativo} disabled={isEditingInativo} value={editVencimento} onChange={e => setEditVencimento(e.target.value.replace(/\D/g, '').slice(0, 2))} className={`${inputClass} disabled:opacity-50`} />
                             </div>
                           )}
@@ -1467,10 +1545,15 @@ export default function PerfilAluno() {
                     </div>
                   </div>
                 </div>
+                </section>
 
-                <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40">
-                  <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setIsEditModalOpen(false)} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white disabled:opacity-50`}>Cancelar</motion.button>
-                  <motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-sm shadow-md hover:bg-indigo-500 transition-all disabled:opacity-50">{isSubmitting ? 'Salvando...' : 'Salvar Alterações'}</motion.button>
+                </div>
+                <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-[#dfded7] bg-[#fbfaf6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-7">
+                  <p className="hidden text-xs text-slate-500 sm:block">{getBillingModelLabel(editModeloFaturamento)} · {editStatus === 'Inativo' ? 'matrícula inativa' : editAgendamentoCadastro === 'AGORA' ? `${editAgendas.length} horário${editAgendas.length === 1 ? '' : 's'} fixo${editAgendas.length === 1 ? '' : 's'}` : 'sem horário fixo'}</p>
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                    <motion.button whileTap={{ scale: 0.97 }} type="button" onClick={() => setIsEditModalOpen(false)} disabled={isSubmitting} className="h-11 rounded-xl border border-[#d9d7ce] bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-[#f8f7f3] disabled:opacity-50">Cancelar</motion.button>
+                    <motion.button whileTap={{ scale: 0.97 }} type="submit" disabled={isSubmitting} className="h-11 rounded-xl bg-[#1f4a3a] px-6 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(31,74,58,0.18)] transition hover:bg-[#173b2e] disabled:opacity-50">{isSubmitting ? 'Salvando...' : 'Salvar alterações'}</motion.button>
+                  </div>
                 </div>
               </form>
             </motion.div>
