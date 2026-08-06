@@ -29,6 +29,7 @@ import {
   RotateCcw,
   UserRound,
   WalletCards,
+  X,
 } from 'lucide-react'
 
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
@@ -132,6 +133,7 @@ export default function PortalAluno() {
       const vagasPotenciais = dispBrutaProf.filter(d => d.dia_semana === diaDaSemanaSelecionado)
       const vagasReais = vagasPotenciais.filter(vaga => {
         const isOcupado = agendaBrutaProf.some(ag => {
+          if (ag.data_especifica && ag.data_especifica !== dataSelecionadaStr) return false
           const isSameSlot = ag.dia === diaDaSemanaSelecionado && ag.horario_inicio?.slice(0, 5) === vaga.hora_inicio?.slice(0, 5)
           if (!isSameSlot) return false;
           const info = Array.isArray(ag.aluno?.alunos_info) ? ag.aluno?.alunos_info[0] : ag.aluno?.alunos_info;
@@ -167,26 +169,33 @@ export default function PortalAluno() {
     const { data: rep } = await supabase.from('solicitacoes_reagendamento').select('*').eq('aluno_id', session.user.id)
     setTodasReposicoes(rep || [])
 
-    const reposicoesFuturas = (rep || []).filter((r: any) => r.status === 'Aprovada' && r.nova_data >= hojeDataStr)
+    const solicitacoesAprovadasFuturas = (rep || []).filter((r: any) => r.status === 'Aprovada' && r.nova_data >= hojeDataStr)
 
     let aulasMapeadas = ag || []
     
-    if (reposicoesFuturas.length > 0) {
-      const repos = reposicoesFuturas.map((r: any) => ({
-        id: 'repo_' + r.id,
-        id_real: r.id, 
-        agenda_original_id: r.agenda_original_id, 
-        criado_em: r.criado_em,
-        is_reposicao: true,
-        dia: r.novo_dia,
-        horario_inicio: r.novo_horario_inicio,
-        horario_fim: r.novo_horario_fim,
-        professor_id: r.professor_id,
-        instrumento_aula: 'Reposição',
-        nova_data: r.nova_data,
-        sala: { nome: 'A Definir' }
-      }));
-      aulasMapeadas = [...aulasMapeadas, ...repos];
+    if (solicitacoesAprovadasFuturas.length > 0) {
+      const aulasAlteradas = solicitacoesAprovadasFuturas.map((r: any) => {
+        const aulaOriginal = (ag || []).find((a: any) => String(a.id) === String(r.agenda_original_id))
+        const isReposicao = r.tipo_mudanca === 'Reposição'
+
+        return {
+          id: 'repo_' + r.id,
+          id_real: r.id,
+          agenda_original_id: r.agenda_original_id,
+          criado_em: r.criado_em,
+          is_reposicao: isReposicao,
+          is_remarcacao: !isReposicao,
+          is_solicitacao_aprovada: true,
+          dia: r.novo_dia,
+          horario_inicio: r.novo_horario_inicio,
+          horario_fim: r.novo_horario_fim,
+          professor_id: r.professor_id,
+          instrumento_aula: aulaOriginal?.instrumento_aula || (isReposicao ? 'Reposição' : 'Aula remarcada'),
+          nova_data: r.nova_data,
+          sala: aulaOriginal?.sala || { nome: isReposicao ? 'Reposição' : 'Novo horário aprovado' }
+        }
+      });
+      aulasMapeadas = [...aulasMapeadas, ...aulasAlteradas];
     }
 
     if (aulasMapeadas.length > 0) {
@@ -310,7 +319,20 @@ export default function PortalAluno() {
     setSelectedDateObj(null); setSelectedSlot(null); setDiaBloqueadoMsg(null); setIsRescheduleModalOpen(true);
     const { data: disp } = await supabase.from('disponibilidade_professor').select('*').eq('professor_id', aula.professor_id)
     const { data: ag } = await supabase.from('agenda').select(`dia, horario_inicio, aluno:profiles!aluno_id(alunos_info(status, data_inativacao))`).eq('professor_id', aula.professor_id)
-    setDispBrutaProf(disp || []); setAgendaBrutaProf(ag || [])
+    const { data: mudancasOcupadas } = await supabase
+      .from('solicitacoes_reagendamento')
+      .select('nova_data, novo_dia, novo_horario_inicio, status')
+      .eq('professor_id', aula.professor_id)
+      .in('status', ['Pendente', 'Aprovada'])
+      .gte('nova_data', new Date().toISOString().slice(0, 10))
+
+    const horariosPontuaisOcupados = (mudancasOcupadas || []).map((mudanca: any) => ({
+      dia: mudanca.novo_dia,
+      horario_inicio: mudanca.novo_horario_inicio,
+      data_especifica: mudanca.nova_data,
+    }))
+
+    setDispBrutaProf(disp || []); setAgendaBrutaProf([...(ag || []), ...horariosPontuaisOcupados])
   }
 
   const handleSolicitarReagendamento = async () => {
@@ -322,8 +344,10 @@ export default function PortalAluno() {
       idAgendaPai = String(aulaParaMudar.id).startsWith('repo_') ? null : aulaParaMudar.id;
     }
 
-    // Só desmarca a aula se NÃO estiver usando um crédito passado
-    if (!aulaParaMudar.is_reposicao && !aulaParaMudar.usando_credito) {
+    // No vencimento fixo, a desmarcação gera o crédito que será reservado
+    // pela solicitação de reposição. Nos demais modelos, a aula original só
+    // é desmarcada depois que a escola aprovar a mudança.
+    if (rescheduleType === 'Reposição' && !aulaParaMudar.is_reposicao && !aulaParaMudar.usando_credito) {
         const dStr = aulaParaMudar.data_original_desmarcada || new Date().toISOString().split('T')[0]; 
         await supabase.from('historico_aulas').delete().eq('aluno_id', aluno.id).eq('data_aula', dStr);
         await supabase.from('historico_aulas').insert([{
@@ -416,7 +440,7 @@ export default function PortalAluno() {
     .map(aula => {
       let dadosData
 
-      if (aula.is_reposicao) {
+      if (aula.is_solicitacao_aprovada || aula.is_reposicao || aula.is_remarcacao) {
         const [ano, mes, dia] = String(aula.nova_data).split('-').map(Number)
         const dataObj = new Date(ano, mes - 1, dia)
         const dataExtenso = dataObj.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
@@ -430,11 +454,11 @@ export default function PortalAluno() {
 
       const status = historico.find(h => String(h.data_aula).slice(0, 10) === dadosData.dataBaseString)?.status
       const isDesmarcada = status === 'Desmarcada' || status === 'Falta Justificada'
-      const podeReagendar =
-        modeloFaturamentoPortal === 'VENCIMENTO_FIXO' &&
+      const podeSolicitarMudanca =
         !solicitacaoPendente &&
         !isDesmarcada &&
         !aula.is_reposicao &&
+        !aula.is_remarcacao &&
         checkCanReschedule(dadosData.dataBaseString, aula.horario_inicio)
 
       return {
@@ -442,7 +466,7 @@ export default function PortalAluno() {
         ...dadosData,
         status,
         isDesmarcada,
-        podeReagendar,
+        podeSolicitarMudanca,
         dataOrdenacao: new Date(`${dadosData.dataBaseString}T${aula.horario_inicio || '00:00'}`).getTime(),
       }
     })
@@ -450,6 +474,7 @@ export default function PortalAluno() {
 
   const proximaAula = aulasComData.find(aula => !aula.isDesmarcada) || aulasComData[0]
   const aulaBaseReposicao = aulas.find(aula => !aula.is_reposicao)
+  const tipoSolicitacaoMudanca = modeloFaturamentoPortal === 'VENCIMENTO_FIXO' ? 'Reposição' : 'Pontual'
   const valorResumoFinanceiro =
     modeloFaturamentoPortal === 'MENSAL_FECHADO'
       ? (faturaEmAberto ? Number(faturaAtual?.valor_total || 0) : apuracaoMes.valor)
@@ -709,6 +734,9 @@ export default function PortalAluno() {
                     {proximaAula?.is_reposicao && (
                       <span className="rounded-full bg-[#d8b575] px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#173f35]">Reposição</span>
                     )}
+                    {proximaAula?.is_remarcacao && (
+                      <span className="rounded-full bg-white/15 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Horário aprovado</span>
+                    )}
                   </div>
                 </div>
 
@@ -727,10 +755,21 @@ export default function PortalAluno() {
                           <span className="flex items-center gap-2"><MapPin size={16} />{proximaAula.sala?.nome || 'Lotus Music'}</span>
                         </div>
                       </div>
-                      <button onClick={() => setActivePortalTab('agenda')} className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-[#173f35] transition hover:bg-[#f0eee7]">
-                        Ver agenda
-                        <ChevronRight size={17} />
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        {proximaAula.podeSolicitarMudanca && (
+                          <button
+                            onClick={() => abrirModalReagendamento(tipoSolicitacaoMudanca, proximaAula, proximaAula.dataBaseString)}
+                            className="flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-white/15"
+                          >
+                            <RotateCcw size={16} />
+                            Solicitar mudança
+                          </button>
+                        )}
+                        <button onClick={() => setActivePortalTab('agenda')} className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-[#173f35] transition hover:bg-[#f0eee7]">
+                          Ver agenda
+                          <ChevronRight size={17} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -864,18 +903,14 @@ export default function PortalAluno() {
                 </span>
                 <div>
                   <p className="text-sm font-bold">
-                    {modeloFaturamentoPortal === 'CREDITOS'
-                      ? 'As aulas usam o saldo do seu pacote'
-                      : modeloFaturamentoPortal === 'MENSAL_FECHADO'
-                        ? 'Você paga somente pelas aulas realizadas'
-                        : 'Desmarcações elegíveis geram reposição'}
+                    Você pode solicitar outra data ou horário
                   </p>
                   <p className="mt-1 text-sm leading-6 text-[#68756f]">
                     {modeloFaturamentoPortal === 'CREDITOS'
-                      ? 'Cada aula realizada consome um crédito. Este modelo não acumula reposições.'
+                      ? 'Envie o pedido com pelo menos 6 horas de antecedência. Se a escola aprovar, a aula muda de horário sem criar um crédito de reposição.'
                       : modeloFaturamentoPortal === 'MENSAL_FECHADO'
-                        ? 'As aulas realizadas entram na fatura do fechamento mensal; faltas e desmarcações não criam reposição.'
-                        : 'Solicite a troca com pelo menos 6 horas de antecedência. Créditos de reposição ficam disponíveis por 30 dias.'}
+                        ? 'Envie o pedido com pelo menos 6 horas de antecedência. A aula só muda depois da aprovação e apenas as aulas realizadas entram na fatura.'
+                        : 'Envie o pedido com pelo menos 6 horas de antecedência. Quando aprovado, o fluxo usa a regra de reposição do seu plano, válida por 30 dias.'}
                   </p>
                 </div>
               </div>
@@ -908,6 +943,7 @@ export default function PortalAluno() {
                         <div>
                           <p className="text-sm font-bold capitalize">{aula.dataFormatada}</p>
                           {aula.is_reposicao && <p className="mt-0.5 text-xs font-bold text-[#9a743d]">Aula de reposição</p>}
+                          {aula.is_remarcacao && <p className="mt-0.5 text-xs font-bold text-[#1d684f]">Mudança aprovada</p>}
                         </div>
                       </div>
                       <div>
@@ -924,13 +960,13 @@ export default function PortalAluno() {
                       <div>
                         {aula.isDesmarcada ? (
                           <span className="inline-flex rounded-full bg-[#f3ded9] px-3 py-1.5 text-xs font-bold text-[#9d3e39]">Desmarcada</span>
-                        ) : aula.podeReagendar ? (
+                        ) : aula.podeSolicitarMudanca ? (
                           <button
-                            onClick={() => abrirModalReagendamento('Reposição', aula, aula.dataBaseString)}
+                            onClick={() => abrirModalReagendamento(tipoSolicitacaoMudanca, aula, aula.dataBaseString)}
                             className="flex items-center gap-2 rounded-full border border-[#cfcabd] bg-white px-4 py-2.5 text-sm font-bold text-[#365248] transition hover:border-[#1d5143]"
                           >
                             <RotateCcw size={16} />
-                            Reagendar
+                            Solicitar mudança
                           </button>
                         ) : (
                           <span className="inline-flex rounded-full bg-[#e4ece7] px-3 py-1.5 text-xs font-bold text-[#1d684f]">Agendada</span>
@@ -1184,70 +1220,94 @@ export default function PortalAluno() {
       {/* --- MODAIS DE AÇÃO --- */}
       <AnimatePresence>
         {isRescheduleModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[70]">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl">
-              <div className="flex justify-between items-start mb-6">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-[#10251f]/45 p-4 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.97, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 16 }} className="w-full max-w-lg overflow-hidden rounded-[28px] border border-[#d9d5ca] bg-[#fbfaf6] shadow-[0_24px_70px_rgba(16,37,31,0.28)]">
+              <div className="flex items-start justify-between border-b border-[#e1ddd3] px-5 py-5 md:px-6">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-800 tracking-tight drop-shadow-sm">{rescheduleType === 'Fixa' ? 'Novo Fixo' : 'Calendário de Reposição'}</h2>
-                  <p className="text-xs font-semibold text-slate-500 mt-1">Selecione uma data para ver os horários</p>
+                  <span className="inline-flex rounded-full bg-[#e4ece7] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#1d5143]">
+                    Sujeito à aprovação
+                  </span>
+                  <h2 className="mt-3 text-xl font-bold tracking-[-0.02em] text-[#17241f]">
+                    {rescheduleType === 'Reposição' ? 'Solicitar reposição' : 'Solicitar mudança de horário'}
+                  </h2>
+                  <p className="mt-1 text-sm text-[#68756f]">Escolha uma nova data e um horário disponível.</p>
                 </div>
-                <button onClick={() => setIsRescheduleModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
-              </div>
-              
-              <div className="flex gap-3 overflow-x-auto custom-scrollbar pb-4 mb-4">
-                {proximosDias.map((dia, idx) => (
-                  <motion.button 
-                    whileTap={{ scale: 0.95 }}
-                    key={idx} 
-                    onClick={() => setSelectedDateObj(dia)}
-                    className={`flex flex-col items-center justify-center min-w-[70px] p-3 rounded-2xl border shadow-sm transition-all ${selectedDateObj?.dataString === dia.dataString ? 'border-indigo-400 bg-indigo-500 text-white shadow-md scale-105' : 'border-white/80 bg-white/50 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50'}`}
-                  >
-                    <span className="text-[11px] font-bold mb-1 opacity-90">{dia.diaSemana.slice(0,3)}</span>
-                    <span className="text-lg font-bold tracking-tight">{dia.displayData.split('/')[0]}</span>
-                    <span className="text-[10px] font-medium opacity-80">/{dia.displayData.split('/')[1]}</span>
-                  </motion.button>
-                ))}
+                <button onClick={() => setIsRescheduleModalOpen(false)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#d1cdc2] bg-white text-[#68756f] transition hover:border-[#1d5143]" aria-label="Fechar">
+                  <X size={18} />
+                </button>
               </div>
 
-              <div className="bg-white/40 rounded-2xl p-4 border border-white/60 shadow-inner min-h-[200px] mb-6">
-                {!selectedDateObj ? (
-                  <div className="h-full flex flex-col items-center justify-center opacity-60 text-center py-10">
-                    <span className="text-4xl mb-2 grayscale">📅</span>
-                    <p className="text-xs font-bold text-slate-500">Toque em um dia acima<br/>para carregar a grade.</p>
-                  </div>
-                ) : diaBloqueadoMsg ? (
-                  <div className="h-full flex flex-col items-center justify-center opacity-80 text-center py-10">
-                    <span className="text-4xl mb-2 drop-shadow-sm">🏖️</span>
-                    <p className="text-xs font-bold text-rose-600">Escola Fechada</p>
-                    <p className="text-xs font-medium text-slate-600 mt-1">{diaBloqueadoMsg}</p>
-                  </div>
-                ) : vagasDoDiaSelecionado.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center opacity-80 text-center py-10">
-                    <span className="text-4xl mb-2 drop-shadow-sm grayscale">📭</span>
-                    <p className="text-xs font-bold text-rose-500">Nenhum horário livre<br/>neste dia.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-[250px] overflow-y-auto custom-scrollbar pr-1">
-                    {vagasDoDiaSelecionado.map((vaga, idx) => (
-                      <motion.button 
-                        whileTap={{ scale: 0.98 }}
-                        key={idx} 
-                        onClick={() => setSelectedSlot(vaga)}
-                        className={`w-full p-4 rounded-xl border text-left flex justify-between items-center transition-all shadow-sm ${selectedSlot?.id === vaga.id ? 'border-indigo-300 bg-indigo-50/80 text-indigo-800' : 'border-white/80 bg-white/60 text-slate-700 hover:border-slate-300'}`}
-                      >
-                        <span className="font-bold text-sm">
-                          {vaga.hora_inicio.slice(0,5)} <span className="opacity-60 text-xs font-medium">- {vaga.hora_fim.slice(0,5)}</span>
-                        </span>
-                        {selectedSlot?.id === vaga.id && <div className="h-5 w-5 bg-indigo-500 rounded-full flex items-center justify-center text-white text-[10px] shadow-sm">✓</div>}
-                      </motion.button>
-                    ))}
-                  </div>
-                )}
+              <div className="px-5 py-5 md:px-6">
+                <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#8b938f]">1. Escolha o dia</p>
+                <div className="flex gap-2 overflow-x-auto pb-3">
+                  {proximosDias.map((dia, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedDateObj(dia)}
+                      className={`flex min-w-[68px] flex-col items-center justify-center rounded-2xl border px-3 py-3 transition ${
+                        selectedDateObj?.dataString === dia.dataString
+                          ? 'border-[#1d5143] bg-[#1d5143] text-white'
+                          : 'border-[#d7d3c8] bg-white text-[#53635c] hover:border-[#1d5143]'
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold uppercase tracking-wide opacity-75">{dia.diaSemana.slice(0, 3)}</span>
+                      <span className="mt-1 text-lg font-bold">{dia.displayData.split('/')[0]}</span>
+                      <span className="text-[10px] opacity-70">/{dia.displayData.split('/')[1]}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <p className="mb-3 mt-3 text-xs font-bold uppercase tracking-[0.12em] text-[#8b938f]">2. Escolha o horário</p>
+                <div className="min-h-[190px] rounded-2xl border border-[#dfdbd1] bg-[#f4f2eb] p-3">
+                  {!selectedDateObj ? (
+                    <div className="flex min-h-[164px] flex-col items-center justify-center px-4 text-center">
+                      <CalendarDays size={25} className="text-[#8c9892]" />
+                      <p className="mt-3 text-sm font-bold text-[#53635c]">Selecione um dia para consultar os horários.</p>
+                    </div>
+                  ) : diaBloqueadoMsg ? (
+                    <div className="flex min-h-[164px] flex-col items-center justify-center px-4 text-center">
+                      <AlertCircle size={25} className="text-[#a3423d]" />
+                      <p className="mt-3 text-sm font-bold text-[#843b36]">Escola fechada nesta data</p>
+                      <p className="mt-1 text-sm text-[#78665e]">{diaBloqueadoMsg}</p>
+                    </div>
+                  ) : vagasDoDiaSelecionado.length === 0 ? (
+                    <div className="flex min-h-[164px] flex-col items-center justify-center px-4 text-center">
+                      <Inbox size={25} className="text-[#8c9892]" />
+                      <p className="mt-3 text-sm font-bold text-[#53635c]">Nenhum horário livre neste dia.</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[230px] space-y-2 overflow-y-auto pr-1">
+                      {vagasDoDiaSelecionado.map((vaga, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setSelectedSlot(vaga)}
+                          className={`flex w-full items-center justify-between rounded-xl border p-4 text-left transition ${
+                            selectedSlot?.id === vaga.id
+                              ? 'border-[#1d5143] bg-[#e4ece7] text-[#173f35]'
+                              : 'border-[#d7d3c8] bg-white text-[#53635c] hover:border-[#1d5143]'
+                          }`}
+                        >
+                          <span className="text-sm font-bold">
+                            {vaga.hora_inicio.slice(0, 5)} <span className="font-medium opacity-60">— {vaga.hora_fim.slice(0, 5)}</span>
+                          </span>
+                          {selectedSlot?.id === vaga.id && <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1d5143] text-white"><Check size={14} /></span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-[#e4d9c2] bg-[#fff8e7] px-4 py-3 text-sm leading-5 text-[#735b36]">
+                  Sua aula só será alterada depois que a escola aprovar este pedido. Você receberá a resposta no sininho.
+                </div>
               </div>
 
-              <motion.button whileTap={{ scale: 0.98 }} onClick={handleSolicitarReagendamento} disabled={!selectedSlot || isSubmitting || diaBloqueadoMsg !== null} className="w-full py-4 bg-slate-800 text-white rounded-2xl font-bold text-sm shadow-xl disabled:opacity-50 hover:bg-slate-700 transition-all">
-                {isSubmitting ? 'Processando...' : 'Confirmar e Enviar para Escola'}
-              </motion.button>
+              <div className="flex gap-3 border-t border-[#e1ddd3] px-5 py-4 md:px-6">
+                <button onClick={() => setIsRescheduleModalOpen(false)} className="flex-1 rounded-full border border-[#d1cdc2] bg-white py-3 text-sm font-bold text-[#68756f]">Cancelar</button>
+                <button onClick={handleSolicitarReagendamento} disabled={!selectedSlot || isSubmitting || diaBloqueadoMsg !== null} className="flex-[1.4] rounded-full bg-[#1d5143] py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45">
+                  {isSubmitting ? 'Enviando...' : 'Enviar solicitação'}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

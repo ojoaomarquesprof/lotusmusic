@@ -127,19 +127,25 @@ export default function Dashboard() {
       .gte('nova_data', inicioDaSemana)
       .lte('nova_data', fimDaSemana);
 
-    const aulasReposicao = (reposicoesAprovadas || []).map((r: any) => ({
-      id: 'repo_' + r.id,
-      is_reposicao: true,
-      dia: r.novo_dia,
-      horario_inicio: r.novo_horario_inicio,
-      horario_fim: r.novo_horario_fim,
-      professor_id: r.professor_id,
-      aluno_id: r.aluno_id,
-      aluno: r.aluno,
-      sala: { nome: 'Reposição' }, 
-      instrumento_aula: 'Reposição',
-      data_selecionada: r.nova_data 
-    }));
+    const aulasReposicao = (reposicoesAprovadas || []).map((r: any) => {
+      const aulaOriginal = (agenda || []).find((a: any) => String(a.id) === String(r.agenda_original_id))
+      const isReposicao = r.tipo_mudanca === 'Reposição'
+
+      return {
+        id: 'repo_' + r.id,
+        is_reposicao: isReposicao,
+        is_remarcacao: !isReposicao,
+        dia: r.novo_dia,
+        horario_inicio: r.novo_horario_inicio,
+        horario_fim: r.novo_horario_fim,
+        professor_id: r.professor_id,
+        aluno_id: r.aluno_id,
+        aluno: r.aluno,
+        sala: aulaOriginal?.sala || { nome: isReposicao ? 'Reposição' : 'Horário aprovado' },
+        instrumento_aula: aulaOriginal?.instrumento_aula || (isReposicao ? 'Reposição' : 'Aula remarcada'),
+        data_selecionada: r.nova_data
+      }
+    });
 
     const { data: ev } = await supabase.from('eventos_calendario').select('*').gte('data_evento', inicioDaSemana).lte('data_evento', fimDaSemana)
     const { data: hist } = await supabase.from('historico_aulas').select('aluno_id, data_aula, status').gte('data_aula', inicioDaSemana).lte('data_aula', fimDaSemana + 'T23:59:59')
@@ -251,8 +257,54 @@ export default function Dashboard() {
 
   const handleAprovarSolicitacao = async (sol: any) => {
     setIsSubmitting(true)
-    await supabase.from('solicitacoes_reagendamento').update({ status: 'Aprovada' }).eq('id', sol.id)
-    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '✅ Reposição Aprovada!', mensagem: `Sua reposição para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} às ${sol.novo_horario_inicio?.slice(0,5)} foi confirmada na agenda.`, lida: false }])
+    const isReposicao = sol.tipo_mudanca === 'Reposição'
+
+    // Para Créditos e Mês fechado, a aula original só é desmarcada quando
+    // a escola aprova a troca. Assim, uma recusa preserva o horário original.
+    if (!isReposicao && sol.data_aula_original) {
+      const { data: aulaOriginal } = await supabase
+        .from('agenda')
+        .select('horario_inicio, horario_fim, instrumento_aula, professor_id')
+        .eq('id', sol.agenda_original_id)
+        .maybeSingle()
+
+      await supabase
+        .from('historico_aulas')
+        .delete()
+        .eq('aluno_id', sol.aluno_id)
+        .eq('data_aula', sol.data_aula_original)
+
+      const { error: historicoError } = await supabase.from('historico_aulas').insert([{
+        aluno_id: sol.aluno_id,
+        data_aula: sol.data_aula_original,
+        horario_inicio: aulaOriginal?.horario_inicio || null,
+        horario_fim: aulaOriginal?.horario_fim || null,
+        status: 'Desmarcada',
+        observacoes: 'Mudança de horário aprovada pela escola.',
+        professor_id: aulaOriginal?.professor_id || sol.professor_id || null,
+        modalidade: aulaOriginal?.instrumento_aula || null,
+      }])
+
+      if (historicoError) {
+        alert('Não foi possível liberar o horário original: ' + historicoError.message)
+        setIsSubmitting(false)
+        return
+      }
+    }
+
+    const { error: aprovacaoError } = await supabase.from('solicitacoes_reagendamento').update({ status: 'Aprovada' }).eq('id', sol.id)
+    if (aprovacaoError) {
+      alert('Não foi possível aprovar a solicitação: ' + aprovacaoError.message)
+      setIsSubmitting(false)
+      return
+    }
+
+    await supabase.from('notificacoes_aluno').insert([{
+      aluno_id: sol.aluno_id,
+      titulo: isReposicao ? '✅ Reposição aprovada' : '✅ Mudança de horário aprovada',
+      mensagem: `${isReposicao ? 'Sua reposição' : 'Sua nova aula'} para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} às ${sol.novo_horario_inicio?.slice(0,5)} foi confirmada na agenda.`,
+      lida: false
+    }])
     
     setSolicitacoes(prev => prev.filter(s => s.id !== sol.id))
     setIsSubmitting(false); 
@@ -262,8 +314,14 @@ export default function Dashboard() {
   const handleNegarSolicitacao = async (sol: any) => {
     const motivo = motivoRecusa.trim() || 'Horário indisponível no momento.'
     setIsSubmitting(true)
+    const isReposicao = sol.tipo_mudanca === 'Reposição'
     await supabase.from('solicitacoes_reagendamento').update({ status: 'Negada', motivo_recusa: motivo }).eq('id', sol.id)
-    await supabase.from('notificacoes_aluno').insert([{ aluno_id: sol.aluno_id, titulo: '❌ Reposição Recusada', mensagem: `Seu pedido para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} foi recusado. Motivo: "${motivo}".`, lida: false }])
+    await supabase.from('notificacoes_aluno').insert([{
+      aluno_id: sol.aluno_id,
+      titulo: isReposicao ? '❌ Reposição recusada' : '❌ Mudança de horário recusada',
+      mensagem: `Seu pedido para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} foi recusado. Motivo: "${motivo}".`,
+      lida: false
+    }])
     
     setSolicitacoes(prev => prev.filter(s => s.id !== sol.id))
     setSolicitacaoParaNegar(null)
@@ -327,7 +385,7 @@ export default function Dashboard() {
 
   // 🔥 ORDENAÇÃO APLICADA AQUI
   const aulasDeHoje = aulas.filter(aula => {
-    if (aula.is_reposicao) return aula.data_selecionada === hojeDataStr;
+    if (aula.is_reposicao || aula.is_remarcacao) return aula.data_selecionada === hojeDataStr;
     return aula.dia === nomeDiaHoje;
   }).filter(aula => {
     const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info;
@@ -353,7 +411,7 @@ export default function Dashboard() {
     const eventosDoDia = eventosSemana.filter(e => e.data_evento === dia.dataStr)
     const eventoEspecial = eventosDoDia.find(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')
     const aulasDoDia = aulas.filter(aula => {
-      if (aula.is_reposicao) return aula.data_selecionada === dia.dataStr
+      if (aula.is_reposicao || aula.is_remarcacao) return aula.data_selecionada === dia.dataStr
       return aula.dia === dia.nome
     }).filter(aula => {
       const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info
@@ -500,7 +558,8 @@ export default function Dashboard() {
                               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-500">
                                 <span className="flex items-center gap-1"><Mic2 size={12} /> {aula.instrumento_aula}</span>
                                 <span className="flex items-center gap-1"><MapPin size={12} /> {aula.sala?.nome}</span>
-                                {aula.is_reposicao && <span className="text-[#76562e] font-semibold">Reposição</span>}
+                                {aula.is_reposicao && <span className="font-semibold text-[#76562e]">Reposição</span>}
+                                {aula.is_remarcacao && <span className="font-semibold text-[#1f4a3a]">Horário aprovado</span>}
                               </div>
                             </div>
                           </div>
@@ -606,7 +665,7 @@ export default function Dashboard() {
                   <dl className="py-4 space-y-3 text-sm">
                     <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Modalidade</dt><dd className="font-medium text-slate-800">{selectedAula.instrumento_aula}</dd></div>
                     <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Sala</dt><dd className="font-medium text-slate-800">{selectedAula.sala?.nome}</dd></div>
-                    <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Tipo</dt><dd className="font-medium text-slate-800">{selectedAula.is_reposicao ? 'Reposição' : 'Horário fixo'}</dd></div>
+                    <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Tipo</dt><dd className="font-medium text-slate-800">{selectedAula.is_reposicao ? 'Reposição' : selectedAula.is_remarcacao ? 'Mudança aprovada' : 'Horário fixo'}</dd></div>
                   </dl>
                   <div className="space-y-2 pt-2">
                     <button onClick={() => router.push(`/alunos/${selectedAula.aluno.id}`)} className="w-full py-3 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2">
@@ -615,7 +674,7 @@ export default function Dashboard() {
                     <button onClick={handleDesmarcarAula} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-[#dfc394] bg-[#fbf5e9] text-[#76562e] text-xs font-semibold disabled:opacity-50">
                       Desmarcar somente hoje
                     </button>
-                    {!selectedAula.is_reposicao && (
+                    {!selectedAula.is_reposicao && !selectedAula.is_remarcacao && (
                       <button onClick={() => handleRemoverDaGrade(selectedAula.id)} className="w-full py-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold">
                         Remover horário fixo
                       </button>
@@ -657,8 +716,14 @@ export default function Dashboard() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="font-semibold text-sm text-slate-900 truncate">{sol.aluno_nome}</p>
-                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                  Reposição em {sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'data indefinida'}, {sol.novo_horario_inicio?.slice(0, 5)}
+                                <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-[#8b6a3e]">
+                                  {sol.tipo_mudanca === 'Reposição' ? 'Pedido de reposição' : 'Pedido de mudança de horário'}
+                                </p>
+                                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                                  {sol.data_aula_original && (
+                                    <>Aula de {new Date(sol.data_aula_original).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} → </>
+                                  )}
+                                  {sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'data indefinida'}, {sol.novo_horario_inicio?.slice(0, 5)}
                                 </p>
                               </div>
                               <CalendarDays size={16} className="text-[#1f4a3a] shrink-0 mt-0.5" />
@@ -792,6 +857,8 @@ export default function Dashboard() {
                                     ? 'bg-amber-50 border-amber-300 border-l-amber-500'
                                     : aula.is_reposicao
                                       ? 'bg-indigo-50 border-indigo-200 border-l-indigo-500'
+                                      : aula.is_remarcacao
+                                        ? 'bg-emerald-50 border-emerald-200 border-l-emerald-500'
                                       : 'bg-white border-[#dcdcd5] border-l-[#6f8c7b]'
 
                             return (
@@ -800,7 +867,7 @@ export default function Dashboard() {
                                   <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="min-w-0 flex-1 text-left">
                                     <p className="text-xs font-semibold text-slate-900 truncate">{aula.aluno?.nome_completo}</p>
                                     <p className="text-[11px] text-slate-600 mt-0.5">{aula.horario_inicio?.slice(0, 5)}–{aula.horario_fim?.slice(0, 5)}</p>
-                                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">{aula.instrumento_aula}{aula.is_reposicao ? ' · Reposição' : ''}</p>
+                                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">{aula.instrumento_aula}{aula.is_reposicao ? ' · Reposição' : aula.is_remarcacao ? ' · Mudança aprovada' : ''}</p>
                                   </button>
                                   <button aria-label="Ver detalhes da aula" onClick={() => { setSelectedAula({ ...aula, data_selecionada: dia.dataStr }); setViewMode('dia') }} className="h-6 w-6 rounded-md text-slate-500 hover:bg-white flex items-center justify-center shrink-0">
                                     <MoreHorizontal size={14} />
@@ -839,7 +906,7 @@ export default function Dashboard() {
               const eventosDoDia = eventosSemana.filter(e => e.data_evento === dia.dataStr)
               const isFeriado = eventosDoDia.some(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')
               const aulasDoDiaNaSemana = aulas.filter(aula => {
-                if (aula.is_reposicao) return aula.data_selecionada === dia.dataStr
+                if (aula.is_reposicao || aula.is_remarcacao) return aula.data_selecionada === dia.dataStr
                 return aula.dia === dia.nome
               }).filter(aula => {
                 const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info
@@ -881,7 +948,7 @@ export default function Dashboard() {
                               </div>
                               <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="min-w-0 flex-1 text-left">
                                 <p className="font-semibold text-sm text-slate-900 truncate">{aula.aluno?.nome_completo}</p>
-                                <p className="text-[11px] text-slate-500 mt-0.5">{aula.instrumento_aula} · {aula.sala?.nome}{aula.is_reposicao ? ' · Reposição' : ''}</p>
+                                <p className="text-[11px] text-slate-500 mt-0.5">{aula.instrumento_aula} · {aula.sala?.nome}{aula.is_reposicao ? ' · Reposição' : aula.is_remarcacao ? ' · Mudança aprovada' : ''}</p>
                               </button>
                               <div className="flex items-center gap-2 shrink-0">
                                 {statusHistorico ? (
