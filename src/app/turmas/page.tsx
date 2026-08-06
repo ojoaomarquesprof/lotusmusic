@@ -400,20 +400,24 @@ export default function TurmasPage() {
       <AnimatePresence>
         {isModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[80] flex items-center justify-center bg-[#0d1d17]/55 p-4 backdrop-blur-sm">
-            <motion.div initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 24, opacity: 0 }} className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-[28px] border border-white/60 bg-[#f8f7f2] shadow-2xl custom-scrollbar">
-              <div className="sticky top-0 z-10 flex items-start justify-between border-b border-[#dfded7] bg-[#f8f7f2]/95 px-6 py-5 backdrop-blur">
+            <motion.div initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 24, opacity: 0 }} className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[#f8f7f2] shadow-2xl">
+              <div className="flex shrink-0 items-start justify-between border-b border-[#dfded7] bg-[#fbfaf6] px-5 py-5 md:px-7">
                 <div>
                   <div className="premium-kicker">{editingId ? 'Editar turma' : 'Nova turma'}</div>
                   <h2 className="mt-1 text-2xl font-semibold text-slate-900">{editingId ? form.nome : 'Cadastro coletivo'}</h2>
-                  <p className="mt-1 text-sm text-slate-500">O preço informado aqui pode variar para cada turma.</p>
+                  <p className="mt-1 text-sm text-slate-500">Agenda, preço e participantes em um único cadastro.</p>
                 </div>
-                <button onClick={() => setIsModalOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dfded7] bg-white text-slate-500"><X size={18} /></button>
+                <button type="button" aria-label="Fechar cadastro da turma" onClick={() => setIsModalOpen(false)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#dfded7] bg-white text-slate-500 transition hover:border-[#bfc7c1] hover:text-[#1f4a3a]"><X size={18} /></button>
               </div>
 
-              <form onSubmit={salvarTurma} className="grid gap-6 p-6 lg:grid-cols-[1fr_0.9fr]">
-                <div className="space-y-5">
+              <form onSubmit={salvarTurma} className="flex min-h-0 flex-1 flex-col">
+                <div className="premium-scrollarea grid min-h-0 flex-1 gap-6 overflow-y-auto px-5 py-6 md:px-7 lg:grid-cols-[1fr_0.9fr]">
+                  <div className="space-y-5">
                   <section className="rounded-2xl border border-[#dfded7] bg-white p-5">
-                    <h3 className="text-sm font-semibold text-slate-900">Identificação e agenda</h3>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">1</span>
+                      <div><h3 className="text-sm font-semibold text-slate-900">Identificação e agenda</h3><p className="mt-0.5 text-xs text-slate-500">Defina onde e quando a turma se reúne.</p></div>
+                    </div>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <label className="md:col-span-2 text-xs font-semibold text-slate-600">Nome da turma
                         <input required value={form.nome} onChange={(e) => updateForm('nome', e.target.value)} placeholder="Ex.: Turma de música da igreja" className="mt-1.5 w-full rounded-xl border border-[#d9d7ce] bg-white px-4 py-3 text-sm outline-none focus:border-[#1f4a3a] focus:ring-4 focus:ring-[#1f4a3a]/10" />
@@ -454,7 +458,10 @@ export default function TurmasPage() {
                   </section>
 
                   <section className="rounded-2xl border border-[#dfded7] bg-white p-5">
-                    <div className="flex items-center gap-2"><WalletCards size={17} className="text-[#1f4a3a]" /><h3 className="text-sm font-semibold text-slate-900">Preço da turma</h3></div>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">2</span>
+                      <div><div className="flex items-center gap-2"><WalletCards size={16} className="text-[#1f4a3a]" /><h3 className="text-sm font-semibold text-slate-900">Preço da turma</h3></div><p className="mt-0.5 text-xs text-slate-500">O valor pode variar entre as turmas.</p></div>
+                    </div>
                     <div className="mt-4 grid gap-4 sm:grid-cols-2">
                       <label className="text-xs font-semibold text-slate-600">Mensalidade total
                         <input required min="0.01" step="0.01" type="number" value={form.valor_mensal_total} onChange={(e) => updateForm('valor_mensal_total', e.target.value)} className="mt-1.5 w-full rounded-xl border border-[#d9d7ce] bg-white px-4 py-3 text-lg font-semibold text-[#1f4a3a] outline-none" />
@@ -469,18 +476,21 @@ export default function TurmasPage() {
                     </div>
                     <p className="mt-3 text-[11px] leading-5 text-slate-500">A divisão é recalculada para as próximas aulas. As aulas já realizadas mantêm o preço e a quantidade de participantes daquele dia.</p>
                   </section>
-                </div>
+                  </div>
 
                 <section className="flex min-h-[520px] flex-col rounded-2xl border border-[#dfded7] bg-white p-5">
                   <div className="flex items-center justify-between gap-4">
-                    <div><h3 className="text-sm font-semibold text-slate-900">Participantes</h3><p className="mt-1 text-xs text-slate-500">{selectedStudents.length} selecionado{selectedStudents.length === 1 ? '' : 's'} da base</p></div>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">3</span>
+                      <div><h3 className="text-sm font-semibold text-slate-900">Participantes</h3><p className="mt-0.5 text-xs text-slate-500">{selectedStudents.length} selecionado{selectedStudents.length === 1 ? '' : 's'} da base</p></div>
+                    </div>
                     <span className="rounded-full bg-[#e7efe9] px-3 py-1.5 text-xs font-semibold text-[#1f4a3a]">{currency(monthlyShare)} cada</span>
                   </div>
                   <div className="relative mt-4">
                     <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} placeholder="Buscar aluno..." className="w-full rounded-xl border border-[#d9d7ce] py-3 pl-10 pr-4 text-sm outline-none focus:border-[#1f4a3a]" />
                   </div>
-                  <div className="mt-3 max-h-[420px] flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+                  <div className="premium-scrollarea mt-3 max-h-[420px] flex-1 space-y-2 overflow-y-auto pr-2">
                     {filteredStudents.map((aluno) => {
                       const checked = selectedStudents.includes(aluno.id)
                       return (
@@ -495,10 +505,14 @@ export default function TurmasPage() {
                     })}
                   </div>
                 </section>
+                </div>
 
-                <div className="flex flex-col-reverse gap-3 border-t border-[#dfded7] pt-5 sm:flex-row sm:justify-end lg:col-span-2">
+                <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-[#dfded7] bg-[#fbfaf6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-7">
+                  <p className="hidden text-xs text-slate-500 sm:block">{selectedStudents.length ? `${selectedStudents.length} participante${selectedStudents.length === 1 ? '' : 's'} · ${currency(monthlyShare)} por aluno/mês` : 'Selecione ao menos um participante'}</p>
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row">
                   <button type="button" onClick={() => setIsModalOpen(false)} className="h-11 rounded-xl border border-[#d9d7ce] bg-white px-5 text-sm font-semibold text-slate-600">Cancelar</button>
                   <button type="submit" disabled={saving} className="h-11 rounded-xl bg-[#1f4a3a] px-6 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Salvando...' : editingId ? 'Salvar alterações' : 'Criar turma'}</button>
+                  </div>
                 </div>
               </form>
             </motion.div>

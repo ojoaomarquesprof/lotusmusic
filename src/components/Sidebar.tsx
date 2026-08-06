@@ -9,6 +9,7 @@ import Cropper from 'react-easy-crop'
 import { BILLING_MODELS, BillingModel } from '../lib/billing'
 import {
   CalendarDays,
+  Camera,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -382,7 +383,9 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     </div>
   )
 
-  const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-bold focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400";
+  const inputClass = "premium-form-control";
+  const labelClass = "mb-1.5 block text-xs font-semibold text-slate-600";
+  const formSectionClass = "rounded-2xl border border-[#dfded7] bg-white p-5 md:p-6";
 
   return (
     <div className="lotus-admin min-h-screen w-full text-slate-900 font-sans flex flex-col xl:flex-row relative z-0">
@@ -455,40 +458,51 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       {/* --- MODAL DE MATRÍCULA --- */}
       <AnimatePresence>
         {isModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-emerald-500 p-8 rounded-[2.5rem] w-full max-w-4xl shadow-2xl relative overflow-y-auto max-h-[90vh] custom-scrollbar`}>
-              
-              <div className="mb-8">
-                <h2 className="text-2xl font-bold tracking-tight text-slate-800">Ficha de Matrícula</h2>
-                <p className="text-slate-500 text-sm mt-1">Cadastre o aluno agora e escolha se o horário será definido nesta etapa.</p>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-[#0d1d17]/55 p-3 backdrop-blur-sm md:p-4">
+            <motion.div initial={{ scale: 0.97, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 18 }} className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[#f8f7f2] shadow-2xl">
+              <div className="flex shrink-0 items-start justify-between gap-5 border-b border-[#dfded7] bg-[#fbfaf6] px-5 py-5 md:px-7">
+                <div>
+                  <div className="premium-kicker">Nova matrícula</div>
+                  <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Cadastro do aluno</h2>
+                  <p className="mt-1 text-sm text-slate-500">Dados pessoais, cobrança e agenda organizados no mesmo fluxo.</p>
+                </div>
+                <button type="button" aria-label="Fechar nova matrícula" onClick={fecharModalMatricula} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#dfded7] bg-white text-slate-500 transition hover:border-[#bfc7c1] hover:text-[#1f4a3a]">
+                  <X size={18} />
+                </button>
               </div>
 
-              <form onSubmit={handleMatricular} className="space-y-8">
-                <div className="flex justify-center mb-6">
-                  <label htmlFor="foto-upload" className="cursor-pointer group flex flex-col items-center gap-2">
-                    <div className={`relative w-28 h-28 rounded-full border-4 border-indigo-500/20 bg-slate-100 shadow-md overflow-hidden flex items-center justify-center transition-all group-hover:border-indigo-500`}>
+              <form onSubmit={handleMatricular} className="flex min-h-0 flex-1 flex-col">
+                <div className="premium-scrollarea min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 md:px-7">
+                <section className={formSectionClass}>
+                  <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">1</span>
+                      <div>
+                        <h3 className="text-base font-semibold text-slate-900">Identidade e acesso</h3>
+                        <p className="mt-0.5 text-xs text-slate-500">Informações do aluno e acesso ao portal.</p>
+                      </div>
+                    </div>
+                    <label htmlFor="foto-upload" className="group flex cursor-pointer items-center gap-3 rounded-xl border border-[#dfded7] bg-[#faf9f6] p-2 pr-4 transition hover:border-[#b9c8bf]">
+                    <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-[#e7efe9] text-[#1f4a3a] shadow-sm">
                       {fotoPreview ? (
                         <img src={fotoPreview} alt="Preview" className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-4xl opacity-50">📷</span>
+                        <Camera size={22} strokeWidth={1.7} />
                       )}
-                      <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                        <span className="text-white text-[9px] font-black uppercase tracking-widest text-center px-2">Alterar<br/>Foto</span>
-                      </div>
                     </div>
-                    <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-widest group-hover:underline mt-1">Adicionar Foto</span>
+                    <span><span className="block text-xs font-semibold text-slate-700">{fotoPreview ? 'Alterar foto' : 'Adicionar foto'}</span><span className="mt-0.5 block text-[11px] text-slate-500">Opcional</span></span>
                     <input id="foto-upload" type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
                   </label>
-                </div>
+                  </div>
                 
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
-                    <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">
-                      Dados de Acesso (Portal)
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center justify-between border-b border-[#ebe9e3] pb-2">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#1f4a3a]">
+                      Acesso ao portal
                     </p>
                     {tipoCadastro === 'PJ' && (
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                        (Opcional para Igrejas)
+                      <span className="text-[10px] font-semibold text-slate-400">
+                        Opcional para instituições
                       </span>
                     )}
                   </div>
@@ -515,17 +529,17 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
-                    <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Dados Básicos</p>
+                <div className="mt-6 space-y-4">
+                  <div className="flex flex-col gap-3 border-b border-[#ebe9e3] pb-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#1f4a3a]">Dados básicos</p>
                     
                     {/* TOGGLE TIPO DE CADASTRO */}
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 cursor-pointer">
+                    <div className="flex flex-wrap gap-2">
+                      <label className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition ${tipoCadastro === 'PF' ? 'border-[#9eb5a7] bg-[#e7efe9] text-[#1f4a3a]' : 'border-[#dfded7] bg-white text-slate-600'}`}>
                         <input type="radio" name="tipoCadastro" checked={tipoCadastro === 'PF'} onChange={() => { setTipoCadastro('PF'); setDocumento(''); setDataNascimento(''); setEmailAluno(''); setSenhaAluno(''); }} className="accent-indigo-600" />
                         Aluno Individual (PF)
                       </label>
-                      <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 cursor-pointer">
+                      <label className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition ${tipoCadastro === 'PJ' ? 'border-[#9eb5a7] bg-[#e7efe9] text-[#1f4a3a]' : 'border-[#dfded7] bg-white text-slate-600'}`}>
                         <input type="radio" name="tipoCadastro" checked={tipoCadastro === 'PJ'} onChange={() => { setTipoCadastro('PJ'); setDocumento(''); setDataNascimento(''); setEmailAluno(''); setSenhaAluno(''); }} className="accent-indigo-600" />
                         Contratante / Instituição (PJ)
                       </label>
@@ -536,7 +550,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                     <input placeholder={tipoCadastro === 'PF' ? "Nome Completo" : "Nome da Igreja / Instituição / Turma"} required value={nomeAluno} onChange={e => setNomeAluno(e.target.value)} onBlur={() => setNomeAluno(normalizeName(nomeAluno))} autoComplete="name" className={`md:col-span-2 ${inputClass}`} />
 
                     {tipoCadastro === 'PF' && (
-                      <div><label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data Nasc.</label><input type="text" inputMode="numeric" placeholder="DD/MM/AAAA" maxLength={10} required value={dataNascimento} onChange={e => setDataNascimento(formatDateInput(e.target.value))} autoComplete="bday" className={inputClass} /></div>
+                      <div><label className={labelClass}>Data de nascimento</label><input type="text" inputMode="numeric" placeholder="DD/MM/AAAA" maxLength={10} required value={dataNascimento} onChange={e => setDataNascimento(formatDateInput(e.target.value))} autoComplete="bday" className={inputClass} /></div>
                     )}
                     
                     <input 
@@ -552,9 +566,13 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                     <input placeholder={tipoCadastro === 'PF' ? "WhatsApp" : "WhatsApp do Responsável"} inputMode="tel" required value={telAluno} onChange={e => setTelAluno(formatBrazilianPhone(e.target.value))} onBlur={() => setTelAluno(ensureBrazilianNinthDigit(telAluno))} maxLength={15} autoComplete="tel" className={`${tipoCadastro === 'PJ' ? 'md:col-span-2' : ''} ${inputClass}`} />
                   </div>
                 </div>
+                </section>
 
-                <div className="space-y-4">
-                  <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-500/20 pb-2">Endereço</p>
+                <section className={formSectionClass}>
+                  <div className="mb-5 flex items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">2</span>
+                    <div><h3 className="text-base font-semibold text-slate-900">Endereço</h3><p className="mt-0.5 text-xs text-slate-500">O CEP completa automaticamente os dados disponíveis.</p></div>
+                  </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <input placeholder="CEP" inputMode="numeric" required value={cep} onChange={handleCepChange} maxLength={9} autoComplete="postal-code" className={`col-span-2 md:col-span-1 ${inputClass}`} />
                     <input placeholder="Endereço / Rua" required value={endereco} onChange={e => setEndereco(e.target.value)} autoComplete="address-line1" className={`col-span-2 md:col-span-2 ${inputClass}`} />
@@ -564,19 +582,22 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                     <input placeholder="Cidade" required value={cidade} onChange={e => setCidade(e.target.value)} autoComplete="address-level2" className={`col-span-2 md:col-span-1 ${inputClass}`} />
                     <input placeholder="UF" required value={estado} maxLength={2} onChange={e => setEstado(e.target.value.replace(/[^a-z]/gi, '').toUpperCase())} autoComplete="address-level1" className={`col-span-2 md:col-span-1 ${inputClass}`} />
                   </div>
-                </div>
+                </section>
 
-                <div className="space-y-4">
-                  <p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest border-b border-emerald-500/20 pb-2">Financeiro & Marketing</p>
-
-                  <div className="max-w-xs">
-                    <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">INÍCIO DO FATURAMENTO</label>
-                    <input type="month" required value={inicioFaturamento} onChange={e => setInicioFaturamento(e.target.value)} className={inputClass} />
-                    <p className="mt-2 text-[10px] text-slate-500">Primeira competência que deve constar no dossiê financeiro.</p>
+                <section className={formSectionClass}>
+                  <div className="mb-5 flex items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">3</span>
+                    <div><h3 className="text-base font-semibold text-slate-900">Faturamento</h3><p className="mt-0.5 text-xs text-slate-500">Escolha como este aluno será cobrado.</p></div>
                   </div>
 
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-2">MODELO DE FATURAMENTO</label>
+                  <div className="max-w-xs">
+                    <label className={labelClass}>Início do faturamento</label>
+                    <input type="month" required value={inicioFaturamento} onChange={e => setInicioFaturamento(e.target.value)} className={inputClass} />
+                    <p className="mt-2 text-xs text-slate-500">Primeira competência que deve constar no dossiê financeiro.</p>
+                  </div>
+
+                  <div className="mt-5">
+                    <label className={labelClass}>Modelo de faturamento</label>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       {BILLING_MODELS.map(model => (
                         <button
@@ -588,35 +609,35 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                               setValorPorAula((Number(valorMensalidade || 0) / 4).toFixed(2))
                             }
                           }}
-                          className={`p-4 rounded-2xl border text-left transition-all ${modeloFaturamento === model.value ? 'bg-emerald-50 border-emerald-400 shadow-md ring-2 ring-emerald-500/10' : 'bg-white/40 border-white/70 hover:bg-white/70'}`}
+                          className={`rounded-xl border p-4 text-left transition-all ${modeloFaturamento === model.value ? 'border-[#8eaa9b] bg-[#edf4ef] ring-2 ring-[#1f4a3a]/10' : 'border-[#dfded7] bg-white hover:border-[#bfc9c2] hover:bg-[#faf9f6]'}`}
                         >
-                          <span className={`text-xs font-black block mb-1 ${modeloFaturamento === model.value ? 'text-emerald-700' : 'text-slate-700'}`}>{modeloFaturamento === model.value ? '✓ ' : ''}{model.label}</span>
-                          <span className="text-[10px] text-slate-500 font-medium leading-relaxed block">{model.description}</span>
+                          <span className={`mb-1 block text-sm font-semibold ${modeloFaturamento === model.value ? 'text-[#1f4a3a]' : 'text-slate-700'}`}>{modeloFaturamento === model.value ? '✓ ' : ''}{model.label}</span>
+                          <span className="block text-xs font-medium leading-relaxed text-slate-500">{model.description}</span>
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3">
                     {modeloFaturamento === 'MENSAL_FECHADO' ? (
                       <>
                         <div className="col-span-2 md:col-span-1">
-                          <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Valor por Aula (R$)</label>
+                          <label className={labelClass}>Valor por aula (R$)</label>
                           <input type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="Ex: 70,00" required value={valorPorAula} onChange={e => setValorPorAula(e.target.value)} className={inputClass} />
                         </div>
-                        <div className="col-span-2 md:col-span-2 p-3.5 rounded-xl bg-cyan-50/70 border border-cyan-200 text-xs text-cyan-800 font-semibold">
+                        <div className="col-span-2 rounded-xl border border-[#d7e1da] bg-[#edf4ef] p-4 text-xs font-medium leading-5 text-[#315949] md:col-span-2">
                           Fecha no último dia do mês e vence 7 dias corridos depois. Somente aulas realizadas entram na fatura.
                         </div>
                       </>
                     ) : (
                       <>
                         <div>
-                          <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">{modeloFaturamento === 'CREDITOS' ? 'Valor do Pacote (R$)' : 'Mensalidade (R$)'}</label>
+                          <label className={labelClass}>{modeloFaturamento === 'CREDITOS' ? 'Valor do pacote (R$)' : 'Mensalidade (R$)'}</label>
                           <input type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="Ex: 250" required value={valorMensalidade} onChange={e => setValorMensalidade(e.target.value)} className={inputClass} />
                         </div>
                         {modeloFaturamento === 'VENCIMENTO_FIXO' && (
                           <div>
-                            <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Dia Vencimento</label>
+                            <label className={labelClass}>Dia do vencimento</label>
                             <input type="number" inputMode="numeric" min="1" max="31" placeholder="Ex: 10" required value={vencimento} onChange={e => setVencimento(e.target.value.replace(/\D/g, '').slice(0, 2))} className={inputClass} />
                           </div>
                         )}
@@ -624,7 +645,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                           <label className="flex cursor-pointer items-start justify-between gap-4">
                             <span>
                               <span className="block text-xs font-bold text-slate-700">Pagamento inicial já foi recebido?</span>
-                              <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">Ative somente se o valor já entrou no caixa. Caso contrário, o aluno será cadastrado sem recibo ou pagamento confirmado.</span>
+                              <span className="mt-1 block text-xs leading-relaxed text-slate-500">Ative somente se o valor já entrou no caixa. Caso contrário, o aluno será cadastrado sem recibo ou pagamento confirmado.</span>
                             </span>
                             <input
                               type="checkbox"
@@ -635,13 +656,13 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                           </label>
                           {registrarPagamentoInicial && (
                             <div className="mt-4 border-t border-slate-200 pt-4">
-                              <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Data do recebimento</label>
+                              <label className={labelClass}>Data do recebimento</label>
                               <input type="date" required value={dataPrimeiroPagamento} onChange={e => setDataPrimeiroPagamento(e.target.value)} className={inputClass} />
                             </div>
                           )}
                         </div>
                         {modeloFaturamento === 'CREDITOS' && (
-                          <div className="col-span-2 md:col-span-3 p-3.5 rounded-xl bg-violet-50/70 border border-violet-200 text-xs text-violet-800 font-semibold">
+                        <div className="col-span-2 rounded-xl border border-[#d7e1da] bg-[#edf4ef] p-4 text-xs font-medium leading-5 text-[#315949] md:col-span-3">
                             Cada pagamento confirmado adiciona 4 créditos. Cada aula realizada consome 1.
                           </div>
                         )}
@@ -651,7 +672,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                     <div>
-                      <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Como conheceu a escola?</label>
+                      <label className={labelClass}>Como conheceu a escola?</label>
                       <select required value={comoConheceu} onChange={e => setComoConheceu(e.target.value)} className={inputClass}>
                         <option value="">Selecione...</option>
                         <option value="Instagram">Instagram</option>
@@ -663,54 +684,57 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                     </div>
                     {comoConheceu === 'Indicação' && (
                       <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
-                        <label className="text-[9px] font-bold text-slate-500 ml-1 block mb-1">Quem indicou?</label>
+                        <label className={labelClass}>Quem indicou?</label>
                         <input required value={indicacaoNome} onChange={e => setIndicacaoNome(e.target.value)} placeholder="Nome da pessoa" className={inputClass} />
                       </motion.div>
                     )}
                   </div>
-                </div>
+                </section>
 
                 {/* 🔥 SESSÃO DE MÚLTIPLOS HORÁRIOS (MATRÍCULA) 🔥 */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
-                    <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Agendamento (Horários Fixos)</p>
-                    {agendamentoCadastro === 'AGORA' && <button type="button" onClick={addAgenda} className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 shadow-sm transition-all">+ Adicionar Horário</button>}
+                <section className={formSectionClass}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">4</span>
+                      <div><h3 className="text-base font-semibold text-slate-900">Agenda do aluno</h3><p className="mt-0.5 text-xs text-slate-500">Defina agora ou deixe o aluno disponível para uma turma.</p></div>
+                    </div>
+                    {agendamentoCadastro === 'AGORA' && <button type="button" onClick={addAgenda} className="h-9 rounded-lg border border-[#cbdad0] bg-[#edf4ef] px-3 text-xs font-semibold text-[#1f4a3a] transition hover:bg-[#e2ede6]">+ Adicionar horário</button>}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
                     <button
                       type="button"
                       onClick={() => setAgendamentoCadastro('AGORA')}
-                      className={`p-4 rounded-2xl border text-left transition-all ${agendamentoCadastro === 'AGORA' ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-500/10' : 'bg-white/50 border-white/70'}`}
+                      className={`rounded-xl border p-4 text-left transition-all ${agendamentoCadastro === 'AGORA' ? 'border-[#8eaa9b] bg-[#edf4ef] ring-2 ring-[#1f4a3a]/10' : 'border-[#dfded7] bg-white hover:border-[#bfc9c2]'}`}
                     >
-                      <span className="block text-xs font-bold text-slate-800">Agendar horário agora</span>
-                      <span className="mt-1 block text-[10px] leading-5 text-slate-500">Cria uma aula individual fixa junto com a matrícula.</span>
+                      <span className="block text-sm font-semibold text-slate-800">Agendar horário agora</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">Cria uma aula individual fixa junto com a matrícula.</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setAgendamentoCadastro('DEPOIS')}
-                      className={`p-4 rounded-2xl border text-left transition-all ${agendamentoCadastro === 'DEPOIS' ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-500/10' : 'bg-white/50 border-white/70'}`}
+                      className={`rounded-xl border p-4 text-left transition-all ${agendamentoCadastro === 'DEPOIS' ? 'border-[#8eaa9b] bg-[#edf4ef] ring-2 ring-[#1f4a3a]/10' : 'border-[#dfded7] bg-white hover:border-[#bfc9c2]'}`}
                     >
-                      <span className="block text-xs font-bold text-slate-800">Cadastrar sem horário fixo</span>
-                      <span className="mt-1 block text-[10px] leading-5 text-slate-500">Permite agendar depois ou importar o aluno para uma turma.</span>
+                      <span className="block text-sm font-semibold text-slate-800">Cadastrar sem horário fixo</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">Permite agendar depois ou importar o aluno para uma turma.</span>
                     </button>
                   </div>
                   
                   {agendamentoCadastro === 'AGORA' ? agendas.map((ag, index) => (
-                    <div key={ag.id} className="p-5 rounded-2xl border border-indigo-100 bg-indigo-50/50 shadow-sm relative">
+                    <div key={ag.id} className="relative mt-4 rounded-2xl border border-[#d7e1da] bg-[#f4f7f4] p-5">
                       {agendas.length > 1 && (
                         <button type="button" onClick={() => removeAgenda(index)} className="absolute -top-3 -right-2 bg-rose-100 text-rose-600 border border-rose-200 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md hover:bg-rose-500 hover:text-white transition-all">✕</button>
                       )}
 
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div>
-                          <label className="text-[9px] font-bold text-slate-500 ml-1">Dia</label>
+                          <label className={labelClass}>Dia</label>
                           <select required value={ag.dia} onChange={e => handleAgendaChange(index, 'dia', e.target.value)} className={inputClass}>
                             {dias.map((d: string) => <option key={d} value={d}>{d}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="text-[9px] font-bold text-slate-500 ml-1">Horário</label>
+                          <label className={labelClass}>Horário</label>
                           <select required value={ag.horario_inicio} onChange={e => handleAgendaChange(index, 'horario_inicio', e.target.value)} className={inputClass}>
                             {HORARIOS_DISPONIVEIS.map(h => (
                               <option key={h} value={h}>{h}</option>
@@ -718,14 +742,14 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                           </select>
                         </div>
                         <div>
-                          <label className="text-[9px] font-bold text-slate-500 ml-1">Professor</label>
+                          <label className={labelClass}>Professor</label>
                           <select required value={ag.professor_id} onChange={e => handleAgendaChange(index, 'professor_id', e.target.value)} className={inputClass}>
                             <option value="">Selecione...</option>
                             {professoresList.map(p => <option key={p.id} value={p.id}>{p.nome_completo}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="text-[9px] font-bold text-slate-500 ml-1">Sala</label>
+                          <label className={labelClass}>Sala</label>
                           <select required value={ag.sala_id} onChange={e => handleAgendaChange(index, 'sala_id', e.target.value)} className={inputClass}>
                             <option value="">Selecione...</option>
                             {salasList.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
@@ -733,7 +757,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                         </div>
                       </div>
                       <div className="pt-4">
-                        <label className="text-[10px] font-black uppercase mb-3 block text-slate-500 tracking-widest">Modalidade</label>
+                        <label className={labelClass}>Modalidade</label>
                         <div className="flex flex-wrap gap-2">
                           {modalidadesLista.map(m => (
                             <motion.button 
@@ -741,7 +765,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                               key={m.nome} 
                               type="button" 
                               onClick={() => handleAgendaChange(index, 'instrumento_aula', m.nome)} 
-                              className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${ag.instrumento_aula === m.nome ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white border-transparent shadow-lg scale-105' : `bg-white/50 border-white/60 text-slate-600 shadow-sm hover:bg-white`}`}
+                              className={`rounded-lg border px-4 py-2.5 text-xs font-semibold transition-all ${ag.instrumento_aula === m.nome ? 'border-[#1f4a3a] bg-[#1f4a3a] text-white' : 'border-[#dfded7] bg-white text-slate-600 hover:border-[#aebdb4]'}`}
                             >
                               {ag.instrumento_aula === m.nome && <span className="mr-2">✓</span>} {m.nome}
                             </motion.button>
@@ -755,9 +779,16 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                       <p className="mt-1 text-xs text-[#607269]">Depois você poderá adicioná-lo a uma turma ou criar um horário pelo perfil.</p>
                     </div>
                   )}
-                </div>
+                </section>
 
-                <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40"><motion.button whileTap={{ scale: 0.95 }} type="button" onClick={fecharModalMatricula} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-black uppercase text-xs text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white disabled:opacity-50`}>Cancelar</motion.button><motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-black uppercase text-xs shadow-xl hover:shadow-emerald-500/30 transition-all disabled:opacity-50">{isSubmitting ? 'Gerando Acesso...' : 'Finalizar Matrícula'}</motion.button></div>
+                </div>
+                <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-[#dfded7] bg-[#fbfaf6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-7">
+                  <p className="hidden text-xs text-slate-500 sm:block">{BILLING_MODELS.find(model => model.value === modeloFaturamento)?.label} · {agendamentoCadastro === 'AGORA' ? `${agendas.length} horário${agendas.length === 1 ? '' : 's'} fixo${agendas.length === 1 ? '' : 's'}` : 'sem horário fixo'}</p>
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                    <motion.button whileTap={{ scale: 0.97 }} type="button" onClick={fecharModalMatricula} disabled={isSubmitting} className="h-11 rounded-xl border border-[#d9d7ce] bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-[#f8f7f3] disabled:opacity-50">Cancelar</motion.button>
+                    <motion.button whileTap={{ scale: 0.97 }} type="submit" disabled={isSubmitting} className="h-11 rounded-xl bg-[#1f4a3a] px-6 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(31,74,58,0.18)] transition hover:bg-[#173b2e] disabled:opacity-50">{isSubmitting ? 'Criando matrícula...' : 'Finalizar matrícula'}</motion.button>
+                  </div>
+                </div>
               </form>
             </motion.div>
           </motion.div>
