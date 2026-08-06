@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PanelsTopLeft,
   Settings2,
   UserPlus,
   UsersRound,
@@ -74,6 +75,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [inicioFaturamento, setInicioFaturamento] = useState(new Date().toISOString().slice(0, 7));
   const [registrarPagamentoInicial, setRegistrarPagamentoInicial] = useState(false);
   const [dataPrimeiroPagamento, setDataPrimeiroPagamento] = useState(new Date().toISOString().split('T')[0]);
+  const [agendamentoCadastro, setAgendamentoCadastro] = useState<'AGORA' | 'DEPOIS'>('AGORA')
   
   const [fotoArquivo, setFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   
@@ -158,7 +160,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const fecharModalMatricula = () => { 
     setIsModalOpen(false); setTipoCadastro('PF'); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setDocumento(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
-    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setModeloFaturamento('VENCIMENTO_FIXO'); setValorPorAula('62.50'); setInicioFaturamento(new Date().toISOString().slice(0, 7)); setRegistrarPagamentoInicial(false); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]);
+    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setModeloFaturamento('VENCIMENTO_FIXO'); setValorPorAula('62.50'); setInicioFaturamento(new Date().toISOString().slice(0, 7)); setRegistrarPagamentoInicial(false); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]); setAgendamentoCadastro('AGORA');
     setFotoArquivo(null); setFotoPreview(null); 
     setAgendas([{ id: 'new_1', dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
   }
@@ -197,7 +199,8 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     if (tipoCadastro === 'PJ' && modeloFaturamento === 'MENSAL_FECHADO' && documentoNumeros.length !== 14) {
       return alert("O CNPJ é obrigatório para emitir as faturas automáticas da turma.")
     }
-    if (agendas.some(ag => !ag.professor_id || !ag.sala_id || !ag.instrumento_aula)) {
+    const agendasParaSalvar = agendamentoCadastro === 'AGORA' ? agendas : [];
+    if (agendasParaSalvar.some(ag => !ag.professor_id || !ag.sala_id || !ag.instrumento_aula)) {
       return alert("Preencha modalidade, sala e professor de TODOS os horários escolhidos.")
     }
     setIsSubmitting(true)
@@ -222,7 +225,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     }
     
     // Verificar Conflitos para todos os horários
-    for (let ag of agendas) {
+    for (let ag of agendasParaSalvar) {
       const { data: conflitos } = await supabase.from('agenda').select('id').eq('dia', ag.dia).or(`professor_id.eq.${ag.professor_id},sala_id.eq.${ag.sala_id}`).lt('horario_inicio', ag.horario_fim).gt('horario_fim', ag.horario_inicio)
       if (conflitos && conflitos.length > 0) { 
         setIsSubmitting(false); 
@@ -286,7 +289,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     }
     
     // Inserir todas as agendas
-    const agendaInserts = agendas.map(ag => ({
+    const agendaInserts = agendasParaSalvar.map(ag => ({
       professor_id: ag.professor_id,
       aluno_id: alunoId,
       sala_id: parseInt(ag.sala_id),
@@ -295,7 +298,9 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       horario_fim: ag.horario_fim,
       instrumento_aula: ag.instrumento_aula
     }))
-    await supabase.from('agenda').insert(agendaInserts)
+    if (agendaInserts.length > 0) {
+      await supabase.from('agenda').insert(agendaInserts)
+    }
     
     if (modeloFaturamento !== 'MENSAL_FECHADO' && registrarPagamentoInicial) {
       const { error: errPg } = await supabase.from('pagamentos').insert([{
@@ -358,6 +363,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
       <NavButton rota="/" icone={LayoutDashboard} texto="Visão geral" />
       <NavButton rota="/alunos" icone={UsersRound} texto="Alunos" />
+      <NavButton rota="/turmas" icone={PanelsTopLeft} texto="Turmas" />
       <NavButton rota="/financeiro" icone={WalletCards} texto="Financeiro" />
       <NavButton rota="/calendario" icone={CalendarDays} texto="Calendário" />
       <NavButton rota="/gerencia" icone={Settings2} texto="Central de gestão" />
@@ -454,7 +460,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
               
               <div className="mb-8">
                 <h2 className="text-2xl font-bold tracking-tight text-slate-800">Ficha de Matrícula</h2>
-                <p className="text-slate-500 text-sm mt-1">Preencha os dados abaixo para registrar o novo aluno ou turma.</p>
+                <p className="text-slate-500 text-sm mt-1">Cadastre o aluno agora e escolha se o horário será definido nesta etapa.</p>
               </div>
 
               <form onSubmit={handleMatricular} className="space-y-8">
@@ -521,7 +527,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                       </label>
                       <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 cursor-pointer">
                         <input type="radio" name="tipoCadastro" checked={tipoCadastro === 'PJ'} onChange={() => { setTipoCadastro('PJ'); setDocumento(''); setDataNascimento(''); setEmailAluno(''); setSenhaAluno(''); }} className="accent-indigo-600" />
-                        Turma / Igreja (PJ)
+                        Contratante / Instituição (PJ)
                       </label>
                     </div>
                   </div>
@@ -668,10 +674,29 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
                     <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Agendamento (Horários Fixos)</p>
-                    <button type="button" onClick={addAgenda} className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 shadow-sm transition-all">+ Adicionar Horário</button>
+                    {agendamentoCadastro === 'AGORA' && <button type="button" onClick={addAgenda} className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 shadow-sm transition-all">+ Adicionar Horário</button>}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setAgendamentoCadastro('AGORA')}
+                      className={`p-4 rounded-2xl border text-left transition-all ${agendamentoCadastro === 'AGORA' ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-500/10' : 'bg-white/50 border-white/70'}`}
+                    >
+                      <span className="block text-xs font-bold text-slate-800">Agendar horário agora</span>
+                      <span className="mt-1 block text-[10px] leading-5 text-slate-500">Cria uma aula individual fixa junto com a matrícula.</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAgendamentoCadastro('DEPOIS')}
+                      className={`p-4 rounded-2xl border text-left transition-all ${agendamentoCadastro === 'DEPOIS' ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-500/10' : 'bg-white/50 border-white/70'}`}
+                    >
+                      <span className="block text-xs font-bold text-slate-800">Cadastrar sem horário fixo</span>
+                      <span className="mt-1 block text-[10px] leading-5 text-slate-500">Permite agendar depois ou importar o aluno para uma turma.</span>
+                    </button>
                   </div>
                   
-                  {agendas.map((ag, index) => (
+                  {agendamentoCadastro === 'AGORA' ? agendas.map((ag, index) => (
                     <div key={ag.id} className="p-5 rounded-2xl border border-indigo-100 bg-indigo-50/50 shadow-sm relative">
                       {agendas.length > 1 && (
                         <button type="button" onClick={() => removeAgenda(index)} className="absolute -top-3 -right-2 bg-rose-100 text-rose-600 border border-rose-200 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md hover:bg-rose-500 hover:text-white transition-all">✕</button>
@@ -724,7 +749,12 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )) : (
+                    <div className="rounded-2xl border border-dashed border-[#c9d7cf] bg-[#eef5f0] px-5 py-6 text-center">
+                      <p className="text-sm font-semibold text-[#1f4a3a]">Aluno será cadastrado sem agenda individual</p>
+                      <p className="mt-1 text-xs text-[#607269]">Depois você poderá adicioná-lo a uma turma ou criar um horário pelo perfil.</p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40"><motion.button whileTap={{ scale: 0.95 }} type="button" onClick={fecharModalMatricula} disabled={isSubmitting} className={`px-6 py-3 rounded-xl font-black uppercase text-xs text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white disabled:opacity-50`}>Cancelar</motion.button><motion.button whileTap={{ scale: 0.95 }} type="submit" disabled={isSubmitting} className="px-10 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-black uppercase text-xs shadow-xl hover:shadow-emerald-500/30 transition-all disabled:opacity-50">{isSubmitting ? 'Gerando Acesso...' : 'Finalizar Matrícula'}</motion.button></div>

@@ -132,7 +132,7 @@ export default function RelatorioFinanceiro() {
       supabase.from('profiles').select('id, nome_completo, telefone, created_at, alunos_info(*)').eq('role', 'ALUNO'),
       supabase
         .from('historico_aulas')
-        .select('aluno_id, data_aula, status')
+        .select('aluno_id, data_aula, status, turma_id, valor_aula_faturado')
         .gte('data_aula', inicioMes)
         .lte('data_aula', `${prefixoMesAtual}-${String(fimMes).padStart(2, '0')}T23:59:59`),
       supabase.from('ajustes_cobranca').select('*'),

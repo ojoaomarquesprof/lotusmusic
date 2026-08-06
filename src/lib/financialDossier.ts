@@ -32,6 +32,7 @@ export type FinancialCharge = {
   adjustmentReason?: string | null
   isAdjusted?: boolean
   saldo?: number
+  turmaId?: string | null
 }
 
 export type AgingBucket = {
@@ -177,13 +178,81 @@ export function buildFinancialDossier({
 
     const model = getBillingModel(info)
     const alunoPayments = confirmedPayments.filter(item => item.aluno_id === aluno.id)
-    const alunoInvoices = (faturas || []).filter(item =>
+    const allAlunoInvoices = (faturas || []).filter(item =>
       item.aluno_id === aluno.id
       && !['CANCELADO', 'SEM_MOVIMENTO'].includes(String(item.status).toUpperCase()),
+    )
+    const groupInvoices = allAlunoInvoices.filter(item => item.turma_id)
+    const alunoInvoices = allAlunoInvoices.filter(item =>
+      !item.turma_id && String(item.modelo_faturamento || model) === model,
     )
     const endMonth = info.status === 'Inativo' && info.data_inativacao
       ? monthStart(info.data_inativacao) || todayMonth
       : todayMonth
+
+    for (const invoice of groupInvoices) {
+      const competence = monthStart(invoice.competencia)
+      if (!competence) continue
+      const dueDate = dateOnly(invoice.data_vencimento)
+      const matchingPayment = alunoPayments.find(item => item.fatura_id === invoice.id)
+      const paid = String(invoice.status).toUpperCase() === 'PAGO' || Boolean(matchingPayment)
+      const erro = String(invoice.status).toUpperCase() === 'ERRO'
+      const late = Boolean(!paid && dueDate && dueDate < today)
+      const status: FinancialChargeStatus = paid ? 'Pago' : erro ? 'Erro na emissão' : late ? 'Atrasado' : 'A vencer'
+
+      charges.push({
+        id: `turma-fatura-${invoice.id}`,
+        alunoId: aluno.id,
+        nome: aluno.nome_completo,
+        telefone: aluno.telefone,
+        competencia: monthISO(competence),
+        competenciaLabel: `${monthLabel(competence)} · Turma`,
+        modelo: 'Turma · Mês fechado',
+        modeloCodigo: 'MENSAL_FECHADO',
+        valor: Number(invoice.valor_total || 0),
+        dataVencimento: dueDate ? isoDate(dueDate) : null,
+        vencimento: dueDate ? dueDate.toLocaleDateString('pt-BR') : 'A definir',
+        vencimentoOrdem: dueDate?.getTime() || competence.getTime(),
+        status,
+        diasAtraso: late && dueDate ? daysBetween(today, dueDate) : 0,
+        invoiceUrl: invoice.invoice_url || null,
+        invoiceId: invoice.id,
+        paymentId: matchingPayment?.id || null,
+        turmaId: invoice.turma_id,
+      })
+    }
+
+    const currentGroupLessons = (historicoMes || []).filter(
+      item => item.aluno_id === aluno.id && item.turma_id && isBillableClass(item.status),
+    )
+    const groupLessonsById = new Map<string, any[]>()
+    for (const lesson of currentGroupLessons) {
+      const key = String(lesson.turma_id)
+      groupLessonsById.set(key, [...(groupLessonsById.get(key) || []), lesson])
+    }
+    for (const [turmaId, lessons] of groupLessonsById) {
+      const hasInvoice = groupInvoices.some(
+        item => item.turma_id === turmaId && monthKey(item.competencia) === monthKey(todayMonth),
+      )
+      if (hasInvoice) continue
+      charges.push({
+        id: `turma-apuracao-${aluno.id}-${turmaId}-${monthKey(todayMonth)}`,
+        alunoId: aluno.id,
+        nome: aluno.nome_completo,
+        telefone: aluno.telefone,
+        competencia: monthISO(todayMonth),
+        competenciaLabel: `${monthLabel(todayMonth)} · Turma`,
+        modelo: 'Turma · Mês fechado',
+        modeloCodigo: 'MENSAL_FECHADO',
+        valor: lessons.reduce((sum, lesson) => sum + Number(lesson.valor_aula_faturado || 0), 0),
+        dataVencimento: null,
+        vencimento: 'Após o fechamento',
+        vencimentoOrdem: new Date(today.getFullYear(), today.getMonth() + 1, 7).getTime(),
+        status: 'Em apuração',
+        diasAtraso: 0,
+        turmaId,
+      })
+    }
 
     if (model === 'VENCIMENTO_FIXO') {
       const startMonth = earliestFinancialMonth(aluno, info, alunoPayments, alunoInvoices, todayMonth)
@@ -271,8 +340,14 @@ export function buildFinancialDossier({
 
       const currentInvoice = alunoInvoices.some(item => monthKey(item.competencia) === monthKey(todayMonth))
       if (info.status !== 'Inativo' && !currentInvoice) {
-        const classCount = historicoMes.filter(item => item.aluno_id === aluno.id && isBillableClass(item.status)).length
-        const value = classCount * Number(info.valor_por_aula || 0)
+        const individualLessons = historicoMes.filter(
+          item => item.aluno_id === aluno.id && !item.turma_id && isBillableClass(item.status),
+        )
+        const classCount = individualLessons.length
+        const value = individualLessons.reduce(
+          (sum, lesson) => sum + Number(lesson.valor_aula_faturado || info.valor_por_aula || 0),
+          0,
+        )
         charges.push({
           id: `apuracao-${aluno.id}-${monthKey(todayMonth)}`,
           alunoId: aluno.id,

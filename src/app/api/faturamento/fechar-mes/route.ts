@@ -87,14 +87,10 @@ async function closeMonth(request: NextRequest) {
     return info?.status !== 'Inativo' && info?.modelo_faturamento === 'MENSAL_FECHADO'
   })
 
-  if (monthlyStudents.length === 0) {
-    return Response.json({ success: true, competence: startDate, processed: [] })
-  }
-
-  const studentIds = monthlyStudents.map((student: any) => student.id)
+  const studentIds = (profiles || []).map((student: any) => student.id)
   const { data: classHistory, error: classHistoryError } = await admin
     .from('historico_aulas')
-    .select('id, aluno_id, data_aula, horario_inicio, horario_fim, status, professor_id, modalidade, fatura_id')
+    .select('id, aluno_id, data_aula, horario_inicio, horario_fim, status, professor_id, modalidade, fatura_id, turma_id, valor_aula_faturado')
     .in('aluno_id', studentIds)
     .gte('data_aula', startDate)
     .lte('data_aula', `${endDate}T23:59:59`)
@@ -103,6 +99,21 @@ async function closeMonth(request: NextRequest) {
 
   if (classHistoryError) {
     return Response.json({ error: classHistoryError.message }, { status: 500 })
+  }
+
+  const billingStudents = (profiles || []).filter((profile: any) => {
+    const info = Array.isArray(profile.alunos_info)
+      ? profile.alunos_info[0]
+      : profile.alunos_info
+    const hasGroupLessons = (classHistory || []).some(
+      (lesson: any) => lesson.aluno_id === profile.id && lesson.turma_id,
+    )
+    return (info?.status !== 'Inativo' && info?.modelo_faturamento === 'MENSAL_FECHADO')
+      || hasGroupLessons
+  })
+
+  if (billingStudents.length === 0) {
+    return Response.json({ success: true, competence: startDate, processed: [] })
   }
 
   const { data: schoolSettings } = await admin
@@ -115,16 +126,26 @@ async function closeMonth(request: NextRequest) {
 
   const processed: any[] = []
 
-  for (const student of monthlyStudents) {
+  for (const student of billingStudents) {
     const info = Array.isArray(student.alunos_info)
       ? student.alunos_info[0]
       : student.alunos_info
+    const isMonthlyStudent = info?.status !== 'Inativo' && info?.modelo_faturamento === 'MENSAL_FECHADO'
     const studentLessons = (classHistory || []).filter(
-      (lesson: any) => lesson.aluno_id === student.id,
+      (lesson: any) =>
+        lesson.aluno_id === student.id
+        && (isMonthlyStudent || Boolean(lesson.turma_id)),
     )
     const lessonCount = studentLessons.length
-    const lessonValue = Number(info?.valor_por_aula || 0)
-    const total = Number((lessonCount * lessonValue).toFixed(2))
+    const defaultLessonValue = Number(info?.valor_por_aula || 0)
+    const lessonValues = studentLessons.map((lesson: any) => {
+      const frozenValue = Number(lesson.valor_aula_faturado || 0)
+      return frozenValue > 0 ? frozenValue : defaultLessonValue
+    })
+    const total = Number(lessonValues.reduce((sum, value) => sum + value, 0).toFixed(2))
+    const lessonValue = lessonCount > 0 ? Number((total / lessonCount).toFixed(2)) : 0
+    const groupIds = Array.from(new Set(studentLessons.map((lesson: any) => lesson.turma_id).filter(Boolean)))
+    const turmaId = groupIds[0] || null
 
     const { data: existingInvoice } = await admin
       .from('faturas')
@@ -158,6 +179,7 @@ async function closeMonth(request: NextRequest) {
         quantidade_aulas: lessonCount,
         valor_unitario: lessonValue,
         valor_total: total,
+        turma_id: turmaId,
         data_emissao: endDate,
         data_vencimento: dueDate,
         status: total > 0 ? 'RASCUNHO' : 'SEM_MOVIMENTO',
@@ -225,7 +247,7 @@ async function closeMonth(request: NextRequest) {
           }
         }
 
-        const items = studentLessons.map((lesson: any) => {
+        const items = studentLessons.map((lesson: any, index: number) => {
           const details = resolveLessonDetails(
             lesson as InvoiceLesson,
             (schedules || []) as InvoiceSchedule[],
@@ -240,10 +262,10 @@ async function closeMonth(request: NextRequest) {
             modalidade: details.modalidade,
             professor_id: details.professorId,
             professor_nome: details.professorName,
-            descricao: `Aula ${lesson.status.toLowerCase()}`,
+            descricao: lesson.turma_id ? 'Aula em turma' : `Aula ${lesson.status.toLowerCase()}`,
             quantidade: 1,
-            valor_unitario: lessonValue,
-            valor_total: lessonValue,
+            valor_unitario: lessonValues[index],
+            valor_total: lessonValues[index],
           }
         })
 

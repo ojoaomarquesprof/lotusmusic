@@ -185,6 +185,26 @@ export default function PortalAluno() {
     setEventosGlobais(ev || [])
 
     const { data: ag } = await supabase.from('agenda').select('*, sala:salas(nome)').eq('aluno_id', session.user.id)
+    const { data: participacoesTurma } = await supabase
+      .from('turma_alunos')
+      .select('turma:turmas(*)')
+      .eq('aluno_id', session.user.id)
+      .eq('status', 'ATIVO')
+    const agendasTurma = (participacoesTurma || [])
+      .map((item: any) => item.turma)
+      .filter((turma: any) => turma?.status === 'ATIVA')
+      .map((turma: any) => ({
+        id: `turma_${turma.id}`,
+        turma_id: turma.id,
+        is_turma: true,
+        dia: turma.dia,
+        horario_inicio: turma.horario_inicio,
+        horario_fim: turma.horario_fim,
+        professor_id: turma.professor_id,
+        instrumento_aula: turma.modalidade,
+        sala: { nome: turma.endereco },
+        turma_nome: turma.nome,
+      }))
     
     const { data: rep } = await supabase.from('solicitacoes_reagendamento').select('*').eq('aluno_id', session.user.id)
     setTodasReposicoes(rep || [])
@@ -195,7 +215,7 @@ export default function PortalAluno() {
       r.nova_data >= hojeDataStr
     )
 
-    let aulasMapeadas = ag || []
+    let aulasMapeadas = [...(ag || []), ...agendasTurma]
     
     if (solicitacoesAprovadasFuturas.length > 0) {
       const aulasAlteradas = solicitacoesAprovadasFuturas.map((r: any) => {
@@ -484,11 +504,15 @@ export default function PortalAluno() {
         dadosData = calcularDataProximaAula(aula.dia, aula.horario_inicio)
       }
 
-      const status = historico.find(h => String(h.data_aula).slice(0, 10) === dadosData.dataBaseString)?.status
+      const status = historico.find(h =>
+        String(h.data_aula).slice(0, 10) === dadosData.dataBaseString
+        && (aula.is_turma ? h.turma_id === aula.turma_id : !h.turma_id)
+      )?.status
       const isDesmarcada = status === 'Desmarcada' || status === 'Falta Justificada'
       const podeSolicitarMudanca =
         !solicitacaoPendente &&
         !isDesmarcada &&
+        !aula.is_turma &&
         !aula.is_reposicao &&
         !aula.is_remarcacao &&
         checkCanReschedule(dadosData.dataBaseString, aula.horario_inicio)
@@ -505,7 +529,7 @@ export default function PortalAluno() {
     .sort((a, b) => a.dataOrdenacao - b.dataOrdenacao)
 
   const proximaAula = aulasComData.find(aula => !aula.isDesmarcada) || aulasComData[0]
-  const aulaBaseReposicao = aulas.find(aula => !aula.is_reposicao)
+  const aulaBaseReposicao = aulas.find(aula => !aula.is_reposicao && !aula.is_turma)
   const tipoSolicitacaoMudanca = modeloFaturamentoPortal === 'VENCIMENTO_FIXO' ? 'Reposição' : 'Pontual'
   const valorResumoFinanceiro =
     modeloFaturamentoPortal === 'MENSAL_FECHADO'
@@ -1015,6 +1039,7 @@ export default function PortalAluno() {
                           <p className="text-sm font-bold capitalize">{aula.dataFormatada}</p>
                           {aula.is_reposicao && <p className="mt-0.5 text-xs font-bold text-[#9a743d]">Aula de reposição</p>}
                           {aula.is_remarcacao && <p className="mt-0.5 text-xs font-bold text-[#1d684f]">Mudança aprovada</p>}
+                          {aula.is_turma && <p className="mt-0.5 text-xs font-bold text-[#1d684f]">{aula.turma_nome}</p>}
                         </div>
                       </div>
                       <div>

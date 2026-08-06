@@ -30,6 +30,11 @@ function defaultLessonValue(info: any) {
   return Number((Number(info?.valor_mensalidade || 0) / packageSize).toFixed(2))
 }
 
+function billedLessonValue(lesson: any, fallback: number) {
+  const frozenValue = Number(lesson?.valor_aula_faturado || 0)
+  return frozenValue > 0 ? frozenValue : fallback
+}
+
 export function CreateInvoiceModal({
   alunoId,
   alunoNome,
@@ -68,7 +73,10 @@ export function CreateInvoiceModal({
   const selectedLessons = pendingLessons.filter((lesson) =>
     selectedIds.includes(String(lesson.id)),
   )
-  const total = selectedLessons.length * Number(unitValue || 0)
+  const total = selectedLessons.reduce(
+    (sum, lesson) => sum + billedLessonValue(lesson, Number(unitValue || 0)),
+    0,
+  )
 
   const openModal = () => {
     const today = saoPauloISODate()
@@ -259,7 +267,7 @@ export function CreateInvoiceModal({
                             </p>
                           </div>
                           <p className="font-bold text-cyan-700">
-                            {formatCurrencyBR(unitValue)}
+                            {formatCurrencyBR(billedLessonValue(lesson, Number(unitValue || 0)))}
                           </p>
                         </label>
                       )
@@ -270,7 +278,7 @@ export function CreateInvoiceModal({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-semibold text-slate-600">
-                      Valor por aula
+                      Valor padrão por aula
                     </label>
                     <input
                       type="number"
@@ -281,6 +289,9 @@ export function CreateInvoiceModal({
                       onChange={(event) => setUnitValue(event.target.value)}
                       className="w-full mt-1 p-3.5 rounded-xl border border-slate-200 bg-white font-bold text-emerald-700 outline-none focus:border-cyan-500"
                     />
+                    <p className="mt-1.5 text-[10px] leading-4 text-slate-500">
+                      Aulas de turma mantêm o valor congelado no dia da realização.
+                    </p>
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-600">

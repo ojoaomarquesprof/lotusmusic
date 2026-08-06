@@ -42,6 +42,7 @@ export default function Dashboard() {
   const [dataReferencia, setDataReferencia] = useState<Date | null>(null)
   const [eventosSemana, setEventosSemana] = useState<any[]>([])
   const [historicoSemana, setHistoricoSemana] = useState<any[]>([])
+  const [turmaAulasSemana, setTurmaAulasSemana] = useState<any[]>([])
   const [aulas, setAulas] = useState<any[]>([])
   const [solicitacoes, setSolicitacoes] = useState<any[]>([])
   const [aulasPendentesBaixa, setAulasPendentesBaixa] = useState<any[]>([]) 
@@ -103,6 +104,7 @@ export default function Dashboard() {
       .channel('dashboard-global')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solicitacoes_reagendamento' }, () => { carregarDados(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_aulas' }, () => { carregarDados(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'turma_aulas' }, () => { carregarDados(); })
       .subscribe();
     return () => { supabase.removeChannel(channel); }
   }, [isMounted]);
@@ -120,6 +122,30 @@ export default function Dashboard() {
     const fimDaSemana = diasVisuais[5].dataStr
 
     const { data: agenda } = await supabase.from('agenda').select(`*, aluno:profiles!aluno_id(id, nome_completo, avatar_url, alunos_info(status, data_inativacao)), sala:salas(nome)`).order('horario_inicio')
+    const { data: turmasAtivas } = await supabase
+      .from('turmas')
+      .select('*, professor:profiles!professor_id(nome_completo), turma_alunos(id, status)')
+      .eq('status', 'ATIVA')
+      .order('horario_inicio')
+    const aulasTurma = (turmasAtivas || []).map((turma: any) => ({
+      id: `turma_${turma.id}`,
+      turma_id: turma.id,
+      is_turma: true,
+      dia: turma.dia,
+      horario_inicio: turma.horario_inicio,
+      horario_fim: turma.horario_fim,
+      professor_id: turma.professor_id,
+      aluno_id: null,
+      aluno: {
+        id: `turma_${turma.id}`,
+        nome_completo: turma.nome,
+        avatar_url: null,
+        alunos_info: { status: 'Ativo' },
+      },
+      sala: { nome: turma.endereco },
+      instrumento_aula: turma.modalidade,
+      participantes: (turma.turma_alunos || []).filter((item: any) => item.status === 'ATIVO').length,
+    }))
     
     const { data: reposicoesAprovadas } = await supabase.from('solicitacoes_reagendamento')
       .select(`*, aluno:profiles!aluno_id(id, nome_completo, avatar_url, alunos_info(status, data_inativacao))`)
@@ -149,6 +175,11 @@ export default function Dashboard() {
 
     const { data: ev } = await supabase.from('eventos_calendario').select('*').gte('data_evento', inicioDaSemana).lte('data_evento', fimDaSemana)
     const { data: hist } = await supabase.from('historico_aulas').select('aluno_id, data_aula, status').gte('data_aula', inicioDaSemana).lte('data_aula', fimDaSemana + 'T23:59:59')
+    const { data: turmaHist } = await supabase
+      .from('turma_aulas')
+      .select('id, turma_id, data_aula, status')
+      .gte('data_aula', inicioDaSemana)
+      .lte('data_aula', fimDaSemana)
 
     // 🔥 BUSCA BLINDADA DE SOLICITAÇÕES (Aceita maiúsculas, minúsculas e evita falhas de ID nulo)
     const { data: sol } = await supabase.from('solicitacoes_reagendamento').select('*').in('status', ['Pendente', 'pendente', 'PENDENTE'])
@@ -177,7 +208,7 @@ export default function Dashboard() {
       const isFeriado = (ev || []).some(e => e.data_evento === diaVisual.dataStr && (e.tipo === 'Feriado' || e.tipo === 'Recesso'));
       if (isFeriado) return;
 
-      const aulasDoDia = (agenda || []).filter(a => a.dia === diaVisual.nome);
+      const aulasDoDia = [...(agenda || []), ...aulasTurma].filter(a => a.dia === diaVisual.nome);
       const reposicoesDoDia = aulasReposicao.filter(r => r.data_selecionada === diaVisual.dataStr);
       const todasAsAulasDoDia = [...aulasDoDia, ...reposicoesDoDia];
 
@@ -192,7 +223,9 @@ export default function Dashboard() {
           const endDateTime = new Date(ano, mes - 1, dia, h, m);
 
           if (agora > endDateTime) {
-            const jaTemHistorico = (hist || []).some(hItem => String(hItem.aluno_id) === String(aula.aluno_id) && String(hItem.data_aula).startsWith(diaVisual.dataStr));
+            const jaTemHistorico = aula.is_turma
+              ? (turmaHist || []).some((item: any) => item.turma_id === aula.turma_id && String(item.data_aula).startsWith(diaVisual.dataStr))
+              : (hist || []).some(hItem => String(hItem.aluno_id) === String(aula.aluno_id) && String(hItem.data_aula).startsWith(diaVisual.dataStr));
             if (!jaTemHistorico) {
               pendentesParaLancar.push({ ...aula, data_selecionada: diaVisual.dataStr });
             }
@@ -215,13 +248,35 @@ export default function Dashboard() {
     setSolicitacoes(solMapeadas); 
     setEventosSemana(ev || []); 
     setHistoricoSemana(hist || []); 
-    setAulas([...(agenda || []), ...aulasReposicao]);
+    setTurmaAulasSemana(turmaHist || [])
+    setAulas([...(agenda || []), ...aulasReposicao, ...aulasTurma]);
     
     setLoading(false)
   }
 
   const handleDarBaixa = async (status: 'Realizada' | 'Falta Justificada' | 'Falta Injustificada') => {
     setIsSubmitting(true);
+
+    if (aulaParaDarBaixa?.is_turma) {
+      if (status !== 'Realizada') {
+        setIsSubmitting(false)
+        return alert('A turma é lançada como realizada para todos. Faltas individuais podem ser anotadas depois no perfil do aluno.')
+      }
+      const { error } = await supabase.rpc('registrar_aula_turma', {
+        p_turma_id: aulaParaDarBaixa.turma_id,
+        p_data_aula: aulaParaDarBaixa.data_selecionada,
+        p_observacoes: obsBaixa.trim() || null,
+      })
+      if (error) {
+        setIsSubmitting(false)
+        return alert(`Não foi possível registrar a aula da turma: ${error.message}`)
+      }
+      setAulaParaDarBaixa(null)
+      setObsBaixa('')
+      setIsSubmitting(false)
+      await carregarDados()
+      return
+    }
     
     setHistoricoSemana(prev => [...prev, { 
       aluno_id: aulaParaDarBaixa.aluno_id, 
@@ -401,6 +456,30 @@ export default function Dashboard() {
     } catch (e) { return false; }
   }
 
+  const getAulaStatus = (aula: any, dateStr: string) => {
+    if (aula?.is_turma) {
+      const groupLesson = turmaAulasSemana.find(
+        (item) => item.turma_id === aula.turma_id && String(item.data_aula).startsWith(dateStr),
+      )
+      return groupLesson?.status === 'REALIZADA' ? 'Realizada' : groupLesson?.status
+    }
+    return historicoSemana.find(
+      (item) => String(item.aluno_id) === String(aula.aluno?.id) && String(item.data_aula).startsWith(dateStr),
+    )?.status
+  }
+
+  const abrirEntidadeAula = (aula: any) => {
+    router.push(aula?.is_turma ? '/turmas' : `/alunos/${aula.aluno.id}`)
+  }
+
+  const abrirDetalhesAula = (aula: any, dateStr: string) => {
+    if (aula?.is_turma) {
+      router.push('/turmas')
+      return
+    }
+    setSelectedAula({ ...aula, data_selecionada: dateStr })
+  }
+
   if (!isMounted) return <div className="min-h-screen bg-transparent" />
 
   const eventosDeHoje = eventosSemana.filter(e => e.data_evento === hojeDataStr)
@@ -413,7 +492,7 @@ export default function Dashboard() {
   }).filter(aula => {
     const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info;
     if (info?.status === 'Inativo' && info?.data_inativacao) { if (hojeDataStr > info.data_inativacao) return false; }
-    const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(hojeDataStr))?.status;
+    const statusHistorico = getAulaStatus(aula, hojeDataStr);
     if (statusHistorico === 'Desmarcada') return false; 
     return true;
   }).sort((a, b) => {
@@ -439,7 +518,7 @@ export default function Dashboard() {
     }).filter(aula => {
       const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info
       if (info?.status === 'Inativo' && info?.data_inativacao && dia.dataStr > info.data_inativacao) return false
-      const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
+      const statusHistorico = getAulaStatus(aula, dia.dataStr)
       return statusHistorico !== 'Desmarcada'
     }).sort((a, b) => (a.horario_inicio || '00:00').localeCompare(b.horario_inicio || '00:00'))
 
@@ -533,7 +612,7 @@ export default function Dashboard() {
               ) : (
                 <div className="divide-y divide-[#ebe9e3]">
                   {aulasDeHoje.map((aula, index) => {
-                    const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(hojeDataStr))?.status
+                    const statusHistorico = getAulaStatus(aula, hojeDataStr)
                     const isPast = checkIfClassPast(hojeDataStr, aula.horario_fim)
                     const isPendenteDeBaixa = isPast && !statusHistorico
                     const isCurrent = !isPast && (() => {
@@ -575,7 +654,7 @@ export default function Dashboard() {
                                 : <span className="text-xs font-semibold text-[#1f4a3a]">{aula.aluno?.nome_completo?.charAt(0)}</span>}
                             </div>
                             <div className="min-w-0">
-                              <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="font-semibold text-sm text-slate-900 truncate block max-w-full hover:text-[#1f4a3a]">
+                              <button onClick={() => abrirEntidadeAula(aula)} className="font-semibold text-sm text-slate-900 truncate block max-w-full hover:text-[#1f4a3a]">
                                 {aula.aluno?.nome_completo}
                               </button>
                               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-500">
@@ -583,6 +662,7 @@ export default function Dashboard() {
                                 <span className="flex items-center gap-1"><MapPin size={12} /> {aula.sala?.nome}</span>
                                 {aula.is_reposicao && <span className="font-semibold text-[#76562e]">Reposição</span>}
                                 {aula.is_remarcacao && <span className="font-semibold text-[#1f4a3a]">Horário aprovado</span>}
+                                {aula.is_turma && <span className="font-semibold text-[#1f4a3a]">{aula.participantes} participantes</span>}
                               </div>
                             </div>
                           </div>
@@ -592,7 +672,7 @@ export default function Dashboard() {
                                 Registrar aula
                               </button>
                             ) : (
-                              <button onClick={() => setSelectedAula({ ...aula, data_selecionada: hojeDataStr })} className="px-3 py-2 rounded-lg border border-[#dfded7] text-slate-600 text-[10px] font-semibold">
+                              <button onClick={() => abrirDetalhesAula(aula, hojeDataStr)} className="px-3 py-2 rounded-lg border border-[#dfded7] text-slate-600 text-[10px] font-semibold">
                                 Detalhes
                               </button>
                             )}
@@ -613,7 +693,7 @@ export default function Dashboard() {
                           ) : (
                             <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-[9px] font-semibold uppercase tracking-wide">Agendada</span>
                           )}
-                          <button aria-label="Ver detalhes da aula" onClick={() => setSelectedAula({ ...aula, data_selecionada: hojeDataStr })} className="h-8 w-8 rounded-lg border border-[#dfded7] flex items-center justify-center text-slate-500 hover:text-[#1f4a3a] hover:border-[#aebfb4] transition-colors">
+                          <button aria-label="Ver detalhes da aula" onClick={() => abrirDetalhesAula(aula, hojeDataStr)} className="h-8 w-8 rounded-lg border border-[#dfded7] flex items-center justify-center text-slate-500 hover:text-[#1f4a3a] hover:border-[#aebfb4] transition-colors">
                             <MoreHorizontal size={16} />
                           </button>
                         </div>
@@ -877,7 +957,7 @@ export default function Dashboard() {
                       <div key={`${dia.dataStr}-${hora}`} className={`min-h-[88px] p-1.5 border-l border-[#ebe9e3] ${dia.isHoje ? 'bg-[#f5f8f4]' : dia.eventoEspecial ? 'bg-rose-50/30' : 'bg-white'}`}>
                         <div className="space-y-1.5">
                           {aulasDoHorario.map((aula: any, index: number) => {
-                            const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
+                            const statusHistorico = getAulaStatus(aula, dia.dataStr)
                             const isPast = checkIfClassPast(dia.dataStr, aula.horario_fim)
                             const isPendenteDeBaixa = isPast && !statusHistorico
                             const visualClass = statusHistorico === 'Realizada'
@@ -897,12 +977,12 @@ export default function Dashboard() {
                             return (
                               <div key={`${aula.id}-${index}`} className={`rounded-lg border border-l-[3px] px-2.5 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${visualClass}`}>
                                 <div className="flex items-start gap-2">
-                                  <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="min-w-0 flex-1 text-left">
+                                  <button onClick={() => abrirEntidadeAula(aula)} className="min-w-0 flex-1 text-left">
                                     <p className="text-xs font-semibold text-slate-900 truncate">{aula.aluno?.nome_completo}</p>
                                     <p className="text-[11px] text-slate-600 mt-0.5">{aula.horario_inicio?.slice(0, 5)}–{aula.horario_fim?.slice(0, 5)}</p>
                                     <p className="text-[11px] text-slate-500 mt-0.5 truncate">{aula.instrumento_aula}{aula.is_reposicao ? ' · Reposição' : aula.is_remarcacao ? ' · Mudança aprovada' : ''}</p>
                                   </button>
-                                  <button aria-label="Ver detalhes da aula" onClick={() => { setSelectedAula({ ...aula, data_selecionada: dia.dataStr }); setViewMode('dia') }} className="h-6 w-6 rounded-md text-slate-500 hover:bg-white flex items-center justify-center shrink-0">
+                                  <button aria-label="Ver detalhes da aula" onClick={() => { abrirDetalhesAula(aula, dia.dataStr); setViewMode('dia') }} className="h-6 w-6 rounded-md text-slate-500 hover:bg-white flex items-center justify-center shrink-0">
                                     <MoreHorizontal size={14} />
                                   </button>
                                 </div>
@@ -944,7 +1024,7 @@ export default function Dashboard() {
               }).filter(aula => {
                 const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info
                 if (info?.status === 'Inativo' && info?.data_inativacao && dia.dataStr > info.data_inativacao) return false
-                const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
+                const statusHistorico = getAulaStatus(aula, dia.dataStr)
                 return statusHistorico !== 'Desmarcada'
               }).sort((a, b) => (a.horario_inicio || '00:00').localeCompare(b.horario_inicio || '00:00'))
 
@@ -970,7 +1050,7 @@ export default function Dashboard() {
                     ) : (
                       <div className="divide-y divide-[#f0eee9]">
                         {aulasDoDiaNaSemana.map((aula, index) => {
-                          const statusHistorico = historicoSemana.find(h => String(h.aluno_id) === String(aula.aluno.id) && String(h.data_aula).startsWith(dia.dataStr))?.status
+                          const statusHistorico = getAulaStatus(aula, dia.dataStr)
                           const isPast = checkIfClassPast(dia.dataStr, aula.horario_fim)
                           const isPendenteDeBaixa = isPast && !statusHistorico
                           return (
@@ -979,7 +1059,7 @@ export default function Dashboard() {
                                 <Clock3 size={13} className="text-slate-400" />
                                 {aula.horario_inicio?.slice(0, 5)} — {aula.horario_fim?.slice(0, 5)}
                               </div>
-                              <button onClick={() => router.push(`/alunos/${aula.aluno.id}`)} className="min-w-0 flex-1 text-left">
+                              <button onClick={() => abrirEntidadeAula(aula)} className="min-w-0 flex-1 text-left">
                                 <p className="font-semibold text-sm text-slate-900 truncate">{aula.aluno?.nome_completo}</p>
                                 <p className="text-[11px] text-slate-500 mt-0.5">{aula.instrumento_aula} · {aula.sala?.nome}{aula.is_reposicao ? ' · Reposição' : aula.is_remarcacao ? ' · Mudança aprovada' : ''}</p>
                               </button>
@@ -991,7 +1071,7 @@ export default function Dashboard() {
                                 ) : (
                                   <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-[9px] font-semibold uppercase tracking-wide">Agendada</span>
                                 )}
-                                <button aria-label="Ver detalhes da aula" onClick={() => { setSelectedAula({ ...aula, data_selecionada: dia.dataStr }); setViewMode('dia') }} className="h-8 w-8 rounded-lg border border-[#dfded7] flex items-center justify-center text-slate-500 hover:text-[#1f4a3a]">
+                                <button aria-label="Ver detalhes da aula" onClick={() => { abrirDetalhesAula(aula, dia.dataStr); setViewMode('dia') }} className="h-8 w-8 rounded-lg border border-[#dfded7] flex items-center justify-center text-slate-500 hover:text-[#1f4a3a]">
                                   <MoreHorizontal size={16} />
                                 </button>
                               </div>

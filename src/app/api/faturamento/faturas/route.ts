@@ -134,7 +134,7 @@ export async function POST(request: Request) {
     const { data: lessons, error: lessonsError } = await database
       .from('historico_aulas')
       .select(
-        'id, aluno_id, data_aula, horario_inicio, horario_fim, status, professor_id, modalidade, fatura_id',
+        'id, aluno_id, data_aula, horario_inicio, horario_fim, status, professor_id, modalidade, fatura_id, turma_id, valor_aula_faturado',
       )
       .eq('aluno_id', alunoId)
       .in('id', lessonIds)
@@ -196,21 +196,29 @@ export async function POST(request: Request) {
     const dates = lessons.map((lesson: any) => String(lesson.data_aula).slice(0, 10)).sort()
     const periodStart = dates[0]
     const periodEnd = dates[dates.length - 1]
-    const total = Number((lessons.length * unitValue).toFixed(2))
+    const lessonValues = lessons.map((lesson: any) => {
+      const frozenValue = Number(lesson.valor_aula_faturado || 0)
+      return frozenValue > 0 ? frozenValue : unitValue
+    })
+    const total = Number(lessonValues.reduce((sum, value) => sum + value, 0).toFixed(2))
+    const invoiceUnitValue = Number((total / lessons.length).toFixed(2))
     const competence = `${periodStart.slice(0, 7)}-01`
+    const groupIds = Array.from(new Set(lessons.map((lesson: any) => lesson.turma_id).filter(Boolean)))
+    const turmaId = groupIds[0] || null
 
     const { data: invoice, error: invoiceError } = await database
       .from('faturas')
       .insert({
         aluno_id: alunoId,
         competencia: competence,
-        modelo_faturamento: info?.modelo_faturamento || 'VENCIMENTO_FIXO',
+        modelo_faturamento: turmaId ? 'MENSAL_FECHADO' : info?.modelo_faturamento || 'VENCIMENTO_FIXO',
         tipo_emissao: 'MANUAL',
         periodo_inicio: periodStart,
         periodo_fim: periodEnd,
         quantidade_aulas: lessons.length,
-        valor_unitario: unitValue,
+        valor_unitario: invoiceUnitValue,
         valor_total: total,
+        turma_id: turmaId,
         data_emissao: issueDate,
         data_vencimento: dueDate,
         status: 'PENDENTE',
@@ -244,7 +252,7 @@ export async function POST(request: Request) {
     }
     invoiceId = invoice.id
 
-    const items = lessons.map((lesson: any) => {
+    const items = lessons.map((lesson: any, index: number) => {
       const details = resolveLessonDetails(
         lesson as InvoiceLesson,
         (schedules || []) as InvoiceSchedule[],
@@ -259,10 +267,10 @@ export async function POST(request: Request) {
         modalidade: details.modalidade,
         professor_id: details.professorId,
         professor_nome: details.professorName,
-        descricao: `Aula ${lesson.status.toLowerCase()}`,
+        descricao: lesson.turma_id ? 'Aula em turma' : `Aula ${lesson.status.toLowerCase()}`,
         quantidade: 1,
-        valor_unitario: unitValue,
-        valor_total: unitValue,
+        valor_unitario: lessonValues[index],
+        valor_total: lessonValues[index],
       }
     })
 
