@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass } from '../../lib/billing'
 import {
   AlertCircle,
+  ArrowLeft,
   Bell,
   BookOpen,
   CalendarDays,
@@ -19,8 +20,10 @@ import {
   FileText,
   FolderOpen,
   Home,
+  Inbox,
   LogOut,
   MapPin,
+  MessageCircle,
   Music2,
   ReceiptText,
   RotateCcw,
@@ -491,11 +494,16 @@ export default function PortalAluno() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
-                setIsNotificacaoModalOpen(true)
-                setNotificacaoTab(notificacoesNaoLidas.length > 0 ? 'NaoLidas' : 'Lidas')
+                if (!isNotificacaoModalOpen) setNotificacaoTab(notificacoesNaoLidas.length > 0 ? 'NaoLidas' : 'Lidas')
+                setIsNotificacaoModalOpen(aberta => !aberta)
               }}
-              className="relative flex h-11 w-11 items-center justify-center rounded-full border border-[#d9d5ca] bg-white text-[#385449] transition hover:border-[#1d5143]"
-              aria-label="Abrir notificações"
+              className={`relative flex h-11 w-11 items-center justify-center rounded-full border transition ${
+                isNotificacaoModalOpen
+                  ? 'border-[#1d5143] bg-[#1d5143] text-white'
+                  : 'border-[#d9d5ca] bg-white text-[#385449] hover:border-[#1d5143]'
+              }`}
+              aria-label={isNotificacaoModalOpen ? 'Fechar notificações' : 'Abrir notificações'}
+              aria-pressed={isNotificacaoModalOpen}
             >
               <Bell size={19} strokeWidth={1.8} />
               {notificacoesNaoLidas.length > 0 && (
@@ -514,11 +522,14 @@ export default function PortalAluno() {
         <nav className="mx-auto hidden max-w-6xl gap-1 px-7 pb-3 md:flex" aria-label="Navegação do portal">
           {tabsPortal.map(tab => {
             const Icone = tab.icon
-            const ativo = activePortalTab === tab.id
+            const ativo = activePortalTab === tab.id && !isNotificacaoModalOpen
             return (
               <button
                 key={tab.id}
-                onClick={() => setActivePortalTab(tab.id)}
+                onClick={() => {
+                  setActivePortalTab(tab.id)
+                  setIsNotificacaoModalOpen(false)
+                }}
                 className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
                   ativo ? 'bg-[#1d5143] text-white' : 'text-[#607069] hover:bg-[#ebe8df] hover:text-[#1d5143]'
                 }`}
@@ -532,7 +543,127 @@ export default function PortalAluno() {
       </header>
 
       <motion.main variants={containerVariants} initial="hidden" animate="show" className="mx-auto max-w-6xl px-4 py-6 md:px-7 md:py-8">
-        {activePortalTab === 'inicio' && (
+        {isNotificacaoModalOpen && (
+          <motion.section variants={itemVariants} className="mx-auto max-w-4xl space-y-5">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a17a42]">Comunicação</p>
+                <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[#17241f] md:text-4xl">Central de avisos</h1>
+                <p className="mt-2 text-sm leading-6 text-[#66736d]">Mensagens da escola e atualizações sobre suas solicitações.</p>
+              </div>
+              <button
+                onClick={() => setIsNotificacaoModalOpen(false)}
+                className="flex w-fit items-center gap-2 rounded-full border border-[#d1cdc2] bg-[#fbfaf6] px-4 py-2.5 text-sm font-bold text-[#365248] transition hover:border-[#1d5143]"
+              >
+                <ArrowLeft size={17} />
+                Voltar ao portal
+              </button>
+            </div>
+
+            <div className="overflow-hidden rounded-[26px] border border-[#d9d5ca] bg-[#fbfaf6] shadow-[0_14px_35px_rgba(39,50,45,0.06)]">
+              <div className="flex items-center justify-between gap-4 border-b border-[#e1ddd3] px-4 py-4 md:px-6">
+                <div className="flex rounded-full bg-[#ece9e1] p-1">
+                  <button
+                    onClick={() => setNotificacaoTab('NaoLidas')}
+                    className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                      notificacaoTab === 'NaoLidas' ? 'bg-[#1d5143] text-white shadow-sm' : 'text-[#68756f]'
+                    }`}
+                  >
+                    Novas {notificacoesNaoLidas.length > 0 && <span className="ml-1">({notificacoesNaoLidas.length})</span>}
+                  </button>
+                  <button
+                    onClick={() => setNotificacaoTab('Lidas')}
+                    className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                      notificacaoTab === 'Lidas' ? 'bg-[#1d5143] text-white shadow-sm' : 'text-[#68756f]'
+                    }`}
+                  >
+                    Histórico ({notificacoesLidas.length})
+                  </button>
+                </div>
+                <Bell size={19} className="hidden text-[#8b938f] sm:block" />
+              </div>
+
+              {notificacoesExibidas.length === 0 ? (
+                <div className="flex min-h-72 flex-col items-center justify-center px-5 py-12 text-center">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#e8ece8] text-[#547066]">
+                    <Inbox size={24} strokeWidth={1.7} />
+                  </span>
+                  <p className="mt-4 font-bold text-[#263a32]">
+                    {notificacaoTab === 'NaoLidas' ? 'Você está em dia' : 'Nenhum aviso no histórico'}
+                  </p>
+                  <p className="mt-1 max-w-sm text-sm leading-6 text-[#748079]">
+                    {notificacaoTab === 'NaoLidas'
+                      ? 'Não há mensagens novas ou solicitações aguardando sua leitura.'
+                      : 'Os avisos lidos aparecerão aqui para consulta.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-[#e6e2d9]">
+                  {notificacoesExibidas.map(n => {
+                    const titulo = String(n.source === 'mensagem' ? n.titulo || 'Mensagem da escola' : `Solicitação ${n.status || 'atualizada'}`)
+                    const aprovada = n.status === 'Aprovada' || /aprova/i.test(titulo)
+                    const negada = n.status === 'Negada' || /recusa|nega/i.test(titulo)
+
+                    return (
+                      <article key={`${n.source}-${n.id}`} className={`px-4 py-5 md:px-6 md:py-6 ${!n.is_read ? 'bg-[#f8f6ef]' : 'bg-[#fbfaf6]'}`}>
+                        <div className="flex items-start gap-4">
+                          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+                            aprovada
+                              ? 'bg-[#e1eee7] text-[#1d684f]'
+                              : negada
+                                ? 'bg-[#f4e2de] text-[#a3423d]'
+                                : 'bg-[#e4ece7] text-[#1d5143]'
+                          }`}>
+                            {n.source === 'mensagem' ? <MessageCircle size={19} /> : aprovada ? <Check size={19} /> : <AlertCircle size={19} />}
+                          </span>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h2 className="text-base font-bold text-[#263a32]">{titulo.replace(/^[^\p{L}\p{N}]+/u, '')}</h2>
+                                  {!n.is_read && <span className="rounded-full bg-[#d8b575] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#49391f]">Novo</span>}
+                                </div>
+                                <p className="mt-2 text-sm leading-6 text-[#66736d]">
+                                  {n.source === 'mensagem' ? n.mensagem : (
+                                    <>Seu pedido para a aula de <strong>{new Date(n.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} às {n.novo_horario_inicio?.slice(0, 5)}</strong> foi avaliado pela escola.</>
+                                  )}
+                                </p>
+                              </div>
+                              <time className="shrink-0 text-xs font-medium text-[#929a95]">
+                                {new Date(n.criado_em).toLocaleDateString('pt-BR')} · {new Date(n.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              </time>
+                            </div>
+
+                            {negada && n.motivo_recusa && (
+                              <div className="mt-4 rounded-2xl border border-[#e3d5c7] bg-[#f7f1e8] px-4 py-3">
+                                <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#8b6741]">Motivo informado</p>
+                                <p className="mt-1 text-sm italic leading-6 text-[#5f5548]">“{n.motivo_recusa}”</p>
+                              </div>
+                            )}
+
+                            {!n.is_read && (
+                              <button
+                                onClick={() => handleMarcarComoLida(n)}
+                                disabled={isSubmitting}
+                                className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#c9cfc9] bg-white px-4 py-2.5 text-sm font-bold text-[#1d5143] transition hover:border-[#1d5143] disabled:opacity-50"
+                              >
+                                <Check size={16} />
+                                {isSubmitting ? 'Atualizando...' : 'Marcar como lida'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </motion.section>
+        )}
+
+        {!isNotificacaoModalOpen && activePortalTab === 'inicio' && (
           <div className="space-y-6">
             <motion.section variants={itemVariants} className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
               <div>
@@ -707,7 +838,7 @@ export default function PortalAluno() {
           </div>
         )}
 
-        {activePortalTab === 'agenda' && (
+        {!isNotificacaoModalOpen && activePortalTab === 'agenda' && (
           <motion.div variants={itemVariants} className="space-y-5">
             <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
               <div>
@@ -813,7 +944,7 @@ export default function PortalAluno() {
           </motion.div>
         )}
 
-        {activePortalTab === 'financeiro' && (
+        {!isNotificacaoModalOpen && activePortalTab === 'financeiro' && (
           <motion.div variants={itemVariants} className="space-y-5">
             <section>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a17a42]">Financeiro</p>
@@ -951,7 +1082,7 @@ export default function PortalAluno() {
           </motion.div>
         )}
 
-        {activePortalTab === 'estudos' && (
+        {!isNotificacaoModalOpen && activePortalTab === 'estudos' && (
           <motion.div variants={itemVariants} className="space-y-5">
             <section>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a17a42]">Estudos</p>
@@ -1036,9 +1167,12 @@ export default function PortalAluno() {
         <div className="mx-auto grid max-w-md grid-cols-4">
           {tabsPortal.map(tab => {
             const Icone = tab.icon
-            const ativo = activePortalTab === tab.id
+            const ativo = activePortalTab === tab.id && !isNotificacaoModalOpen
             return (
-              <button key={tab.id} onClick={() => setActivePortalTab(tab.id)} className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-bold transition ${ativo ? 'bg-[#e4ece7] text-[#1d5143]' : 'text-[#7a8680]'}`}>
+              <button key={tab.id} onClick={() => {
+                setActivePortalTab(tab.id)
+                setIsNotificacaoModalOpen(false)
+              }} className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-bold transition ${ativo ? 'bg-[#e4ece7] text-[#1d5143]' : 'text-[#7a8680]'}`}>
                 <Icone size={19} strokeWidth={ativo ? 2.2 : 1.8} />
                 {tab.label}
               </button>
@@ -1047,75 +1181,7 @@ export default function PortalAluno() {
         </div>
       </nav>
 
-      {/* --- MODAIS --- */}
-      <AnimatePresence>
-        {isNotificacaoModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[90]">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>🔔</span> Central de Avisos</h2>
-                <button onClick={() => setIsNotificacaoModalOpen(false)} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-full font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all">✖</button>
-              </div>
-              
-              <div className="flex gap-6 border-b border-slate-200/50 mb-4 shrink-0">
-                <button onClick={() => setNotificacaoTab('NaoLidas')} className={`pb-3 text-sm font-bold transition-all border-b-2 ${notificacaoTab === 'NaoLidas' ? 'border-indigo-500 text-indigo-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-                  Novas ({notificacoesNaoLidas.length})
-                </button>
-                <button onClick={() => setNotificacaoTab('Lidas')} className={`pb-3 text-sm font-bold transition-all border-b-2 ${notificacaoTab === 'Lidas' ? 'border-indigo-500 text-indigo-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-                  Histórico ({notificacoesLidas.length})
-                </button>
-              </div>
-
-              <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
-                {notificacoesExibidas.length === 0 ? (
-                  <div className="text-center py-12 opacity-60">
-                    <span className="text-5xl block mb-3 grayscale">📭</span>
-                    <p className="text-sm font-semibold text-slate-500">Nenhuma notificação aqui.</p>
-                  </div>
-                ) : notificacoesExibidas.map(n => (
-                  <div key={n.id} className={`p-5 rounded-2xl border ${!n.is_read ? (n.source === 'mensagem' ? 'border-indigo-200 bg-indigo-50/80 shadow-md' : n.status === 'Aprovada' ? 'border-emerald-200 bg-emerald-50/80 shadow-md' : 'border-rose-200 bg-rose-50/80 shadow-md') : 'border-white/60 bg-white/50 opacity-70 shadow-sm'}`}>
-                    
-                    <div className="flex items-start gap-4 mb-3">
-                      <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 text-lg shadow-inner ${!n.is_read ? 'text-white' : 'text-slate-500 bg-slate-100'} ${n.source === 'mensagem' ? (!n.is_read && 'bg-indigo-500') : n.status === 'Aprovada' ? (!n.is_read && 'bg-emerald-500') : (!n.is_read && 'bg-rose-500')}`}>
-                        {n.source === 'mensagem' ? '💬' : n.status === 'Aprovada' ? '✓' : '✖'}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex justify-between items-start">
-                          <p className={`font-bold text-sm tracking-tight ${n.source === 'mensagem' ? 'text-indigo-800' : n.status === 'Aprovada' ? 'text-emerald-800' : 'text-rose-800'}`}>
-                            {n.source === 'mensagem' ? n.titulo : `Solicitação ${n.status}`}
-                          </p>
-                        </div>
-                        <p className="text-xs font-medium text-slate-600 mt-1 leading-relaxed">
-                          {n.source === 'mensagem' ? n.mensagem : (
-                            <>Seu pedido para a aula de <span className="font-bold">{new Date(n.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'})} às {n.novo_horario_inicio?.slice(0,5)}</span> foi avaliado.</>
-                          )}
-                        </p>
-                        {n.status === 'Negada' && n.motivo_recusa && (
-                          <div className="mt-2 p-3 bg-white/80 rounded-xl border border-rose-100 shadow-inner">
-                            <p className="text-[10px] font-bold text-rose-500 mb-0.5">Motivo da escola:</p>
-                            <p className="text-xs font-medium text-slate-700 italic">"{n.motivo_recusa}"</p>
-                          </div>
-                        )}
-                        <p className="text-[10px] font-medium text-slate-400 mt-3">
-                          {new Date(n.criado_em).toLocaleDateString('pt-BR')} às {new Date(n.criado_em).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
-                        </p>
-                      </div>
-                    </div>
-
-                    {!n.is_read && (
-                      <motion.button whileTap={{ scale: 0.98 }} onClick={() => handleMarcarComoLida(n)} disabled={isSubmitting} className={`w-full py-3 rounded-xl font-bold text-xs shadow-sm mt-2 border transition-all ${n.source === 'mensagem' ? 'bg-indigo-600 border-indigo-700 text-white hover:bg-indigo-500' : n.status === 'Aprovada' ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-500' : 'bg-rose-600 border-rose-700 text-white hover:bg-rose-500'}`}>
-                        {isSubmitting ? '...' : 'Marcar como Lida'}
-                      </motion.button>
-                    )}
-
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      {/* --- MODAIS DE AÇÃO --- */}
       <AnimatePresence>
         {isRescheduleModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[70]">
