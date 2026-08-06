@@ -127,7 +127,7 @@ export default function Dashboard() {
       .gte('nova_data', inicioDaSemana)
       .lte('nova_data', fimDaSemana);
 
-    const aulasReposicao = (reposicoesAprovadas || []).map((r: any) => {
+    const aulasReposicao = (reposicoesAprovadas || []).filter((r: any) => r.tipo_mudanca !== 'Fixa').map((r: any) => {
       const aulaOriginal = (agenda || []).find((a: any) => String(a.id) === String(r.agenda_original_id))
       const isReposicao = r.tipo_mudanca === 'Reposição'
 
@@ -258,10 +258,11 @@ export default function Dashboard() {
   const handleAprovarSolicitacao = async (sol: any) => {
     setIsSubmitting(true)
     const isReposicao = sol.tipo_mudanca === 'Reposição'
+    const isMudancaFixa = sol.tipo_mudanca === 'Fixa'
 
     // Para Créditos e Mês fechado, a aula original só é desmarcada quando
     // a escola aprova a troca. Assim, uma recusa preserva o horário original.
-    if (!isReposicao && sol.data_aula_original) {
+    if (!isReposicao && !isMudancaFixa && sol.data_aula_original) {
       const { data: aulaOriginal } = await supabase
         .from('agenda')
         .select('horario_inicio, horario_fim, instrumento_aula, professor_id')
@@ -292,6 +293,23 @@ export default function Dashboard() {
       }
     }
 
+    if (isMudancaFixa) {
+      const { error: agendaError } = await supabase
+        .from('agenda')
+        .update({
+          dia: sol.novo_dia,
+          horario_inicio: sol.novo_horario_inicio,
+          horario_fim: sol.novo_horario_fim,
+        })
+        .eq('id', sol.agenda_original_id)
+
+      if (agendaError) {
+        alert('Não foi possível atualizar o horário fixo: ' + agendaError.message)
+        setIsSubmitting(false)
+        return
+      }
+    }
+
     const { error: aprovacaoError } = await supabase.from('solicitacoes_reagendamento').update({ status: 'Aprovada' }).eq('id', sol.id)
     if (aprovacaoError) {
       alert('Não foi possível aprovar a solicitação: ' + aprovacaoError.message)
@@ -301,8 +319,10 @@ export default function Dashboard() {
 
     await supabase.from('notificacoes_aluno').insert([{
       aluno_id: sol.aluno_id,
-      titulo: isReposicao ? '✅ Reposição aprovada' : '✅ Mudança de horário aprovada',
-      mensagem: `${isReposicao ? 'Sua reposição' : 'Sua nova aula'} para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} às ${sol.novo_horario_inicio?.slice(0,5)} foi confirmada na agenda.`,
+      titulo: isMudancaFixa ? '✅ Novo horário fixo aprovado' : isReposicao ? '✅ Reposição aprovada' : '✅ Aula remarcada',
+      mensagem: isMudancaFixa
+        ? `Seu horário fixo foi alterado para ${sol.novo_dia}, das ${sol.novo_horario_inicio?.slice(0,5)} às ${sol.novo_horario_fim?.slice(0,5)}.`
+        : `${isReposicao ? 'Sua reposição' : 'Sua nova aula'} para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} às ${sol.novo_horario_inicio?.slice(0,5)} foi confirmada na agenda.`,
       lida: false
     }])
     
@@ -315,11 +335,14 @@ export default function Dashboard() {
     const motivo = motivoRecusa.trim() || 'Horário indisponível no momento.'
     setIsSubmitting(true)
     const isReposicao = sol.tipo_mudanca === 'Reposição'
+    const isMudancaFixa = sol.tipo_mudanca === 'Fixa'
     await supabase.from('solicitacoes_reagendamento').update({ status: 'Negada', motivo_recusa: motivo }).eq('id', sol.id)
     await supabase.from('notificacoes_aluno').insert([{
       aluno_id: sol.aluno_id,
-      titulo: isReposicao ? '❌ Reposição recusada' : '❌ Mudança de horário recusada',
-      mensagem: `Seu pedido para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} foi recusado. Motivo: "${motivo}".`,
+      titulo: isMudancaFixa ? '❌ Mudança de horário fixo recusada' : isReposicao ? '❌ Reposição recusada' : '❌ Remarcação recusada',
+      mensagem: isMudancaFixa
+        ? `Seu pedido para mudar o horário fixo para ${sol.novo_dia}, às ${sol.novo_horario_inicio?.slice(0,5)}, foi recusado. Motivo: "${motivo}".`
+        : `Seu pedido para o dia ${sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', {timeZone:'UTC'}) : 'indefinido'} foi recusado. Motivo: "${motivo}".`,
       lida: false
     }])
     
@@ -717,13 +740,23 @@ export default function Dashboard() {
                               <div className="min-w-0">
                                 <p className="font-semibold text-sm text-slate-900 truncate">{sol.aluno_nome}</p>
                                 <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-[#8b6a3e]">
-                                  {sol.tipo_mudanca === 'Reposição' ? 'Pedido de reposição' : 'Pedido de mudança de horário'}
+                                  {sol.tipo_mudanca === 'Fixa'
+                                    ? 'Mudança de horário fixo'
+                                    : sol.tipo_mudanca === 'Reposição'
+                                      ? 'Remarcar aula com reposição'
+                                      : 'Remarcar somente esta aula'}
                                 </p>
                                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                                  {sol.data_aula_original && (
-                                    <>Aula de {new Date(sol.data_aula_original).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} → </>
+                                  {sol.tipo_mudanca === 'Fixa' ? (
+                                    <>Novo fixo: {sol.novo_dia}, {sol.novo_horario_inicio?.slice(0, 5)}–{sol.novo_horario_fim?.slice(0, 5)}</>
+                                  ) : (
+                                    <>
+                                      {sol.data_aula_original && (
+                                        <>Aula de {new Date(sol.data_aula_original).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} → </>
+                                      )}
+                                      {sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'data indefinida'}, {sol.novo_horario_inicio?.slice(0, 5)}
+                                    </>
                                   )}
-                                  {sol.nova_data ? new Date(sol.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'data indefinida'}, {sol.novo_horario_inicio?.slice(0, 5)}
                                 </p>
                               </div>
                               <CalendarDays size={16} className="text-[#1f4a3a] shrink-0 mt-0.5" />

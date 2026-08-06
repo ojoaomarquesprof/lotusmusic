@@ -13,6 +13,7 @@ import {
   BookOpen,
   CalendarDays,
   Check,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   CreditCard,
@@ -26,6 +27,7 @@ import {
   MessageCircle,
   Music2,
   ReceiptText,
+  Repeat2,
   RotateCcw,
   UserRound,
   WalletCards,
@@ -75,6 +77,10 @@ export default function PortalAluno() {
   
   const [aulaParaMudar, setAulaParaMudar] = useState<any>(null)
   const [proximosDias, setProximosDias] = useState<any[]>([])
+  const [mesCalendario, setMesCalendario] = useState(() => {
+    const hoje = new Date()
+    return new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+  })
   const [dispBrutaProf, setDispBrutaProf] = useState<any[]>([])
   const [agendaBrutaProf, setAgendaBrutaProf] = useState<any[]>([])
   
@@ -169,7 +175,11 @@ export default function PortalAluno() {
     const { data: rep } = await supabase.from('solicitacoes_reagendamento').select('*').eq('aluno_id', session.user.id)
     setTodasReposicoes(rep || [])
 
-    const solicitacoesAprovadasFuturas = (rep || []).filter((r: any) => r.status === 'Aprovada' && r.nova_data >= hojeDataStr)
+    const solicitacoesAprovadasFuturas = (rep || []).filter((r: any) =>
+      r.status === 'Aprovada' &&
+      r.tipo_mudanca !== 'Fixa' &&
+      r.nova_data >= hojeDataStr
+    )
 
     let aulasMapeadas = ag || []
     
@@ -316,6 +326,9 @@ export default function PortalAluno() {
   const abrirModalReagendamento = async (tipo: string, aula: any, dataOriginalDaAulaDesmarcada?: string) => {
     setRescheduleType(tipo); 
     setAulaParaMudar({ ...aula, data_original_desmarcada: dataOriginalDaAulaDesmarcada }); 
+    const amanha = new Date()
+    amanha.setDate(amanha.getDate() + 1)
+    setMesCalendario(new Date(amanha.getFullYear(), amanha.getMonth(), 1))
     setSelectedDateObj(null); setSelectedSlot(null); setDiaBloqueadoMsg(null); setIsRescheduleModalOpen(true);
     const { data: disp } = await supabase.from('disponibilidade_professor').select('*').eq('professor_id', aula.professor_id)
     const { data: ag } = await supabase.from('agenda').select(`dia, horario_inicio, aluno:profiles!aluno_id(alunos_info(status, data_inativacao))`).eq('professor_id', aula.professor_id)
@@ -486,6 +499,29 @@ export default function PortalAluno() {
     { id: 'financeiro' as const, label: 'Financeiro', icon: WalletCards },
     { id: 'estudos' as const, label: 'Estudos', icon: BookOpen },
   ]
+
+  const primeiroDiaMes = new Date(mesCalendario.getFullYear(), mesCalendario.getMonth(), 1)
+  const deslocamentoSegunda = (primeiroDiaMes.getDay() + 6) % 7
+  const diasGradeCalendario = Array.from({ length: 42 }, (_, indice) => {
+    const data = new Date(mesCalendario.getFullYear(), mesCalendario.getMonth(), indice - deslocamentoSegunda + 1)
+    const dataLocal = new Date(data.getTime() - data.getTimezoneOffset() * 60000).toISOString().split('T')[0]
+    const opcaoPortal = proximosDias.find(dia => dia.dataString === dataLocal)
+
+    return {
+      data,
+      dataString: dataLocal,
+      mesmoMes: data.getMonth() === mesCalendario.getMonth(),
+      opcaoPortal,
+      temDisponibilidade: opcaoPortal
+        ? dispBrutaProf.some(disponibilidade => disponibilidade.dia_semana === opcaoPortal.diaSemana)
+        : false,
+    }
+  })
+  const ultimoDiaDisponivel = proximosDias[proximosDias.length - 1]?.dataObj
+  const podeVoltarMes = mesCalendario > new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  const podeAvancarMes = ultimoDiaDisponivel
+    ? mesCalendario < new Date(ultimoDiaDisponivel.getFullYear(), ultimoDiaDisponivel.getMonth(), 1)
+    : false
 
   return (
     <div className="min-h-screen bg-[#f3f1eb] pb-28 font-sans text-[#17241f] md:pb-10">
@@ -715,7 +751,9 @@ export default function PortalAluno() {
                   <span>
                     <span className="block text-sm font-bold text-[#604c2e]">Solicitação em análise</span>
                     <span className="mt-0.5 block text-sm text-[#7d6948]">
-                      {new Date(solicitacaoPendente.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} às {solicitacaoPendente.novo_horario_inicio?.slice(0, 5)}
+                      {solicitacaoPendente.tipo_mudanca === 'Fixa'
+                        ? `Novo fixo: ${solicitacaoPendente.novo_dia}, às ${solicitacaoPendente.novo_horario_inicio?.slice(0, 5)}`
+                        : `${new Date(solicitacaoPendente.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} às ${solicitacaoPendente.novo_horario_inicio?.slice(0, 5)}`}
                     </span>
                   </span>
                 </span>
@@ -918,9 +956,13 @@ export default function PortalAluno() {
 
             {solicitacaoPendente && (
               <section className="rounded-[24px] border border-[#dfc896] bg-[#fff8e7] p-5">
-                <p className="text-sm font-bold text-[#604c2e]">Reagendamento em análise</p>
+                <p className="text-sm font-bold text-[#604c2e]">
+                  {solicitacaoPendente.tipo_mudanca === 'Fixa' ? 'Mudança de horário fixo em análise' : 'Remarcação em análise'}
+                </p>
                 <p className="mt-1 text-sm text-[#7d6948]">
-                  A escola está avaliando sua solicitação para {new Date(solicitacaoPendente.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}, às {solicitacaoPendente.novo_horario_inicio?.slice(0, 5)}.
+                  {solicitacaoPendente.tipo_mudanca === 'Fixa'
+                    ? `A escola está avaliando a mudança para ${solicitacaoPendente.novo_dia}, das ${solicitacaoPendente.novo_horario_inicio?.slice(0, 5)} às ${solicitacaoPendente.novo_horario_fim?.slice(0, 5)}.`
+                    : `A escola está avaliando a nova aula em ${new Date(solicitacaoPendente.nova_data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}, às ${solicitacaoPendente.novo_horario_inicio?.slice(0, 5)}.`}
                 </p>
               </section>
             )}
@@ -1221,43 +1263,134 @@ export default function PortalAluno() {
       <AnimatePresence>
         {isRescheduleModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-[#10251f]/45 p-4 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.97, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 16 }} className="w-full max-w-lg overflow-hidden rounded-[28px] border border-[#d9d5ca] bg-[#fbfaf6] shadow-[0_24px_70px_rgba(16,37,31,0.28)]">
+            <motion.div initial={{ scale: 0.97, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 16 }} className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-[28px] border border-[#d9d5ca] bg-[#fbfaf6] shadow-[0_24px_70px_rgba(16,37,31,0.28)]">
               <div className="flex items-start justify-between border-b border-[#e1ddd3] px-5 py-5 md:px-6">
                 <div>
                   <span className="inline-flex rounded-full bg-[#e4ece7] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#1d5143]">
                     Sujeito à aprovação
                   </span>
                   <h2 className="mt-3 text-xl font-bold tracking-[-0.02em] text-[#17241f]">
-                    {rescheduleType === 'Reposição' ? 'Solicitar reposição' : 'Solicitar mudança de horário'}
+                    Alterar sua aula
                   </h2>
-                  <p className="mt-1 text-sm text-[#68756f]">Escolha uma nova data e um horário disponível.</p>
+                  <p className="mt-1 text-sm text-[#68756f]">Escolha o tipo de alteração, a data e o novo horário.</p>
                 </div>
                 <button onClick={() => setIsRescheduleModalOpen(false)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#d1cdc2] bg-white text-[#68756f] transition hover:border-[#1d5143]" aria-label="Fechar">
                   <X size={18} />
                 </button>
               </div>
 
-              <div className="px-5 py-5 md:px-6">
-                <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#8b938f]">1. Escolha o dia</p>
-                <div className="flex gap-2 overflow-x-auto pb-3">
-                  {proximosDias.map((dia, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setSelectedDateObj(dia)}
-                      className={`flex min-w-[68px] flex-col items-center justify-center rounded-2xl border px-3 py-3 transition ${
-                        selectedDateObj?.dataString === dia.dataString
-                          ? 'border-[#1d5143] bg-[#1d5143] text-white'
-                          : 'border-[#d7d3c8] bg-white text-[#53635c] hover:border-[#1d5143]'
-                      }`}
-                    >
-                      <span className="text-[10px] font-bold uppercase tracking-wide opacity-75">{dia.diaSemana.slice(0, 3)}</span>
-                      <span className="mt-1 text-lg font-bold">{dia.displayData.split('/')[0]}</span>
-                      <span className="text-[10px] opacity-70">/{dia.displayData.split('/')[1]}</span>
-                    </button>
-                  ))}
+              <div className="overflow-y-auto px-5 py-5 md:px-6">
+                {!aulaParaMudar?.usando_credito && (
+                  <>
+                    <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#8b938f]">1. O que deseja alterar?</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <button
+                        onClick={() => {
+                          setRescheduleType(tipoSolicitacaoMudanca)
+                          setSelectedDateObj(null)
+                          setSelectedSlot(null)
+                        }}
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          rescheduleType !== 'Fixa'
+                            ? 'border-[#1d5143] bg-[#e4ece7]'
+                            : 'border-[#d7d3c8] bg-white hover:border-[#1d5143]'
+                        }`}
+                      >
+                        <CalendarDays size={19} className="text-[#1d5143]" />
+                        <span className="mt-3 block text-sm font-bold text-[#263a32]">Remarcar só esta aula</span>
+                        <span className="mt-1 block text-xs leading-5 text-[#68756f]">A grade semanal continua igual.</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setRescheduleType('Fixa')
+                          setSelectedDateObj(null)
+                          setSelectedSlot(null)
+                        }}
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          rescheduleType === 'Fixa'
+                            ? 'border-[#1d5143] bg-[#e4ece7]'
+                            : 'border-[#d7d3c8] bg-white hover:border-[#1d5143]'
+                        }`}
+                      >
+                        <Repeat2 size={19} className="text-[#1d5143]" />
+                        <span className="mt-3 block text-sm font-bold text-[#263a32]">Mudar horário fixo</span>
+                        <span className="mt-1 block text-xs leading-5 text-[#68756f]">Troca o dia e horário de todas as próximas aulas.</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                <div className="mt-5">
+                  <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#8b938f]">
+                    {aulaParaMudar?.usando_credito
+                      ? '1. Escolha o dia'
+                      : rescheduleType === 'Fixa'
+                        ? '2. Escolha o dia da nova grade'
+                        : '2. Escolha o novo dia'}
+                  </p>
+                  <div className="rounded-2xl border border-[#dfdbd1] bg-white p-3">
+                    <div className="mb-3 flex items-center justify-between">
+                      <button
+                        onClick={() => podeVoltarMes && setMesCalendario(new Date(mesCalendario.getFullYear(), mesCalendario.getMonth() - 1, 1))}
+                        disabled={!podeVoltarMes}
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dedad0] text-[#53635c] disabled:opacity-25"
+                        aria-label="Mês anterior"
+                      >
+                        <ChevronLeft size={17} />
+                      </button>
+                      <p className="text-sm font-bold capitalize text-[#263a32]">
+                        {mesCalendario.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                      </p>
+                      <button
+                        onClick={() => podeAvancarMes && setMesCalendario(new Date(mesCalendario.getFullYear(), mesCalendario.getMonth() + 1, 1))}
+                        disabled={!podeAvancarMes}
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dedad0] text-[#53635c] disabled:opacity-25"
+                        aria-label="Próximo mês"
+                      >
+                        <ChevronRight size={17} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-7 text-center">
+                      {['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM'].map(diaSemana => (
+                        <span key={diaSemana} className="py-1 text-[9px] font-bold tracking-wide text-[#9aa19d]">{diaSemana}</span>
+                      ))}
+                      {diasGradeCalendario.map(dia => {
+                        const selecionado = selectedDateObj?.dataString === dia.dataString
+                        const habilitado = Boolean(dia.opcaoPortal)
+
+                        return (
+                          <button
+                            key={dia.dataString}
+                            onClick={() => habilitado && setSelectedDateObj(dia.opcaoPortal)}
+                            disabled={!habilitado}
+                            className={`relative mx-auto my-0.5 flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition ${
+                              selecionado
+                                ? 'bg-[#1d5143] text-white'
+                                : habilitado
+                                  ? 'text-[#263a32] hover:bg-[#e4ece7]'
+                                  : dia.mesmoMes
+                                    ? 'text-[#c3c7c4]'
+                                    : 'text-[#e1e3e1]'
+                            }`}
+                            aria-label={dia.data.toLocaleDateString('pt-BR')}
+                          >
+                            {dia.data.getDate()}
+                            {dia.temDisponibilidade && !selecionado && <span className="absolute bottom-1 h-1 w-1 rounded-full bg-[#b98b4f]" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="mt-2 flex items-center justify-center gap-2 border-t border-[#eeeae2] pt-3 text-[11px] text-[#7d8882]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#b98b4f]" />
+                      Dias com disponibilidade cadastrada
+                    </div>
+                  </div>
                 </div>
 
-                <p className="mb-3 mt-3 text-xs font-bold uppercase tracking-[0.12em] text-[#8b938f]">2. Escolha o horário</p>
+                <p className="mb-3 mt-5 text-xs font-bold uppercase tracking-[0.12em] text-[#8b938f]">
+                  {aulaParaMudar?.usando_credito ? '2. Escolha o horário' : '3. Escolha o horário'}
+                </p>
                 <div className="min-h-[190px] rounded-2xl border border-[#dfdbd1] bg-[#f4f2eb] p-3">
                   {!selectedDateObj ? (
                     <div className="flex min-h-[164px] flex-col items-center justify-center px-4 text-center">
@@ -1298,7 +1431,9 @@ export default function PortalAluno() {
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-[#e4d9c2] bg-[#fff8e7] px-4 py-3 text-sm leading-5 text-[#735b36]">
-                  Sua aula só será alterada depois que a escola aprovar este pedido. Você receberá a resposta no sininho.
+                  {rescheduleType === 'Fixa'
+                    ? 'Depois da aprovação, este passa a ser o novo dia e horário semanal. Você receberá a resposta no sininho.'
+                    : 'Somente a aula selecionada será remarcada. Sua grade fixa continua igual e a resposta chegará pelo sininho.'}
                 </div>
               </div>
 
