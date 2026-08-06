@@ -573,6 +573,26 @@ export default function RelatorioFinanceiro() {
     await carregarDadosFinanceiros()
   }
 
+  const handleExcluirCobrancaDefinitivamente = async () => {
+    if (!selectedCharge?.competencia) return
+    if (!window.confirm(`Excluir definitivamente a cobrança de ${selectedCharge.competenciaLabel} para ${selectedCharge.nome}? Ela não aparecerá mais em nenhum filtro.`)) return
+    setIsChargeActionLoading(true)
+    const { error } = await supabase.from('ajustes_cobranca').upsert({
+      aluno_id: selectedCharge.alunoId,
+      competencia: selectedCharge.competencia,
+      modelo_faturamento: selectedCharge.modeloCodigo,
+      tipo: 'EXCLUIR',
+      valor_ajustado: null,
+      vencimento_ajustado: null,
+      motivo: selectedCharge.adjustmentReason || 'Exclusão definitiva realizada no Financeiro',
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'aluno_id,competencia,modelo_faturamento' })
+    setIsChargeActionLoading(false)
+    if (error) return alert(`Não foi possível excluir a cobrança: ${error.message}`)
+    fecharPainelCobranca()
+    await carregarDadosFinanceiros()
+  }
+
   const handleReabrirCobranca = async () => {
     if (!selectedCharge) return
     if (!window.confirm(`Remover a baixa de ${selectedCharge.competenciaLabel}? O valor sairá do caixa e a cobrança voltará a ficar pendente.`)) return
@@ -1269,6 +1289,7 @@ export default function RelatorioFinanceiro() {
                     <h3 className="text-sm font-semibold text-slate-900">Cobrança desconsiderada</h3>
                     <p className="text-[11px] text-slate-500 mt-1">Ela não entra nos valores em aberto ou em atraso, mas permanece registrada para auditoria.</p>
                     <button type="button" onClick={handleRestaurarCobranca} disabled={isChargeActionLoading} className="mt-4 w-full h-10 rounded-xl border border-[#d7d4cb] text-slate-700 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><RotateCcw size={14} /> Restaurar cobrança</button>
+                    <button type="button" onClick={handleExcluirCobrancaDefinitivamente} disabled={isChargeActionLoading} className="mt-2 w-full h-10 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><Trash2 size={14} /> Excluir definitivamente</button>
                   </section>
                 ) : selectedCharge.status !== 'Pago' && selectedCharge.status !== 'Em apuração' && selectedCharge.competencia && selectedCharge.modeloCodigo !== 'CREDITOS' && (
                   <section className="rounded-2xl border border-[#d7d4cb] bg-white p-5">

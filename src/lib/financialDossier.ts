@@ -192,6 +192,7 @@ export function buildFinancialDossier({
         const invoice = alunoInvoices.find(item => monthKey(item.competencia) === competenceKey)
         const matchingPayment = alunoPayments.find(item => paymentCompetence(item, invoiceById) === competenceKey)
         const adjustment = adjustmentsByCharge.get(adjustmentKey(aluno.id, competence, model))
+        if (String(adjustment?.tipo).toUpperCase() === 'EXCLUIR') continue
         const ignored = String(adjustment?.tipo).toUpperCase() === 'IGNORAR'
         const paid = Boolean(matchingPayment) || String(invoice?.status).toUpperCase() === 'PAGO'
         const dueDate = adjustment?.vencimento_ajustado
@@ -234,6 +235,7 @@ export function buildFinancialDossier({
         const competence = monthStart(invoice.competencia)
         if (!competence) continue
         const adjustment = adjustmentsByCharge.get(adjustmentKey(aluno.id, competence, model))
+        if (String(adjustment?.tipo).toUpperCase() === 'EXCLUIR') continue
         const ignored = String(adjustment?.tipo).toUpperCase() === 'IGNORAR'
         const dueDate = dateOnly(invoice.data_vencimento)
         const matchingPayment = alunoPayments.find(item => item.fatura_id === invoice.id || paymentCompetence(item, invoiceById) === monthKey(competence))
