@@ -14,6 +14,7 @@ import { getWeekdayName, formatInvoiceNumber } from '../../../lib/invoices'
 import { CreateInvoiceModal } from '../../../components/CreateInvoiceModal'
 import {
   ArrowLeft,
+  AlertTriangle,
   Bell,
   BookOpenCheck,
   Camera,
@@ -29,10 +30,14 @@ import {
   Mail,
   MapPin,
   MoreHorizontal,
+  Pencil,
   Phone,
+  Plus,
   ReceiptText,
   Send,
+  ShieldCheck,
   Trash2,
+  Undo2,
   Upload,
   UserRound,
   WalletCards,
@@ -49,6 +54,32 @@ const HORARIOS_DISPONIVEIS = Array.from({ length: 16 }, (_, i) => {
 
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
 const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } } as const
+const CLASS_STATUS_OPTIONS = [
+  { value: 'Realizada', label: 'Aula realizada', fixedOnly: false },
+  { value: 'Agendada', label: 'Aula agendada', fixedOnly: false },
+  { value: 'Falta Injustificada', label: 'Falta sem reposição', fixedOnly: false },
+  { value: 'Falta Justificada', label: 'Falta com direito à reposição', fixedOnly: true },
+  { value: 'Desmarcada', label: 'Aula desmarcada com reposição', fixedOnly: true },
+  { value: 'Reposição', label: 'Reposição realizada', fixedOnly: true },
+  { value: 'Crédito', label: 'Conceder crédito de reposição', fixedOnly: true },
+  { value: 'Ajuste de Saldo', label: 'Baixar crédito de reposição', fixedOnly: true },
+]
+
+function getClassImpact(status: string, billingModel: BillingModel) {
+  if (status === 'Realizada') {
+    return billingModel === 'MENSAL_FECHADO'
+      ? 'Entra no saldo de aulas pendentes e poderá ser incluída na próxima fatura.'
+      : billingModel === 'CREDITOS'
+        ? 'Consome um crédito do pacote do aluno.'
+        : 'Registra presença sem alterar o valor fixo da mensalidade.'
+  }
+  if (status === 'Reposição') return 'Registra a reposição realizada e pode consumir um crédito de reposição válido.'
+  if (status === 'Crédito') return 'Cria um novo crédito de reposição com validade de 30 dias.'
+  if (status === 'Ajuste de Saldo') return 'Baixa manualmente um crédito de reposição válido.'
+  if (status === 'Falta Justificada' || status === 'Desmarcada') return 'Gera um crédito de reposição válido por 30 dias.'
+  if (status === 'Falta Injustificada') return 'Registra a falta sem conceder reposição.'
+  return 'Registra o compromisso no diário sem impacto financeiro imediato.'
+}
 
 export default function PerfilAluno() {
   const { s } = useStyles(); const { id } = useParams(); const router = useRouter()
@@ -73,7 +104,9 @@ export default function PerfilAluno() {
   const [editAgendas, setEditAgendas] = useState<any[]>([])
   const [editAgendamentoCadastro, setEditAgendamentoCadastro] = useState<'AGORA' | 'DEPOIS'>('AGORA')
 
-  const [isClassModalOpen, setIsClassModalOpen] = useState(false); const [dataAula, setDataAula] = useState(new Date().toISOString().split('T')[0]); const [horaInicioAula, setHoraInicioAula] = useState('08:00'); const [horaFimAula, setHoraFimAula] = useState('09:00'); const [statusAula, setStatusAula] = useState('Realizada'); const [obsAula, setObsAula] = useState('')
+  const [isClassModalOpen, setIsClassModalOpen] = useState(false); const [editingClassId, setEditingClassId] = useState<string | null>(null); const [dataAula, setDataAula] = useState(new Date().toISOString().split('T')[0]); const [horaInicioAula, setHoraInicioAula] = useState('08:00'); const [horaFimAula, setHoraFimAula] = useState('09:00'); const [statusAula, setStatusAula] = useState('Realizada'); const [obsAula, setObsAula] = useState('')
+  const [professorAula, setProfessorAula] = useState(''); const [modalidadeAula, setModalidadeAula] = useState(''); const [valorAula, setValorAula] = useState(''); const [consumirCreditoReposicao, setConsumirCreditoReposicao] = useState(true); const [motivoAjusteAula, setMotivoAjusteAula] = useState('')
+  const [isDeleteClassModalOpen, setIsDeleteClassModalOpen] = useState(false); const [deleteClassReason, setDeleteClassReason] = useState('')
   const [isPayModalOpen, setIsPayModalOpen] = useState(false); const [payData, setPayData] = useState(new Date().toISOString().split('T')[0]); const [payMetodo, setPayMetodo] = useState('PIX'); const [payValor, setPayValor] = useState(''); const [payFaturaId, setPayFaturaId] = useState(''); const [payCompetencia, setPayCompetencia] = useState(new Date().toISOString().slice(0, 7))
 
   const [isEditPayModalOpen, setIsEditPayModalOpen] = useState(false); const [editPayId, setEditPayId] = useState(''); const [editPayData, setEditPayData] = useState(''); const [editPayMetodo, setEditPayMetodo] = useState('PIX'); const [editPayValor, setEditPayValor] = useState(''); const [editPayStatus, setEditPayStatus] = useState('Pago'); const [editPayFaturaId, setEditPayFaturaId] = useState(''); const [editPayCompetencia, setEditPayCompetencia] = useState(new Date().toISOString().slice(0, 7));
@@ -302,35 +335,119 @@ export default function PerfilAluno() {
   }
 
   const handleExcluirAluno = async () => { if (!window.confirm(`🚨 Apagar DEFINITIVAMENTE o aluno?`)) return; setLoading(true); await supabase.from('historico_aulas').delete().eq('aluno_id', id); await supabase.from('agenda').delete().eq('aluno_id', id); await supabase.from('pagamentos').delete().eq('aluno_id', id); await supabase.from('materiais_aluno').delete().eq('aluno_id', id); await supabase.from('alunos_info').delete().eq('id', id); await supabase.from('profiles').delete().eq('id', id); alert("🗑️ Excluído!"); router.push('/alunos') }
-  const handleRegistrarAula = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const weekday = getWeekdayName(dataAula)
+  const valorPadraoAula = () => {
+    const valorDireto = Number(infoMatricula?.valor_por_aula || 0)
+    if (valorDireto > 0) return valorDireto
+    const tamanhoPacote = Math.max(1, Number(infoMatricula?.creditos_por_pagamento || 4))
+    return Number(infoMatricula?.valor_mensalidade || 0) / tamanhoPacote
+  }
+
+  const abrirNovoMovimento = (statusInicial = 'Realizada') => {
+    const dataInicial = new Date().toISOString().split('T')[0]
+    const weekday = getWeekdayName(dataInicial)
     const schedule =
       aulasFixas.find(
         aula =>
           aula.dia === weekday &&
-          aula.horario_inicio?.slice(0, 5) === horaInicioAula.slice(0, 5),
+          aula.horario_inicio?.slice(0, 5) === '08:00',
       ) ||
       aulasFixas.find(aula => aula.dia === weekday) ||
       aulasFixas[0]
 
-    await supabase.from('historico_aulas').insert([{
-      aluno_id: id,
-      data_aula: dataAula,
-      horario_inicio: horaInicioAula,
-      horario_fim: horaFimAula,
-      status: statusAula,
-      observacoes: obsAula,
-      professor_id: schedule?.professor_id || null,
-      modalidade: schedule?.instrumento_aula || null,
-    }])
-    setIsClassModalOpen(false)
+    setEditingClassId(null)
+    setSelectedClassDetails(null)
+    setDataAula(dataInicial)
+    setHoraInicioAula(schedule?.horario_inicio?.slice(0, 5) || '08:00')
+    setHoraFimAula(schedule?.horario_fim?.slice(0, 5) || '09:00')
+    setStatusAula(statusInicial)
     setObsAula('')
-    carregarDados()
+    setProfessorAula(schedule?.professor_id || '')
+    setModalidadeAula(schedule?.instrumento_aula || modalidadesLista[0]?.nome || '')
+    setValorAula(valorPadraoAula() > 0 ? valorPadraoAula().toFixed(2) : '')
+    setConsumirCreditoReposicao(statusInicial === 'Reposição' || statusInicial === 'Ajuste de Saldo')
+    setMotivoAjusteAula('')
+    setIsClassModalOpen(true)
+  }
+
+  const abrirEdicaoMovimento = (aula: any) => {
+    setEditingClassId(String(aula.id))
+    setDataAula(String(aula.data_aula).slice(0, 10))
+    setHoraInicioAula(aula.horario_inicio?.slice(0, 5) || '08:00')
+    setHoraFimAula(aula.horario_fim?.slice(0, 5) || '09:00')
+    setStatusAula(aula.status || 'Realizada')
+    setObsAula(aula.observacoes || '')
+    setProfessorAula(aula.professor_id || '')
+    setModalidadeAula(aula.modalidade || '')
+    setValorAula(
+      aula.valor_aula_faturado !== null && aula.valor_aula_faturado !== undefined
+        ? Number(aula.valor_aula_faturado).toFixed(2)
+        : valorPadraoAula() > 0
+          ? valorPadraoAula().toFixed(2)
+          : '',
+    )
+    setConsumirCreditoReposicao(Boolean(aula.credito_reposicao_id))
+    setMotivoAjusteAula('')
+    setIsClassDetailsModalOpen(false)
+    setIsClassModalOpen(true)
+  }
+
+  const handleRegistrarAula = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (editingClassId && motivoAjusteAula.trim().length < 3) {
+      return alert('Informe brevemente por que este lançamento está sendo alterado.')
+    }
+    if (modeloFaturamento === 'MENSAL_FECHADO' && isBillableClass(statusAula) && Number(valorAula) < 0) {
+      return alert('Informe um valor válido para a aula.')
+    }
+
+    setIsSubmitting(true)
+    const valorCongelado =
+      isBillableClass(statusAula) && (modeloFaturamento === 'MENSAL_FECHADO' || Number(valorAula) > 0)
+        ? Number(valorAula || 0)
+        : null
+    const { error } = await supabase.rpc('salvar_movimento_aluno', {
+      p_aluno_id: id,
+      p_data_aula: dataAula,
+      p_horario_inicio: ['Crédito', 'Ajuste de Saldo'].includes(statusAula) ? null : horaInicioAula || null,
+      p_horario_fim: ['Crédito', 'Ajuste de Saldo'].includes(statusAula) ? null : horaFimAula || null,
+      p_status: statusAula,
+      p_observacoes: obsAula || null,
+      p_professor_id: professorAula || null,
+      p_modalidade: modalidadeAula || null,
+      p_valor_aula: valorCongelado,
+      p_consumir_credito:
+        statusAula === 'Ajuste de Saldo' || (statusAula === 'Reposição' && consumirCreditoReposicao),
+      p_historico_id: editingClassId,
+      p_motivo: motivoAjusteAula || null,
+    })
+
+    setIsSubmitting(false)
+    if (error) {
+      const migrationMissing = error.message.includes('salvar_movimento_aluno')
+      return alert(
+        migrationMissing
+          ? 'A atualização de controle de aulas ainda precisa ser aplicada no Supabase.'
+          : `Não foi possível salvar o lançamento: ${error.message}`,
+      )
+    }
+
+    setIsClassModalOpen(false)
+    setEditingClassId(null)
+    setObsAula('')
+    setMotivoAjusteAula('')
+    await carregarDados()
   }
   const abrirModalPagamento = () => {
     const prefixo = new Date().toISOString().slice(0, 7);
-    const totalMesFechado = historicoAulas.filter(h => String(h.data_aula).startsWith(prefixo) && isBillableClass(h.status)).length * Number(infoMatricula?.valor_por_aula || 0);
+    const totalMesFechado = historicoAulas
+      .filter(h => String(h.data_aula).startsWith(prefixo) && isBillableClass(h.status))
+      .reduce(
+        (total, aula) =>
+          total + Number(
+            aula.valor_aula_faturado ?? infoMatricula?.valor_por_aula ?? 0,
+          ),
+        0,
+      );
     const faturaAberta = faturasDisponiveisPagamento[0]
     setPayFaturaId(faturaAberta?.id || '')
     setPayCompetencia(String(faturaAberta?.competencia || new Date().toISOString()).slice(0, 7))
@@ -402,33 +519,34 @@ export default function PerfilAluno() {
   }
 
   const handleConcederCredito = async () => {
-    if (!window.confirm("Deseja adicionar 1 crédito manual (Aparecerá no portal dele)?")) return;
-    setIsSubmitting(true);
-    const hojeStr = new Date().toISOString().split('T')[0];
-    await supabase.from('historico_aulas').insert([{ aluno_id: id, data_aula: hojeStr, status: 'Crédito', observacoes: 'Crédito extra concedido manualmente.' }]);
-    alert("✅ Crédito adicionado!");
-    carregarDados();
-    setIsSubmitting(false);
+    abrirNovoMovimento('Crédito')
   }
 
   const handleRemoverCredito = async () => {
     if (saldoCreditos <= 0) return alert("O aluno não possui saldo para remover.");
-    if (!window.confirm("Deseja abater 1 crédito do saldo deste aluno?")) return;
-    setIsSubmitting(true);
-    const hojeStr = new Date().toISOString().split('T')[0];
-    await supabase.from('historico_aulas').insert([{ aluno_id: id, data_aula: hojeStr, status: 'Ajuste de Saldo', observacoes: 'Crédito removido manualmente (abate).' }]);
-    alert("✅ Saldo ajustado com sucesso!");
-    carregarDados();
-    setIsSubmitting(false);
+    abrirNovoMovimento('Ajuste de Saldo')
   }
 
-  const handleExcluirAulaHistorico = async (idAula: string) => {
-    if (!window.confirm("🚨 Tem certeza que deseja apagar este registro do diário? Se for uma aula que gerou crédito, o saldo será recalculado automaticamente.")) return;
+  const handleExcluirAulaHistorico = async () => {
+    if (!selectedClassDetails || deleteClassReason.trim().length < 3) return;
     setIsSubmitting(true);
-    await supabase.from('historico_aulas').delete().eq('id', idAula);
-    setIsClassDetailsModalOpen(false);
-    carregarDados();
+    const { error } = await supabase.rpc('excluir_movimento_aluno', {
+      p_historico_id: String(selectedClassDetails.id),
+      p_motivo: deleteClassReason.trim(),
+    })
     setIsSubmitting(false);
+    if (error) {
+      const migrationMissing = error.message.includes('excluir_movimento_aluno')
+      return alert(
+        migrationMissing
+          ? 'A atualização de controle de aulas ainda precisa ser aplicada no Supabase.'
+          : `Não foi possível excluir o lançamento: ${error.message}`,
+      )
+    }
+    setIsDeleteClassModalOpen(false)
+    setIsClassDetailsModalOpen(false);
+    setDeleteClassReason('')
+    await carregarDados();
   }
 
   const abrirDetalhesAula = (aula: any) => {
@@ -488,8 +606,26 @@ export default function PerfilAluno() {
   const aulasRealizadasNoMes = historicoAulas.filter(h =>
     String(h.data_aula).startsWith(prefixoMesAtual) && isBillableClass(h.status)
   ).length;
-  const valorApuradoNoMes = aulasRealizadasNoMes * Number(infoMatricula?.valor_por_aula || 0);
-  const faturasEmAberto = faturas.filter(f => !['PAGO', 'CANCELADA'].includes(String(f.status).toUpperCase()));
+  const valorApuradoNoMes = historicoAulas
+    .filter(h => String(h.data_aula).startsWith(prefixoMesAtual) && isBillableClass(h.status))
+    .reduce(
+      (total, aula) =>
+        total + Number(
+          aula.valor_aula_faturado ?? infoMatricula?.valor_por_aula ?? 0,
+        ),
+      0,
+    );
+  const aulasPendentesFaturamento = historicoAulas.filter(
+    aula => isBillableClass(aula.status) && !aula.fatura_id,
+  )
+  const valorPendenteAulas = aulasPendentesFaturamento.reduce(
+    (total, aula) =>
+      total + Number(
+        aula.valor_aula_faturado ?? infoMatricula?.valor_por_aula ?? 0,
+      ),
+    0,
+  )
+  const faturasEmAberto = faturas.filter(f => !['PAGO', 'CANCELADO', 'CANCELADA'].includes(String(f.status).toUpperCase()));
   const valorEmAberto = faturasEmAberto.reduce((total, fatura) => total + Number(fatura.valor_total || 0), 0);
   const totalRecebido = pagamentosConfirmados.reduce((total, pagamento) => total + Number(pagamento.valor || 0), 0);
   const registrosDePresenca = historicoAulas.filter(h => ['Realizada', 'Falta', 'Falta Injustificada', 'Falta Justificada'].includes(h.status));
@@ -745,18 +881,43 @@ export default function PerfilAluno() {
           <section className="premium-panel overflow-hidden">
             <div className="px-5 py-4 border-b border-[#dfded7] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><BookOpenCheck size={19} className="text-[#1f4a3a]" /> Aulas e diário</h2>
-                <p className="text-xs text-slate-500 mt-1">Presença, conteúdo e ocorrências em ordem cronológica.</p>
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><BookOpenCheck size={19} className="text-[#1f4a3a]" /> Gestão de aulas</h2>
+                <p className="text-xs text-slate-500 mt-1">Lance, corrija ou exclua registros com recálculo automático.</p>
               </div>
               <div className="flex gap-2">
                 <button onClick={gerarPdfAulas} className="px-3 py-2 rounded-lg border border-[#dfded7] bg-white text-[10px] font-semibold text-slate-600 flex items-center gap-1.5"><Download size={13} /> PDF</button>
-                <button onClick={() => setIsClassModalOpen(true)} disabled={isAlunoInativo} className="px-3.5 py-2 rounded-lg bg-[#1f4a3a] text-white text-[10px] font-semibold flex items-center gap-1.5 disabled:opacity-50"><BookOpenCheck size={13} /> Lançar aula</button>
+                <button onClick={() => abrirNovoMovimento()} disabled={isAlunoInativo} className="px-3.5 py-2 rounded-lg bg-[#1f4a3a] text-white text-[10px] font-semibold flex items-center gap-1.5 disabled:opacity-50"><Plus size={13} /> Novo lançamento</button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 border-b border-[#dfded7] bg-[#faf9f6] sm:grid-cols-3">
+              <div className="px-5 py-3.5 sm:border-r sm:border-[#e5e3dd]">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Aulas sem fatura</p>
+                <div className="mt-1 flex items-baseline justify-between gap-3">
+                  <p className="text-base font-semibold text-slate-900">{aulasPendentesFaturamento.length}</p>
+                  {modeloFaturamento === 'MENSAL_FECHADO' && <p className="text-xs font-semibold text-[#1f4a3a]">{formatCurrencyBR(valorPendenteAulas)}</p>}
+                </div>
+              </div>
+              <div className="px-5 py-3.5 sm:border-r sm:border-[#e5e3dd]">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Reposições disponíveis</p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <p className="text-base font-semibold text-slate-900">{saldoCreditos}</p>
+                  {modeloFaturamento === 'VENCIMENTO_FIXO' && (
+                    <button onClick={handleConcederCredito} className="text-[10px] font-semibold text-[#1f4a3a] hover:underline">Conceder crédito</button>
+                  )}
+                </div>
+              </div>
+              <div className="px-5 py-3.5">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Protegidas por fatura</p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <p className="text-base font-semibold text-slate-900">{historicoAulas.filter(aula => aula.fatura_id).length}</p>
+                  <ShieldCheck size={15} className="text-[#1f4a3a]" />
+                </div>
               </div>
             </div>
             <div className="max-h-[620px] overflow-y-auto custom-scrollbar">
               {historicoAulas.map((hist, index) => {
                 const isAjuste = hist.status === 'Ajuste de Saldo'
-                const tone = hist.status === 'Realizada'
+                const tone = hist.status === 'Realizada' || hist.status === 'Reposição'
                   ? 'bg-emerald-500'
                   : (hist.status === 'Falta' || hist.status === 'Falta Injustificada')
                     ? 'bg-rose-500'
@@ -779,7 +940,7 @@ export default function PerfilAluno() {
                     </div>
                     <div className="hidden sm:flex items-center gap-2">
                       <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[9px] font-semibold uppercase tracking-wide">{hist.status}</span>
-                      <ChevronRight size={15} className="text-slate-400" />
+                      {hist.fatura_id ? <ShieldCheck size={15} className="text-[#1f4a3a]" /> : <ChevronRight size={15} className="text-slate-400" />}
                     </div>
                   </button>
                 )
@@ -1048,7 +1209,7 @@ export default function PerfilAluno() {
               <h3 className="text-xl font-bold tracking-tight flex items-center gap-3 text-slate-800"><span className="text-amber-500 drop-shadow-sm">📖</span> Diário</h3>
               <div className="flex gap-2">
                 <motion.button whileHover={{ scale: 1.05 }} onClick={gerarPdfAulas} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-[11px] font-bold shadow-sm transition-all border border-slate-200 hover:bg-slate-200">📄 Exportar PDF</motion.button>
-                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setIsClassModalOpen(true)} disabled={isAlunoInativo} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[11px] font-bold shadow-sm transition-all disabled:opacity-50">+ Lançar Aula</motion.button>
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => abrirNovoMovimento()} disabled={isAlunoInativo} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[11px] font-bold shadow-sm transition-all disabled:opacity-50">+ Novo lançamento</motion.button>
               </div>
             </div>
             <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
@@ -1299,48 +1460,109 @@ export default function PerfilAluno() {
 
       <AnimatePresence>
         {isClassModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`bg-white/80 backdrop-blur-2xl border border-white/60 border-t-8 border-t-amber-500 p-8 rounded-[2.5rem] w-full max-w-xl shadow-2xl relative`}>
-              <h2 className={`text-2xl font-bold tracking-tight mb-6 text-slate-800 drop-shadow-sm`}>Lançamento de Aula</h2>
-              <form onSubmit={handleRegistrarAula} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600 ml-1">Data</label>
-                    <input type="date" required value={dataAula} onChange={e => setDataAula(e.target.value)} className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600 ml-1">Início</label>
-                    <input type="time" required value={horaInicioAula} onChange={e => setHoraInicioAula(e.target.value)} className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600 ml-1">Fim</label>
-                    <input type="time" required value={horaFimAula} onChange={e => setHoraFimAula(e.target.value)} className={inputClass} />
-                  </div>
-                </div>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0d1d17]/55 p-3 backdrop-blur-sm md:p-4">
+            <motion.div initial={{ scale: 0.97, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 18 }} className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[#f8f7f2] shadow-2xl">
+              <div className="flex shrink-0 items-start justify-between gap-5 border-b border-[#dfded7] bg-[#fbfaf6] px-5 py-5 md:px-7">
                 <div>
-                  <label className="text-xs font-semibold text-slate-600 ml-1">Status</label>
-                  <select required value={statusAula} onChange={e => setStatusAula(e.target.value)} className={inputClass}>
-                    <option value="Realizada">Realizada ✅</option>
-                    <option value="Agendada">Agendada (Futura) 📅</option>
-                    <option value="Falta Injustificada">Falta Injustificada ❌</option>
-                    <option value="Falta Justificada">Falta Justificada ⚖️</option>
-                    <option value="Desmarcada">Desmarcada 🔄</option>
-                    {modeloFaturamento === 'VENCIMENTO_FIXO' && (
-                      <>
-                        <option value="Reposição">Reposição 🌟</option>
-                        <option value="Crédito">Crédito de reposição manual 🎟️</option>
-                        <option value="Ajuste de Saldo">Ajuste de saldo de reposição ➖</option>
-                      </>
+                  <div className="premium-kicker">{editingClassId ? 'Corrigir histórico' : 'Novo movimento'}</div>
+                  <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{editingClassId ? 'Editar lançamento' : 'Registrar aula ou ajuste'}</h2>
+                  <p className="mt-1 text-sm text-slate-500">O sistema recalcula automaticamente faturamento, créditos e reposições.</p>
+                </div>
+                <button type="button" aria-label="Fechar lançamento" onClick={() => setIsClassModalOpen(false)} disabled={isSubmitting} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#dfded7] bg-white text-slate-500 transition hover:border-[#bfc7c1] hover:text-[#1f4a3a] disabled:opacity-50"><X size={18} /></button>
+              </div>
+
+              <form onSubmit={handleRegistrarAula} className="flex min-h-0 flex-1 flex-col">
+                <div className="premium-scrollarea min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 md:px-7">
+                  <section className={formSectionClass}>
+                    <div className="mb-5 flex items-center gap-3">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e7efe9] text-[#1f4a3a]"><BookOpenCheck size={17} /></span>
+                      <div><h3 className="text-base font-semibold text-slate-900">Tipo do movimento</h3><p className="mt-0.5 text-xs text-slate-500">Escolha o que aconteceu com esta aula.</p></div>
+                    </div>
+                    <label className={labelClass}>Situação</label>
+                    <select
+                      required
+                      value={statusAula}
+                      onChange={e => {
+                        const nextStatus = e.target.value
+                        setStatusAula(nextStatus)
+                        setConsumirCreditoReposicao(['Reposição', 'Ajuste de Saldo'].includes(nextStatus))
+                      }}
+                      className={inputClass}
+                    >
+                      {CLASS_STATUS_OPTIONS
+                        .filter(option => !option.fixedOnly || modeloFaturamento === 'VENCIMENTO_FIXO' || option.value === statusAula)
+                        .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                    <div className="mt-3 flex gap-3 rounded-xl border border-[#d7e1da] bg-[#edf4ef] px-4 py-3">
+                      <ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#1f4a3a]" />
+                      <div><p className="text-xs font-semibold text-[#244c3d]">Impacto deste lançamento</p><p className="mt-1 text-xs leading-5 text-[#607269]">{getClassImpact(statusAula, modeloFaturamento)}</p></div>
+                    </div>
+                  </section>
+
+                  <section className={formSectionClass}>
+                    <div className="mb-5"><h3 className="text-base font-semibold text-slate-900">Data e responsável</h3><p className="mt-0.5 text-xs text-slate-500">Informações exibidas no diário do aluno.</p></div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div className={['Crédito', 'Ajuste de Saldo'].includes(statusAula) ? 'md:col-span-3' : ''}><label className={labelClass}>Data</label><input type="date" required value={dataAula} onChange={e => setDataAula(e.target.value)} className={inputClass} /></div>
+                      {!['Crédito', 'Ajuste de Saldo'].includes(statusAula) && (
+                        <>
+                          <div><label className={labelClass}>Início</label><input type="time" required value={horaInicioAula} onChange={e => setHoraInicioAula(e.target.value)} className={inputClass} /></div>
+                          <div><label className={labelClass}>Fim</label><input type="time" required value={horaFimAula} onChange={e => setHoraFimAula(e.target.value)} className={inputClass} /></div>
+                        </>
+                      )}
+                      <div className="md:col-span-2">
+                        <label className={labelClass}>Professor</label>
+                        <select value={professorAula} onChange={e => setProfessorAula(e.target.value)} className={inputClass}>
+                          <option value="">Não informado</option>
+                          {professoresList.map(professor => <option key={professor.id} value={professor.id}>{professor.nome_completo}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Modalidade</label>
+                        <select value={modalidadeAula} onChange={e => setModalidadeAula(e.target.value)} className={inputClass}>
+                          <option value="">Não informada</option>
+                          {modalidadesLista.map(modalidade => <option key={modalidade.nome} value={modalidade.nome}>{modalidade.nome}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </section>
+
+                  {isBillableClass(statusAula) && (modeloFaturamento === 'MENSAL_FECHADO' || Boolean(selectedClassDetails?.turma_id)) && (
+                    <section className={formSectionClass}>
+                      <div className="grid gap-4 md:grid-cols-[1fr_240px] md:items-end">
+                        <div><h3 className="text-base font-semibold text-slate-900">Valor desta aula</h3><p className="mt-1 text-xs leading-5 text-slate-500">O valor fica congelado neste registro e compõe o saldo pendente até a emissão da fatura.</p></div>
+                        <div><label className={labelClass}>Valor faturável (R$)</label><input type="number" inputMode="decimal" min="0" step="0.01" required value={valorAula} onChange={e => setValorAula(e.target.value)} className={`${inputClass} text-base font-semibold text-[#1f4a3a]`} /></div>
+                      </div>
+                    </section>
+                  )}
+
+                  {['Reposição', 'Ajuste de Saldo'].includes(statusAula) && (
+                    <section className={formSectionClass}>
+                      <label className="flex cursor-pointer items-start gap-3">
+                        <input type="checkbox" checked={statusAula === 'Ajuste de Saldo' || consumirCreditoReposicao} disabled={statusAula === 'Ajuste de Saldo'} onChange={e => setConsumirCreditoReposicao(e.target.checked)} className="mt-1 h-4 w-4 accent-[#1f4a3a] disabled:opacity-60" />
+                        <span><span className="block text-sm font-semibold text-slate-800">Consumir um crédito de reposição</span><span className="mt-1 block text-xs leading-5 text-slate-500">{statusAula === 'Ajuste de Saldo' ? 'A baixa manual sempre consome o crédito válido que vencerá primeiro.' : 'O sistema utiliza primeiro o crédito que vencerá antes. Desmarque apenas para lançar uma cortesia administrativa.'}</span></span>
+                      </label>
+                    </section>
+                  )}
+
+                  <section className={formSectionClass}>
+                    <label className={labelClass}>Observações para o diário</label>
+                    <textarea value={obsAula} onChange={e => setObsAula(e.target.value)} placeholder="Conteúdo trabalhado, ocorrência ou explicação do ajuste." className={`${inputClass} min-h-28 resize-y`} />
+                    {editingClassId && (
+                      <div className="mt-4">
+                        <label className={labelClass}>Motivo da correção</label>
+                        <input required minLength={3} value={motivoAjusteAula} onChange={e => setMotivoAjusteAula(e.target.value)} placeholder="Ex.: data lançada incorretamente" className={inputClass} />
+                        <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500"><ShieldCheck size={12} /> Esta justificativa ficará registrada na auditoria.</p>
+                      </div>
                     )}
-                  </select>
+                  </section>
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 ml-1">Observações</label>
-                  <textarea value={obsAula} onChange={e => setObsAula(e.target.value)} className={`${inputClass} h-32 resize-none`} />
-                </div>
-                <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/40">
-                  <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={() => setIsClassModalOpen(false)} className={`px-6 py-3 rounded-xl font-bold text-sm text-slate-600 bg-white/50 border border-white/60 shadow-sm hover:bg-white`}>Cancelar</motion.button>
-                  <motion.button whileTap={{ scale: 0.95 }} type="submit" className="px-10 py-4 rounded-2xl bg-amber-400 text-amber-950 font-bold text-sm shadow-md hover:bg-amber-500 transition-all">Lançar no Diário</motion.button>
+
+                <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-[#dfded7] bg-[#fbfaf6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-7">
+                  <p className="hidden text-xs text-slate-500 sm:block">{getBillingModelLabel(modeloFaturamento)} · controle administrativo</p>
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                    <button type="button" onClick={() => setIsClassModalOpen(false)} disabled={isSubmitting} className="h-11 rounded-xl border border-[#d9d7ce] bg-white px-5 text-sm font-semibold text-slate-600 disabled:opacity-50">Cancelar</button>
+                    <button type="submit" disabled={isSubmitting} className="h-11 rounded-xl bg-[#1f4a3a] px-6 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(31,74,58,0.18)] disabled:opacity-50">{isSubmitting ? 'Salvando...' : editingClassId ? 'Salvar correção' : 'Registrar movimento'}</button>
+                  </div>
                 </div>
               </form>
             </motion.div>
@@ -1561,36 +1783,92 @@ export default function PerfilAluno() {
         )}
       </AnimatePresence>
 
-      {/* NOVO MODAL: DETALHES DA AULA COM BOTÃO DE EXCLUIR */}
       <AnimatePresence>
         {isClassDetailsModalOpen && selectedClassDetails && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-end md:items-center justify-center p-4 z-[90]">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white/80 backdrop-blur-2xl border border-white/60 p-6 md:p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl flex flex-col max-h-[85vh]">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 drop-shadow-sm"><span>📝</span> Resumo da Aula</h2>
-                <div className="flex gap-2">
-                    <button onClick={() => handleExcluirAulaHistorico(selectedClassDetails.id)} disabled={isSubmitting} className="h-10 w-10 bg-rose-50 text-rose-500 border border-rose-100 rounded-xl font-bold flex items-center justify-center hover:bg-rose-500 hover:text-white shadow-sm transition-all disabled:opacity-50" title="Apagar Registro do Diário">🗑️</button>
-                    <button onClick={() => setIsClassDetailsModalOpen(false)} disabled={isSubmitting} className="h-10 w-10 bg-white/50 text-slate-500 border border-white/80 rounded-xl font-bold flex items-center justify-center hover:bg-white shadow-sm transition-all disabled:opacity-50">✖</button>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-end justify-center bg-[#0d1d17]/55 p-3 backdrop-blur-sm md:items-center md:p-4">
+            <motion.div initial={{ scale: 0.97, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 18 }} className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[#f8f7f2] shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-[#dfded7] bg-[#fbfaf6] px-5 py-5 md:px-6">
+                <div>
+                  <div className="premium-kicker">Registro do diário</div>
+                  <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900">Detalhes do movimento</h2>
                 </div>
+                <button onClick={() => setIsClassDetailsModalOpen(false)} disabled={isSubmitting} aria-label="Fechar detalhes" className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dfded7] bg-white text-slate-500 disabled:opacity-50"><X size={18} /></button>
               </div>
-              
-              <div className="overflow-y-auto custom-scrollbar pr-2 flex-1 pb-2">
-                  <div className="flex items-center gap-4 mb-6">
-                      <div className={`h-14 w-14 rounded-full flex items-center justify-center text-2xl shadow-inner flex-shrink-0 ${selectedClassDetails.status === 'Realizada' || selectedClassDetails.status === 'Reposição' ? 'bg-emerald-50 text-emerald-600' : selectedClassDetails.status === 'Desmarcada' || selectedClassDetails.status === 'Falta' || selectedClassDetails.status === 'Falta Injustificada' ? 'bg-rose-50 text-rose-600' : selectedClassDetails.status === 'Crédito' || selectedClassDetails.status === 'Falta Justificada' ? 'bg-purple-50 text-purple-600' : selectedClassDetails.status === 'Ajuste de Saldo' ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-600'}`}>
-                          {selectedClassDetails.status === 'Realizada' || selectedClassDetails.status === 'Reposição' ? '✓' : selectedClassDetails.status === 'Desmarcada' || selectedClassDetails.status === 'Falta' || selectedClassDetails.status === 'Falta Injustificada' ? '✖' : selectedClassDetails.status === 'Ajuste de Saldo' ? '➖' : '📅'}
-                      </div>
-                      <div>
-                          <p className="font-bold text-xl text-slate-800 tracking-tight">{new Date(selectedClassDetails.data_aula).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</p>
-                          <p className={`text-sm font-bold mt-0.5 ${selectedClassDetails.status === 'Realizada' || selectedClassDetails.status === 'Reposição' ? 'text-emerald-600' : selectedClassDetails.status === 'Desmarcada' || selectedClassDetails.status === 'Falta' || selectedClassDetails.status === 'Falta Injustificada' ? 'text-rose-600' : selectedClassDetails.status === 'Crédito' || selectedClassDetails.status === 'Falta Justificada' ? 'text-purple-600' : selectedClassDetails.status === 'Ajuste de Saldo' ? 'text-slate-600' : 'text-amber-600'}`}>{selectedClassDetails.status}</p>
-                      </div>
-                  </div>
 
-                  <div className="bg-white/60 border border-white/80 p-5 rounded-2xl shadow-sm">
-                      <p className="text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-1"><span>✏️</span> Anotações do Professor</p>
-                      <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">
-                          {selectedClassDetails.observacoes || "Nenhuma anotação registrada para este lançamento."}
+              <div className="premium-scrollarea min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 md:px-6">
+                <section className="rounded-2xl bg-[#173f35] p-5 text-white">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-2xl font-semibold tracking-tight">{new Date(selectedClassDetails.data_aula).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
+                      <p className="mt-1 text-sm text-white/65">
+                        {selectedClassDetails.horario_inicio ? `${selectedClassDetails.horario_inicio.slice(0, 5)} — ${selectedClassDetails.horario_fim?.slice(0, 5)}` : 'Sem horário informado'}
                       </p>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide">{selectedClassDetails.status}</span>
                   </div>
+                  <div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/10 pt-4">
+                    <div><p className="text-[9px] font-semibold uppercase tracking-wider text-white/45">Modalidade</p><p className="mt-1 text-sm font-semibold">{selectedClassDetails.modalidade || 'Não informada'}</p></div>
+                    <div><p className="text-[9px] font-semibold uppercase tracking-wider text-white/45">Origem</p><p className="mt-1 text-sm font-semibold">{selectedClassDetails.turma_id ? 'Aula em turma' : 'Agenda individual'}</p></div>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-[#dfded7] bg-white p-5">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">Professor</p>
+                      <p className="mt-1.5 text-sm font-semibold text-slate-800">{professoresList.find(professor => professor.id === selectedClassDetails.professor_id)?.nome_completo || 'Não informado'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">Valor da aula</p>
+                      <p className="mt-1.5 text-sm font-semibold text-slate-800">{selectedClassDetails.valor_aula_faturado !== null && selectedClassDetails.valor_aula_faturado !== undefined ? formatCurrencyBR(selectedClassDetails.valor_aula_faturado) : 'Segue o modelo do aluno'}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 border-t border-[#ebe9e3] pt-4">
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">Observações</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{selectedClassDetails.observacoes || 'Nenhuma anotação registrada.'}</p>
+                  </div>
+                </section>
+
+                <section className={`flex gap-3 rounded-2xl border px-4 py-4 ${selectedClassDetails.fatura_id ? 'border-[#d7e1da] bg-[#edf4ef]' : 'border-[#e5dfd1] bg-[#fbf7ec]'}`}>
+                  {selectedClassDetails.fatura_id ? <ShieldCheck size={18} className="mt-0.5 shrink-0 text-[#1f4a3a]" /> : <Undo2 size={18} className="mt-0.5 shrink-0 text-[#916a34]" />}
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{selectedClassDetails.fatura_id ? 'Registro protegido por fatura' : 'Correção ainda disponível'}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      {selectedClassDetails.fatura_id
+                        ? 'Cancele a fatura vinculada antes de editar ou excluir esta aula. Isso evita divergência no valor cobrado.'
+                        : getClassImpact(selectedClassDetails.status, modeloFaturamento)}
+                    </p>
+                  </div>
+                </section>
+              </div>
+
+              <div className="flex shrink-0 flex-col gap-3 border-t border-[#dfded7] bg-[#fbfaf6] px-5 py-4 sm:flex-row sm:justify-between md:px-6">
+                {selectedClassDetails.fatura_id ? (
+                  <button onClick={() => router.push(`/faturas/${selectedClassDetails.fatura_id}`)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[#1f4a3a] px-5 text-sm font-semibold text-white"><ReceiptText size={16} /> Abrir fatura</button>
+                ) : (
+                  <button onClick={() => { setDeleteClassReason(''); setIsDeleteClassModalOpen(true) }} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[#e7c9c5] bg-[#fbefed] px-5 text-sm font-semibold text-[#a24a4a]"><Trash2 size={15} /> Excluir</button>
+                )}
+                <button onClick={() => abrirEdicaoMovimento(selectedClassDetails)} disabled={Boolean(selectedClassDetails.fatura_id)} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[#cbdad0] bg-white px-5 text-sm font-semibold text-[#1f4a3a] disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={15} /> Editar lançamento</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isDeleteClassModalOpen && selectedClassDetails && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0d1d17]/65 p-4 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.97, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 12 }} className="w-full max-w-md rounded-[24px] border border-white/60 bg-[#fbfaf6] p-6 shadow-2xl">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#fbefed] text-[#a24a4a]"><AlertTriangle size={20} /></span>
+              <h2 className="mt-4 text-xl font-semibold text-slate-900">Excluir este lançamento?</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">A aula sairá do diário e os saldos relacionados serão recalculados. A operação ficará registrada na auditoria.</p>
+              <div className="mt-5">
+                <label className={labelClass}>Motivo da exclusão</label>
+                <textarea autoFocus value={deleteClassReason} onChange={e => setDeleteClassReason(e.target.value)} placeholder="Ex.: lançamento duplicado" className={`${inputClass} min-h-24 resize-none`} />
+              </div>
+              <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button onClick={() => setIsDeleteClassModalOpen(false)} disabled={isSubmitting} className="h-11 rounded-xl border border-[#d9d7ce] bg-white px-5 text-sm font-semibold text-slate-600 disabled:opacity-50">Voltar</button>
+                <button onClick={handleExcluirAulaHistorico} disabled={isSubmitting || deleteClassReason.trim().length < 3} className="h-11 rounded-xl bg-[#a24a4a] px-5 text-sm font-semibold text-white disabled:opacity-40">{isSubmitting ? 'Excluindo...' : 'Excluir definitivamente'}</button>
               </div>
             </motion.div>
           </motion.div>

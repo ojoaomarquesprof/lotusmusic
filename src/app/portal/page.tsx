@@ -301,12 +301,16 @@ export default function PortalAluno() {
     }
 
     const prefixoMes = new Date().toISOString().slice(0, 7)
-    const aulasMes = (histAll || []).filter(h =>
+    const registrosFaturaveisMes = (histAll || []).filter(h =>
       String(h.data_aula).startsWith(prefixoMes) && isBillableClass(h.status)
-    ).length
+    )
     setApuracaoMes({
-      aulas: aulasMes,
-      valor: aulasMes * Number(info?.valor_por_aula || 0),
+      aulas: registrosFaturaveisMes.length,
+      valor: registrosFaturaveisMes.reduce(
+        (total, aula) =>
+          total + Number(aula.valor_aula_faturado ?? info?.valor_por_aula ?? 0),
+        0,
+      ),
     })
 
     const { data: invoices } = await supabase
