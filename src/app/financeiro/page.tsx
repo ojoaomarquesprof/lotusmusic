@@ -25,8 +25,11 @@ import {
   Clock3,
   Filter,
   FileText,
+  Image as ImageIcon,
   Landmark,
+  Loader2,
   MessageCircle,
+  Paperclip,
   Pencil,
   Plus,
   ReceiptText,
@@ -37,6 +40,7 @@ import {
   UsersRound,
   WalletCards,
   Search,
+  ShieldCheck,
   X,
 } from 'lucide-react'
 
@@ -60,6 +64,11 @@ export default function RelatorioFinanceiro() {
   const [, setAlunosPendentes] = useState<any[]>([])
   const [extratoUnificado, setExtratoUnificado] = useState<any[]>([])
   const [modelCounts, setModelCounts] = useState({ CREDITOS: 0, MENSAL_FECHADO: 0, VENCIMENTO_FIXO: 0 })
+  const [pagamentosInformados, setPagamentosInformados] = useState<any[]>([])
+  const [selectedReportedPayment, setSelectedReportedPayment] = useState<any>(null)
+  const [reportedPaymentProofUrl, setReportedPaymentProofUrl] = useState('')
+  const [reportedPaymentReason, setReportedPaymentReason] = useState('')
+  const [isReviewingReportedPayment, setIsReviewingReportedPayment] = useState(false)
 
   const [dadosGraficoBarra, setDadosGraficoBarra] = useState<any[]>([])
   const [dadosGraficoPizza, setDadosGraficoPizza] = useState<any[]>([])
@@ -92,7 +101,7 @@ export default function RelatorioFinanceiro() {
 
   const [filtroExtrato, setFiltroExtrato] = useState('Todos')
   const [editandoId, setEditandoId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'visao' | 'cobrancas' | 'movimentacoes' | 'analises'>('visao')
+  const [activeTab, setActiveTab] = useState<'visao' | 'cobrancas' | 'comprovantes' | 'movimentacoes' | 'analises'>('visao')
   const [filtroCobrancas, setFiltroCobrancas] = useState<'Todas' | 'Atrasado' | 'A vencer' | 'Pago' | 'Em apuração' | 'Desconsiderada'>('Todas')
   const [buscaCobranca, setBuscaCobranca] = useState('')
   const [competenciaCobranca, setCompetenciaCobranca] = useState('Todas')
@@ -108,6 +117,14 @@ export default function RelatorioFinanceiro() {
 
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (isMounted) carregarDadosFinanceiros() }, [isMounted])
+  useEffect(() => {
+    if (!isMounted) return
+    const channel = supabase
+      .channel('financeiro-pagamentos-informados')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pagamentos_informados' }, () => carregarDadosFinanceiros())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [isMounted])
 
   async function carregarDadosFinanceiros() {
     setLoading(true)
@@ -124,6 +141,7 @@ export default function RelatorioFinanceiro() {
       { data: alunos },
       { data: historicoMes },
       { data: ajustesCobranca },
+      { data: reportedPayments },
     ] = await Promise.all([
       supabase.from('configuracoes').select('chave_pix, mensagem_pendente, mensagem_atrasado, escola_nome, escola_documento, escola_email, escola_telefone, escola_cep, escola_endereco, escola_numero, escola_complemento, escola_bairro, escola_cidade, escola_estado').eq('id', 1).single(),
       supabase.from('pagamentos').select('*'),
@@ -136,6 +154,7 @@ export default function RelatorioFinanceiro() {
         .gte('data_aula', inicioMes)
         .lte('data_aula', `${prefixoMesAtual}-${String(fimMes).padStart(2, '0')}T23:59:59`),
       supabase.from('ajustes_cobranca').select('*'),
+      supabase.from('pagamentos_informados').select('*').order('criado_em', { ascending: false }),
     ])
 
     if (configData) {
@@ -161,6 +180,11 @@ export default function RelatorioFinanceiro() {
     const pagamentos = allPagamentos || []
     const transacoes = allTransacoes || []
     const faturas = allFaturas || []
+    setPagamentosInformados((reportedPayments || []).map(item => ({
+      ...item,
+      aluno: (alunos || []).find(aluno => aluno.id === item.aluno_id),
+      fatura: faturas.find(fatura => fatura.id === item.fatura_id),
+    })))
     const pagamentosConfirmados = pagamentos.filter(isConfirmedPayment)
     const dossier = buildFinancialDossier({
       alunos: alunos || [],
@@ -675,6 +699,45 @@ export default function RelatorioFinanceiro() {
     window.open(`https://wa.me/${numero}?text=${encodeURIComponent(msgFinal)}`, '_blank')
   }
 
+  const selecionarPagamentoInformado = async (pagamento: any) => {
+    setSelectedReportedPayment(pagamento)
+    setReportedPaymentReason(pagamento.motivo_analise || '')
+    setReportedPaymentProofUrl('')
+    if (!pagamento.comprovante_path) return
+
+    const { data, error } = await supabase.storage
+      .from('comprovantes-pagamento')
+      .createSignedUrl(pagamento.comprovante_path, 600)
+    if (!error) setReportedPaymentProofUrl(data?.signedUrl || '')
+  }
+
+  const analisarPagamentoInformado = async (decisao: 'APROVADO' | 'RECUSADO') => {
+    if (!selectedReportedPayment) return
+    if (decisao === 'RECUSADO' && reportedPaymentReason.trim().length < 3) {
+      return alert('Informe o motivo para o aluno conseguir corrigir o envio.')
+    }
+    if (decisao === 'APROVADO' && !window.confirm(`Confirmar o recebimento de ${formatCurrencyBR(selectedReportedPayment.valor)} de ${selectedReportedPayment.aluno?.nome_completo || 'este aluno'}?`)) {
+      return
+    }
+
+    setIsReviewingReportedPayment(true)
+    const { error } = await supabase.rpc('analisar_pagamento_informado', {
+      p_pagamento_informado_id: selectedReportedPayment.id,
+      p_decisao: decisao,
+      p_motivo: reportedPaymentReason.trim() || null,
+    })
+    setIsReviewingReportedPayment(false)
+    if (error) return alert(`Não foi possível concluir a análise: ${error.message}`)
+
+    alert(decisao === 'APROVADO'
+      ? 'Pagamento confirmado. O valor entrou no caixa e o recibo foi liberado.'
+      : 'Envio recusado. O aluno recebeu o motivo no portal.')
+    setSelectedReportedPayment(null)
+    setReportedPaymentProofUrl('')
+    setReportedPaymentReason('')
+    await carregarDadosFinanceiros()
+  }
+
   if (!isMounted) return null;
   if (loading) return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500"></div></div>
   
@@ -700,6 +763,7 @@ export default function RelatorioFinanceiro() {
   const cobrancasEmApuracao = cobrancas.filter(item => item.status === 'Em apuração')
   const cobrancasDesconsideradas = cobrancas.filter(item => item.status === 'Desconsiderada')
   const cobrancasAtivas = cobrancas.filter(item => item.status !== 'Desconsiderada')
+  const pagamentosInformadosPendentes = pagamentosInformados.filter(item => item.status === 'PENDENTE')
   const agingBuckets = getAgingBuckets(cobrancas)
   const competencias = Array.from(new Map(
     cobrancas
@@ -781,6 +845,7 @@ export default function RelatorioFinanceiro() {
         {[
           { id: 'visao', label: 'Visão geral', icon: Landmark },
           { id: 'cobrancas', label: 'Cobranças', icon: ReceiptText, count: alunosPendentes.length },
+          { id: 'comprovantes', label: 'Comprovantes', icon: Paperclip, count: pagamentosInformadosPendentes.length },
           { id: 'movimentacoes', label: 'Movimentações', icon: WalletCards, count: extratoUnificado.length },
           { id: 'analises', label: 'Análises', icon: BarChart3 },
         ].map(tab => {
@@ -956,6 +1021,152 @@ export default function RelatorioFinanceiro() {
             </div>
           </div>
         </motion.section>
+      )}
+
+      {activeTab === 'comprovantes' && (
+        <motion.div variants={itemVariants} className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
+          <section className="premium-panel overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-[#dfded7] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="flex items-center gap-2.5 text-lg font-semibold text-slate-900"><Paperclip size={19} className="text-[#1f4a3a]" /> Pagamentos informados</h2>
+                <p className="mt-1 text-xs text-slate-500">O caixa e o recibo só são atualizados depois da sua aprovação.</p>
+              </div>
+              <span className="inline-flex h-8 items-center rounded-full bg-[#fff3d8] px-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#8a6427]">
+                {pagamentosInformadosPendentes.length} aguardando
+              </span>
+            </div>
+
+            <div className="max-h-[690px] divide-y divide-[#ebe9e3] overflow-y-auto custom-scrollbar">
+              {pagamentosInformados.map(pagamento => {
+                const isSelected = selectedReportedPayment?.id === pagamento.id
+                return (
+                  <button
+                    key={pagamento.id}
+                    type="button"
+                    onClick={() => selecionarPagamentoInformado(pagamento)}
+                    className={`grid w-full gap-3 px-5 py-4 text-left transition-colors sm:grid-cols-[minmax(0,1fr)_150px_110px] sm:items-center ${isSelected ? 'bg-[#edf3ef]' : 'hover:bg-[#faf9f6]'}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-900">{pagamento.aluno?.nome_completo || 'Aluno'}</p>
+                        <span className={`rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-wide ${pagamento.status === 'APROVADO' ? 'bg-emerald-50 text-emerald-700' : pagamento.status === 'RECUSADO' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>
+                          {pagamento.status === 'APROVADO' ? 'Aprovado' : pagamento.status === 'RECUSADO' ? 'Recusado' : 'Aguardando'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {new Date(`${pagamento.data_pagamento}T12:00:00`).toLocaleDateString('pt-BR')} · {pagamento.metodo_pagamento}
+                        {pagamento.comprovante_path ? ' · Com imagem' : ' · Sem imagem'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700">{String(pagamento.competencia).slice(0, 7).split('-').reverse().join('/')}</p>
+                      <p className="mt-1 text-[10px] text-slate-400">{pagamento.fatura?.numero ? `FAT-${String(pagamento.fatura.numero).padStart(6, '0')}` : 'Sem fatura'}</p>
+                    </div>
+                    <p className="text-sm font-semibold text-[#1f4a3a] sm:text-right">{formatCurrencyBR(pagamento.valor)}</p>
+                  </button>
+                )
+              })}
+              {pagamentosInformados.length === 0 && (
+                <div className="px-6 py-20 text-center">
+                  <ShieldCheck size={30} className="mx-auto text-slate-300" />
+                  <p className="mt-3 text-sm font-semibold text-slate-700">Nenhum pagamento enviado</p>
+                  <p className="mt-1 text-xs text-slate-500">Os envios feitos pelo portal do aluno aparecerão aqui.</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <aside className="premium-panel h-fit overflow-hidden xl:sticky xl:top-5">
+            {!selectedReportedPayment ? (
+              <div className="px-7 py-20 text-center">
+                <ImageIcon size={30} className="mx-auto text-slate-300" />
+                <p className="mt-3 text-sm font-semibold text-slate-700">Selecione um envio</p>
+                <p className="mt-1 text-xs text-slate-500">Confira os dados e a imagem antes de aprovar.</p>
+              </div>
+            ) : (
+              <>
+                <div className="border-b border-[#dfded7] px-5 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="premium-kicker">Conferência do pagamento</div>
+                      <h2 className="mt-1 text-lg font-semibold text-slate-900">{selectedReportedPayment.aluno?.nome_completo || 'Aluno'}</h2>
+                    </div>
+                    <button type="button" onClick={() => { setSelectedReportedPayment(null); setReportedPaymentProofUrl('') }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dfded7] text-slate-500"><X size={14} /></button>
+                  </div>
+                </div>
+
+                <div className="space-y-4 p-5">
+                  <section className="overflow-hidden rounded-2xl border border-[#d7d4cb] bg-[#153b2f] text-white">
+                    <div className="px-5 py-5">
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-white/55">Valor informado</p>
+                      <p className="mt-2 text-3xl font-semibold">{formatCurrencyBR(selectedReportedPayment.valor)}</p>
+                    </div>
+                    <div className="grid grid-cols-2 divide-x divide-white/10 border-t border-white/10">
+                      <div className="px-4 py-3">
+                        <p className="text-[9px] text-white/50">Data</p>
+                        <p className="mt-1 text-xs font-semibold">{new Date(`${selectedReportedPayment.data_pagamento}T12:00:00`).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                      <div className="px-4 py-3">
+                        <p className="text-[9px] text-white/50">Forma</p>
+                        <p className="mt-1 text-xs font-semibold">{selectedReportedPayment.metodo_pagamento}</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-[#d7d4cb] bg-white p-4">
+                    <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div><p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Competência</p><p className="mt-1 font-semibold text-slate-700">{String(selectedReportedPayment.competencia).slice(0, 7).split('-').reverse().join('/')}</p></div>
+                      <div><p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Fatura</p><p className="mt-1 font-semibold text-slate-700">{selectedReportedPayment.fatura?.numero ? `FAT-${String(selectedReportedPayment.fatura.numero).padStart(6, '0')}` : 'Não vinculada'}</p></div>
+                    </div>
+                    {selectedReportedPayment.observacoes && <p className="mt-4 border-t border-[#ebe9e3] pt-4 text-xs leading-relaxed text-slate-600">{selectedReportedPayment.observacoes}</p>}
+                  </section>
+
+                  <section className="overflow-hidden rounded-2xl border border-[#d7d4cb] bg-white">
+                    <div className="flex items-center justify-between border-b border-[#ebe9e3] px-4 py-3">
+                      <p className="flex items-center gap-2 text-xs font-semibold text-slate-700"><ImageIcon size={14} /> Comprovante</p>
+                      {reportedPaymentProofUrl && <button type="button" onClick={() => window.open(reportedPaymentProofUrl, '_blank')} className="text-[10px] font-semibold text-[#1f4a3a]">Abrir imagem</button>}
+                    </div>
+                    {selectedReportedPayment.comprovante_path ? (
+                      reportedPaymentProofUrl ? (
+                        <button type="button" onClick={() => window.open(reportedPaymentProofUrl, '_blank')} className="block w-full bg-[#f5f4ef] p-3">
+                          <img src={reportedPaymentProofUrl} alt="Comprovante enviado pelo aluno" className="mx-auto max-h-72 rounded-xl object-contain" />
+                        </button>
+                      ) : (
+                        <div className="flex h-36 items-center justify-center text-xs text-slate-500"><Loader2 size={16} className="mr-2 animate-spin" /> Carregando imagem</div>
+                      )
+                    ) : (
+                      <div className="px-4 py-8 text-center text-xs text-slate-500">O aluno informou o pagamento sem anexar imagem.</div>
+                    )}
+                  </section>
+
+                  {selectedReportedPayment.status === 'PENDENTE' ? (
+                    <section className="rounded-2xl border border-[#d7d4cb] bg-white p-4">
+                      <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        Motivo, se precisar recusar
+                        <textarea value={reportedPaymentReason} onChange={event => setReportedPaymentReason(event.target.value)} placeholder="Ex.: imagem ilegível ou valor divergente." className="mt-2 min-h-20 w-full resize-none rounded-xl border border-[#dcd9d0] bg-[#fbfaf7] p-3 text-xs font-normal normal-case tracking-normal text-slate-700 outline-none" />
+                      </label>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => analisarPagamentoInformado('RECUSADO')} disabled={isReviewingReportedPayment} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-700 disabled:opacity-50"><X size={14} /> Recusar</button>
+                        <button type="button" onClick={() => analisarPagamentoInformado('APROVADO')} disabled={isReviewingReportedPayment} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[#1f4a3a] text-xs font-semibold text-white disabled:opacity-50">
+                          {isReviewingReportedPayment ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Aprovar
+                        </button>
+                      </div>
+                    </section>
+                  ) : (
+                    <section className={`rounded-2xl border p-4 ${selectedReportedPayment.status === 'APROVADO' ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'}`}>
+                      <p className={`text-xs font-semibold ${selectedReportedPayment.status === 'APROVADO' ? 'text-emerald-800' : 'text-rose-800'}`}>
+                        {selectedReportedPayment.status === 'APROVADO' ? 'Pagamento aprovado e lançado no caixa.' : 'Envio recusado e devolvido ao aluno.'}
+                      </p>
+                      {selectedReportedPayment.motivo_analise && <p className="mt-2 text-xs text-slate-600">{selectedReportedPayment.motivo_analise}</p>}
+                    </section>
+                  )}
+
+                  <button type="button" onClick={() => router.push(`/alunos/${selectedReportedPayment.aluno_id}`)} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#d7d4cb] bg-white text-xs font-semibold text-slate-700"><UsersRound size={14} /> Abrir perfil do aluno</button>
+                </div>
+              </>
+            )}
+          </aside>
+        </motion.div>
       )}
 
       {activeTab === 'movimentacoes' && (

@@ -23,6 +23,8 @@ import {
   FolderOpen,
   Home,
   Inbox,
+  Image as ImageIcon,
+  Loader2,
   LogOut,
   MapPin,
   MessageCircle,
@@ -30,7 +32,9 @@ import {
   ReceiptText,
   Repeat2,
   RotateCcw,
+  Send,
   ShieldCheck,
+  UploadCloud,
   UserRound,
   WalletCards,
   X,
@@ -60,10 +64,12 @@ export default function PortalAluno() {
   const [todasReposicoes, setTodasReposicoes] = useState<any[]>([]) 
   const [statusMensalidade, setStatusMensalidade] = useState({ pago: false, diasRestantes: 0, dataVencimentoStr: '' })
   const [historicoPagamentos, setHistoricoPagamentos] = useState<any[]>([])
+  const [pagamentosInformados, setPagamentosInformados] = useState<any[]>([])
   const [faturaAtual, setFaturaAtual] = useState<any>(null)
   const [apuracaoMes, setApuracaoMes] = useState({ aulas: 0, valor: 0 })
   
   const [isPayHistoryModalOpen, setIsPayHistoryModalOpen] = useState(false)
+  const [isReportPaymentOpen, setIsReportPaymentOpen] = useState(false)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false)
   const [isNotificacaoModalOpen, setIsNotificacaoModalOpen] = useState(false)
@@ -78,6 +84,15 @@ export default function PortalAluno() {
   const [editSenha, setEditSenha] = useState('')
   const [editFotoArquivo, setEditFotoArquivo] = useState<File | null>(null)
   const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+
+  const [reportedValue, setReportedValue] = useState('')
+  const [reportedDate, setReportedDate] = useState(new Date().toISOString().slice(0, 10))
+  const [reportedMethod, setReportedMethod] = useState('PIX')
+  const [reportedInvoiceId, setReportedInvoiceId] = useState('')
+  const [reportedCompetence, setReportedCompetence] = useState(new Date().toISOString().slice(0, 7))
+  const [reportedNotes, setReportedNotes] = useState('')
+  const [reportedProof, setReportedProof] = useState<File | null>(null)
+  const [reportedProofPreview, setReportedProofPreview] = useState<string | null>(null)
 
   const [rescheduleType, setRescheduleType] = useState('Pontual') 
   const [solicitacaoPendente, setSolicitacaoPendente] = useState<any>(null)
@@ -112,6 +127,7 @@ export default function PortalAluno() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notificacoes_aluno' }, () => { carregarPortal() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_aulas' }, () => { carregarPortal() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pagamentos' }, () => { carregarPortal() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pagamentos_informados' }, () => { carregarPortal() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'faturas' }, () => { carregarPortal() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'alunos_info' }, () => { carregarPortal() })
       .subscribe();
@@ -330,6 +346,13 @@ export default function PortalAluno() {
     const pagamentosConfirmados = (allPgs || []).filter(isConfirmedPayment)
     setHistoricoPagamentos(pagamentosConfirmados)
 
+    const { data: reportedPayments } = await supabase
+      .from('pagamentos_informados')
+      .select('*, fatura:faturas(numero, valor_total, status)')
+      .eq('aluno_id', session.user.id)
+      .order('criado_em', { ascending: false })
+    setPagamentosInformados(reportedPayments || [])
+
     const diaVenc = info?.data_vencimento || 10
     const hoje = new Date(); const ano = hoje.getFullYear(); const mes = hoje.getMonth()
     const getDataVenc = (a: number, m: number, d: number) => { const ultimo = new Date(a, m + 1, 0).getDate(); return new Date(a, m, Math.min(d, ultimo)) }
@@ -352,6 +375,90 @@ export default function PortalAluno() {
 
   const copiarPix = () => { if (escola?.chave_pix) { navigator.clipboard.writeText(escola.chave_pix); alert('Chave PIX copiada!') } }
   const handleSair = async () => { await supabase.auth.signOut(); router.push('/login') }
+
+  const resetReportedPayment = () => {
+    setReportedValue('')
+    setReportedDate(new Date().toISOString().slice(0, 10))
+    setReportedMethod('PIX')
+    setReportedInvoiceId('')
+    setReportedCompetence(new Date().toISOString().slice(0, 7))
+    setReportedNotes('')
+    setReportedProof(null)
+    setReportedProofPreview(null)
+  }
+
+  const handleReportedProof = (file?: File) => {
+    if (!file) {
+      setReportedProof(null)
+      setReportedProofPreview(null)
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      alert('O comprovante precisa ser uma imagem.')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('A imagem pode ter no máximo 5 MB.')
+      return
+    }
+    setReportedProof(file)
+    setReportedProofPreview(URL.createObjectURL(file))
+  }
+
+  const handleInformarPagamento = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const valor = Number(reportedValue)
+    if (!valor || valor <= 0) return alert('Informe o valor pago.')
+
+    setIsSubmitting(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      setIsSubmitting(false)
+      return router.push('/login')
+    }
+
+    let proofPath: string | null = null
+    if (reportedProof) {
+      const extensao = reportedProof.name.split('.').pop()?.toLowerCase() || 'jpg'
+      proofPath = `${session.user.id}/${crypto.randomUUID()}.${extensao}`
+      const { error: uploadError } = await supabase.storage
+        .from('comprovantes-pagamento')
+        .upload(proofPath, reportedProof, { contentType: reportedProof.type, upsert: false })
+      if (uploadError) {
+        setIsSubmitting(false)
+        return alert(`Não foi possível anexar a imagem: ${uploadError.message}`)
+      }
+    }
+
+    const { error } = await supabase.from('pagamentos_informados').insert({
+      aluno_id: session.user.id,
+      fatura_id: reportedInvoiceId || null,
+      competencia: `${reportedCompetence}-01`,
+      valor,
+      data_pagamento: reportedDate,
+      metodo_pagamento: reportedMethod,
+      observacoes: reportedNotes.trim() || null,
+      comprovante_path: proofPath,
+      comprovante_nome: reportedProof?.name || null,
+      comprovante_mime: reportedProof?.type || null,
+    })
+
+    if (error && proofPath) {
+      await supabase.storage.from('comprovantes-pagamento').remove([proofPath])
+    }
+    setIsSubmitting(false)
+    if (error) {
+      const mensagem = error.message.includes('pagamentos_informados_fatura_pendente_uidx')
+        ? 'Já existe um pagamento desta fatura aguardando análise.'
+        : `Não foi possível enviar: ${error.message}`
+      return alert(mensagem)
+    }
+
+    resetReportedPayment()
+    setIsReportPaymentOpen(false)
+    alert('Pagamento informado. A escola vai analisar antes de confirmar o recebimento.')
+    await carregarPortal()
+  }
 
   const handleAtualizarPerfil = async (e: React.FormEvent) => {
     e.preventDefault(); setIsSubmitting(true)
@@ -539,6 +646,26 @@ export default function PortalAluno() {
     modeloFaturamentoPortal === 'MENSAL_FECHADO'
       ? (faturaEmAberto ? Number(faturaAtual?.valor_total || 0) : apuracaoMes.valor)
       : Number(infoFinanceira?.valor_mensalidade || 0)
+  const pagamentoInformadoPendente = pagamentosInformados.find(pagamento => pagamento.status === 'PENDENTE')
+
+  const abrirPrestacaoDeContas = () => {
+    const faturaPendente = faturaAtual && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status)
+      ? faturaAtual
+      : null
+    setReportedInvoiceId(faturaPendente?.id || '')
+    setReportedValue(String(faturaPendente?.valor_total || valorResumoFinanceiro || ''))
+    setReportedDate(new Date().toISOString().slice(0, 10))
+    setReportedCompetence(
+      faturaPendente?.competencia
+        ? String(faturaPendente.competencia).slice(0, 7)
+        : new Date().toISOString().slice(0, 7),
+    )
+    setReportedMethod('PIX')
+    setReportedNotes('')
+    setReportedProof(null)
+    setReportedProofPreview(null)
+    setIsReportPaymentOpen(current => !current)
+  }
 
   const criarDadosRecibo = (payment: any): ReceiptPdfData => ({
     payment,
@@ -1192,6 +1319,9 @@ export default function PortalAluno() {
                       <span className="flex items-center gap-2"><WalletCards size={18} /> Copiar PIX</span><ChevronRight size={17} />
                     </button>
                   )}
+                  <button onClick={abrirPrestacaoDeContas} className="flex items-center justify-between rounded-2xl border border-[#d4d0c5] bg-white px-4 py-4 text-left text-sm font-bold text-[#254b40]">
+                    <span className="flex items-center gap-2"><UploadCloud size={18} /> {isReportPaymentOpen ? 'Fechar envio' : 'Informar pagamento'}</span><ChevronRight size={17} className={isReportPaymentOpen ? 'rotate-90 transition-transform' : 'transition-transform'} />
+                  </button>
                   <button onClick={() => setIsPayHistoryModalOpen(current => !current)} className="flex items-center justify-between rounded-2xl border border-[#d4d0c5] bg-white px-4 py-4 text-left text-sm font-bold text-[#254b40]">
                     <span className="flex items-center gap-2"><ReceiptText size={18} /> {isPayHistoryModalOpen ? 'Ocultar recibos' : 'Ver recibos'}</span><ChevronRight size={17} className={isPayHistoryModalOpen ? 'rotate-90 transition-transform' : 'transition-transform'} />
                   </button>
@@ -1215,6 +1345,137 @@ export default function PortalAluno() {
                 </div>
               </div>
             </section>
+
+            <AnimatePresence initial={false}>
+              {isReportPaymentOpen && (
+                <motion.section
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6]"
+                >
+                  <div className="border-b border-[#e4e0d7] px-5 py-5 md:px-6">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e4ece7] text-[#1d5143]"><UploadCloud size={19} /></span>
+                      <div>
+                        <h2 className="font-bold">Informar pagamento</h2>
+                        <p className="text-sm text-[#748079]">Envie os dados e, se quiser, uma imagem do comprovante.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {pagamentoInformadoPendente ? (
+                    <div className="grid gap-4 px-5 py-6 md:grid-cols-[1fr_auto] md:items-center md:px-6">
+                      <div>
+                        <span className="inline-flex rounded-full bg-[#fff1ce] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#86601f]">Aguardando análise</span>
+                        <p className="mt-3 font-bold text-[#263a32]">{formatCurrencyBR(pagamentoInformadoPendente.valor)} informado em {new Date(`${pagamentoInformadoPendente.data_pagamento}T12:00:00`).toLocaleDateString('pt-BR')}</p>
+                        <p className="mt-1 text-sm text-[#748079]">O valor ainda não entrou no caixa e não gerou recibo.</p>
+                      </div>
+                      <ShieldCheck size={30} className="hidden text-[#9a743d] md:block" />
+                    </div>
+                  ) : (
+                    <form onSubmit={handleInformarPagamento} className="p-5 md:p-6">
+                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                        <label className="text-xs font-bold text-[#53635c]">
+                          Valor pago
+                          <input required type="number" min="0.01" step="0.01" value={reportedValue} onChange={event => setReportedValue(event.target.value)} className="mt-2 h-12 w-full rounded-xl border border-[#d4d0c5] bg-white px-3 text-sm outline-none focus:border-[#1d5143]" />
+                        </label>
+                        <label className="text-xs font-bold text-[#53635c]">
+                          Data do pagamento
+                          <input required type="date" value={reportedDate} onChange={event => setReportedDate(event.target.value)} className="mt-2 h-12 w-full rounded-xl border border-[#d4d0c5] bg-white px-3 text-sm outline-none focus:border-[#1d5143]" />
+                        </label>
+                        <label className="text-xs font-bold text-[#53635c]">
+                          Forma
+                          <select value={reportedMethod} onChange={event => setReportedMethod(event.target.value)} className="mt-2 h-12 w-full rounded-xl border border-[#d4d0c5] bg-white px-3 text-sm outline-none focus:border-[#1d5143]">
+                            <option>PIX</option><option>Dinheiro</option><option>Transferência</option><option>Cartão</option><option>Boleto</option><option>Outro</option>
+                          </select>
+                        </label>
+                        <label className="text-xs font-bold text-[#53635c]">
+                          Competência
+                          <input required type="month" value={reportedCompetence} onChange={event => setReportedCompetence(event.target.value)} className="mt-2 h-12 w-full rounded-xl border border-[#d4d0c5] bg-white px-3 text-sm outline-none focus:border-[#1d5143]" />
+                        </label>
+                      </div>
+
+                      {faturaAtual && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && (
+                        <label className="mt-4 block text-xs font-bold text-[#53635c]">
+                          Referência
+                          <select value={reportedInvoiceId} onChange={event => {
+                            const invoiceId = event.target.value
+                            setReportedInvoiceId(invoiceId)
+                            if (invoiceId) {
+                              setReportedValue(String(faturaAtual.valor_total || ''))
+                              setReportedCompetence(String(faturaAtual.competencia).slice(0, 7))
+                            }
+                          }} className="mt-2 h-12 w-full rounded-xl border border-[#d4d0c5] bg-white px-3 text-sm outline-none focus:border-[#1d5143]">
+                            <option value="">Pagamento sem fatura vinculada</option>
+                            <option value={faturaAtual.id}>FAT-{String(faturaAtual.numero || '').padStart(6, '0')} · {formatCurrencyBR(faturaAtual.valor_total)}</option>
+                          </select>
+                        </label>
+                      )}
+
+                      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_0.85fr]">
+                        <label className="text-xs font-bold text-[#53635c]">
+                          Observação (opcional)
+                          <textarea value={reportedNotes} onChange={event => setReportedNotes(event.target.value)} placeholder="Ex.: pagamento feito pela conta de outra pessoa." className="mt-2 min-h-28 w-full resize-none rounded-xl border border-[#d4d0c5] bg-white p-3 text-sm outline-none focus:border-[#1d5143]" />
+                        </label>
+                        <label className="flex min-h-28 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#bcb6a9] bg-white p-4 text-center">
+                          {reportedProofPreview ? (
+                            <span className="flex items-center gap-3 text-left">
+                              <img src={reportedProofPreview} alt="Prévia do comprovante" className="h-20 w-20 rounded-xl object-cover" />
+                              <span>
+                                <strong className="block text-sm text-[#263a32]">{reportedProof?.name}</strong>
+                                <small className="mt-1 block text-[#748079]">Toque para trocar a imagem</small>
+                              </span>
+                            </span>
+                          ) : (
+                            <span>
+                              <ImageIcon size={24} className="mx-auto text-[#1d5143]" />
+                              <strong className="mt-2 block text-sm text-[#263a32]">Anexar comprovante</strong>
+                              <small className="mt-1 block text-[#748079]">Opcional · imagem de até 5 MB</small>
+                            </span>
+                          )}
+                          <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" className="hidden" onChange={event => handleReportedProof(event.target.files?.[0])} />
+                        </label>
+                      </div>
+
+                      <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                        <button type="button" onClick={() => { resetReportedPayment(); setIsReportPaymentOpen(false) }} className="rounded-full border border-[#d4d0c5] bg-white px-5 py-3 text-sm font-bold text-[#53635c]">Cancelar</button>
+                        <button type="submit" disabled={isSubmitting} className="flex items-center justify-center gap-2 rounded-full bg-[#1d5143] px-6 py-3 text-sm font-bold text-white disabled:opacity-60">
+                          {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                          {isSubmitting ? 'Enviando...' : 'Enviar para análise'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </motion.section>
+              )}
+            </AnimatePresence>
+
+            {pagamentosInformados.length > 0 && (
+              <section className="overflow-hidden rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6]">
+                <div className="border-b border-[#e4e0d7] px-5 py-5 md:px-6">
+                  <h2 className="font-bold">Pagamentos informados</h2>
+                  <p className="mt-1 text-sm text-[#748079]">Acompanhe a conferência feita pela escola.</p>
+                </div>
+                <div className="divide-y divide-[#e8e4dc]">
+                  {pagamentosInformados.slice(0, 6).map(pagamento => (
+                    <div key={pagamento.id} className="grid gap-3 px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center md:px-6">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-bold text-[#263a32]">{formatCurrencyBR(pagamento.valor)}</p>
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${pagamento.status === 'APROVADO' ? 'bg-[#e5f2e9] text-[#1d684f]' : pagamento.status === 'RECUSADO' ? 'bg-[#fde9e7] text-[#a8493c]' : 'bg-[#fff1ce] text-[#86601f]'}`}>
+                            {pagamento.status === 'APROVADO' ? 'Aprovado' : pagamento.status === 'RECUSADO' ? 'Precisa corrigir' : 'Em análise'}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-[#748079]">{new Date(`${pagamento.data_pagamento}T12:00:00`).toLocaleDateString('pt-BR')} · {pagamento.metodo_pagamento}{pagamento.comprovante_path ? ' · Imagem anexada' : ''}</p>
+                        {pagamento.motivo_analise && <p className="mt-2 text-sm font-medium text-[#9b493e]">Motivo: {pagamento.motivo_analise}</p>}
+                      </div>
+                      <span className="text-xs font-bold text-[#748079]">{pagamento.status === 'APROVADO' ? 'Recibo liberado' : pagamento.status === 'RECUSADO' ? 'Envie novamente' : 'Aguardando escola'}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <AnimatePresence initial={false}>
               {isPayHistoryModalOpen && (
