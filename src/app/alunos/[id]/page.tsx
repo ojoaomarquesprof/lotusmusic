@@ -891,26 +891,64 @@ export default function PerfilAluno() {
             </div>
             <div className="grid grid-cols-1 border-b border-[#dfded7] bg-[#faf9f6] sm:grid-cols-3">
               <div className="px-5 py-3.5 sm:border-r sm:border-[#e5e3dd]">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Aulas sem fatura</p>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                  {modeloFaturamento === 'MENSAL_FECHADO'
+                    ? 'Aulas a faturar'
+                    : modeloFaturamento === 'CREDITOS'
+                      ? 'Créditos disponíveis'
+                      : 'Mensalidade fixa'}
+                </p>
                 <div className="mt-1 flex items-baseline justify-between gap-3">
-                  <p className="text-base font-semibold text-slate-900">{aulasPendentesFaturamento.length}</p>
+                  <p className="text-base font-semibold text-slate-900">
+                    {modeloFaturamento === 'MENSAL_FECHADO'
+                      ? aulasPendentesFaturamento.length
+                      : modeloFaturamento === 'CREDITOS'
+                        ? Number(infoMatricula?.saldo_creditos_faturamento || 0)
+                        : formatCurrencyBR(infoMatricula?.valor_mensalidade)}
+                  </p>
                   {modeloFaturamento === 'MENSAL_FECHADO' && <p className="text-xs font-semibold text-[#1f4a3a]">{formatCurrencyBR(valorPendenteAulas)}</p>}
                 </div>
               </div>
               <div className="px-5 py-3.5 sm:border-r sm:border-[#e5e3dd]">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Reposições disponíveis</p>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                  {modeloFaturamento === 'MENSAL_FECHADO'
+                    ? 'Valor em apuração'
+                    : modeloFaturamento === 'CREDITOS'
+                      ? 'Aulas realizadas'
+                      : 'Reposições disponíveis'}
+                </p>
                 <div className="mt-1 flex items-center justify-between gap-3">
-                  <p className="text-base font-semibold text-slate-900">{saldoCreditos}</p>
+                  <p className="text-base font-semibold text-slate-900">
+                    {modeloFaturamento === 'MENSAL_FECHADO'
+                      ? formatCurrencyBR(valorPendenteAulas)
+                      : modeloFaturamento === 'CREDITOS'
+                        ? aulasRealizadasTotal
+                        : saldoCreditos}
+                  </p>
                   {modeloFaturamento === 'VENCIMENTO_FIXO' && (
                     <button onClick={handleConcederCredito} className="text-[10px] font-semibold text-[#1f4a3a] hover:underline">Conceder crédito</button>
                   )}
                 </div>
               </div>
               <div className="px-5 py-3.5">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Protegidas por fatura</p>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                  {modeloFaturamento === 'MENSAL_FECHADO'
+                    ? 'Protegidas por fatura'
+                    : modeloFaturamento === 'CREDITOS'
+                      ? 'Renovação'
+                      : 'Vencimento mensal'}
+                </p>
                 <div className="mt-1 flex items-center justify-between gap-3">
-                  <p className="text-base font-semibold text-slate-900">{historicoAulas.filter(aula => aula.fatura_id).length}</p>
-                  <ShieldCheck size={15} className="text-[#1f4a3a]" />
+                  <p className="text-base font-semibold text-slate-900">
+                    {modeloFaturamento === 'MENSAL_FECHADO'
+                      ? historicoAulas.filter(aula => aula.fatura_id).length
+                      : modeloFaturamento === 'CREDITOS'
+                        ? 'Ao zerar'
+                        : `Dia ${infoMatricula?.data_vencimento || '—'}`}
+                  </p>
+                  {modeloFaturamento === 'MENSAL_FECHADO'
+                    ? <ShieldCheck size={15} className="text-[#1f4a3a]" />
+                    : <CalendarClock size={15} className="text-[#1f4a3a]" />}
                 </div>
               </div>
             </div>
