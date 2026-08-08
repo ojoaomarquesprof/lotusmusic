@@ -437,7 +437,7 @@ export default function Dashboard() {
     setSelectedAula(null); carregarDados(); setIsSubmitting(false);
   }
 
-  const handleRemoverDaGrade = async (id: string) => { if (!confirm("CUIDADO: Remover da grade APAGA O HORÁRIO FIXO do aluno permanentemente. Deseja continuar?")) return; await supabase.from('agenda').delete().eq('id', id); setSelectedAula(null); carregarDados() }
+  const handleRemoverDaGrade = async (id: string) => { if (!confirm("Encerrar este horário recorrente? As próximas aulas deixarão de aparecer na agenda, mas todo o histórico já registrado será preservado.")) return; await supabase.from('agenda').delete().eq('id', id); setSelectedAula(null); carregarDados() }
 
   const checkIfClassPast = (dateStr: string, endTimeStr: string) => {
     try {
@@ -454,6 +454,22 @@ export default function Dashboard() {
       
       return currentTime > classEndDateTime;
     } catch (e) { return false; }
+  }
+
+  const checkIfClassStarted = (dateStr: string, startTimeStr: string) => {
+    try {
+      if (!dateStr || !startTimeStr) return false
+      const classDateObj = new Date(`${dateStr}T00:00:00`)
+      const todayObj = new Date(`${hojeDataStr}T00:00:00`)
+
+      if (classDateObj < todayObj) return true
+      if (classDateObj > todayObj) return false
+
+      const [hours, minutes] = startTimeStr.split(':').map(Number)
+      const classStartDateTime = new Date()
+      classStartDateTime.setHours(hours, minutes, 0, 0)
+      return currentTime >= classStartDateTime
+    } catch (e) { return false }
   }
 
   const getAulaStatus = (aula: any, dateStr: string) => {
@@ -528,6 +544,13 @@ export default function Dashboard() {
   const primeiraHoraAgenda = iniciosDaSemana.length > 0 ? Math.max(6, Math.min(8, Math.min(...iniciosDaSemana))) : 8
   const ultimaHoraAgenda = iniciosDaSemana.length > 0 ? Math.min(23, Math.max(21, Math.max(...iniciosDaSemana))) : 21
   const horasAgendaSemana = Array.from({ length: ultimaHoraAgenda - primeiraHoraAgenda + 1 }, (_, index) => primeiraHoraAgenda + index)
+  const selectedAulaDate = selectedAula?.data_selecionada || hojeDataStr
+  const selectedAulaStatus = selectedAula ? getAulaStatus(selectedAula, selectedAulaDate) : null
+  const selectedAulaCanRegister = Boolean(
+    selectedAula
+    && !selectedAulaStatus
+    && checkIfClassStarted(selectedAulaDate, selectedAula.horario_inicio),
+  )
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="w-full max-w-[1500px] mx-auto pb-6">
@@ -614,7 +637,9 @@ export default function Dashboard() {
                   {aulasDeHoje.map((aula, index) => {
                     const statusHistorico = getAulaStatus(aula, hojeDataStr)
                     const isPast = checkIfClassPast(hojeDataStr, aula.horario_fim)
+                    const hasStarted = checkIfClassStarted(hojeDataStr, aula.horario_inicio)
                     const isPendenteDeBaixa = isPast && !statusHistorico
+                    const canRegister = hasStarted && !statusHistorico
                     const isCurrent = !isPast && (() => {
                       const [h, m] = (aula.horario_inicio || '00:00').split(':').map(Number)
                       const [endH, endM] = (aula.horario_fim || '23:59').split(':').map(Number)
@@ -667,9 +692,9 @@ export default function Dashboard() {
                             </div>
                           </div>
                           <div className="sm:hidden mt-3 flex items-center gap-2">
-                            {isPendenteDeBaixa ? (
+                            {canRegister ? (
                               <button onClick={() => { setAulaParaDarBaixa({ ...aula, data_selecionada: hojeDataStr }); setPainelLateral('diario') }} className="px-3 py-2 rounded-lg bg-[#b98b4f] text-white text-[10px] font-semibold">
-                                Registrar aula
+                                {isCurrent ? 'Registrar presença' : 'Registrar aula'}
                               </button>
                             ) : (
                               <button onClick={() => abrirDetalhesAula(aula, hojeDataStr)} className="px-3 py-2 rounded-lg border border-[#dfded7] text-slate-600 text-[10px] font-semibold">
@@ -684,12 +709,10 @@ export default function Dashboard() {
                             <span className={`px-2.5 py-1.5 rounded-lg border text-[9px] font-semibold uppercase tracking-wide ${getStatusColor(statusHistorico)}`}>
                               {statusHistorico}
                             </span>
-                          ) : isPendenteDeBaixa ? (
+                          ) : canRegister ? (
                             <button onClick={() => { setAulaParaDarBaixa({ ...aula, data_selecionada: hojeDataStr }); setPainelLateral('diario') }} className="px-3.5 py-2 rounded-lg bg-[#b98b4f] text-white text-[10px] font-semibold hover:bg-[#9f743e] transition-colors">
-                              Registrar aula
+                              {isCurrent ? 'Registrar presença' : 'Registrar aula'}
                             </button>
-                          ) : isCurrent ? (
-                            <span className="px-2.5 py-1.5 rounded-lg bg-[#dfe9e2] text-[#1f4a3a] text-[9px] font-semibold uppercase tracking-wide">Em andamento</span>
                           ) : (
                             <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-[9px] font-semibold uppercase tracking-wide">Agendada</span>
                           )}
@@ -733,15 +756,20 @@ export default function Dashboard() {
                   />
                   <div className="space-y-2 mt-4">
                     <button onClick={() => handleDarBaixa('Realizada')} disabled={isSubmitting} className="w-full py-3 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2 hover:bg-[#17382c] disabled:opacity-50">
-                      <Check size={16} /> Aula realizada
+                      <Check size={16} /> Presente · aula realizada
                     </button>
                     <button onClick={() => handleDarBaixa('Falta Justificada')} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-[#dfc394] bg-[#fbf5e9] text-[#76562e] text-xs font-semibold flex items-center justify-center gap-2 hover:bg-[#f4eadc] disabled:opacity-50">
-                      <RotateCcw size={15} /> Falta com reposição
+                      <RotateCcw size={15} /> Faltou com justificativa
                     </button>
                     <button onClick={() => handleDarBaixa('Falta Injustificada')} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold flex items-center justify-center gap-2 hover:bg-rose-100 disabled:opacity-50">
-                      <XCircle size={15} /> Falta sem reposição
+                      <XCircle size={15} /> Faltou sem justificativa
                     </button>
                   </div>
+                  {!aulaParaDarBaixa?.is_turma && (
+                    <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+                      No vencimento fixo, a falta justificada gera reposição; a falta sem justificativa apenas registra a ausência.
+                    </p>
+                  )}
                 </div>
               </>
             ) : selectedAula ? (
@@ -769,18 +797,41 @@ export default function Dashboard() {
                     <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Modalidade</dt><dd className="font-medium text-slate-800">{selectedAula.instrumento_aula}</dd></div>
                     <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Sala</dt><dd className="font-medium text-slate-800">{selectedAula.sala?.nome}</dd></div>
                     <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Tipo</dt><dd className="font-medium text-slate-800">{selectedAula.is_reposicao ? 'Reposição' : selectedAula.is_remarcacao ? 'Mudança aprovada' : 'Horário fixo'}</dd></div>
+                    {selectedAulaStatus && <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Resultado</dt><dd className={`rounded-lg border px-2.5 py-1 text-[10px] font-semibold uppercase ${getStatusColor(selectedAulaStatus)}`}>{selectedAulaStatus}</dd></div>}
                   </dl>
-                  <div className="space-y-2 pt-2">
-                    <button onClick={() => router.push(`/alunos/${selectedAula.aluno.id}`)} className="w-full py-3 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2">
+                  <div className="space-y-4 pt-2">
+                    {selectedAulaCanRegister && (
+                      <section className="rounded-xl border border-[#d8e3db] bg-[#f1f6f2] p-3.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#527064]">Resultado desta aula</p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">A aula já começou. Registre agora a presença ou a falta do aluno.</p>
+                        <button onClick={() => { setAulaParaDarBaixa(selectedAula); setSelectedAula(null); setPainelLateral('diario') }} className="mt-3 w-full py-3 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2">
+                          <CheckCircle2 size={15} /> Registrar presença ou falta
+                        </button>
+                      </section>
+                    )}
+
+                    <button onClick={() => router.push(`/alunos/${selectedAula.aluno.id}`)} className="w-full py-3 rounded-xl border border-[#d8ddd8] bg-white text-[#1f4a3a] text-xs font-semibold flex items-center justify-center gap-2">
                       <UserRound size={15} /> Abrir perfil do aluno
                     </button>
-                    <button onClick={handleDesmarcarAula} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-[#dfc394] bg-[#fbf5e9] text-[#76562e] text-xs font-semibold disabled:opacity-50">
-                      Desmarcar somente hoje
-                    </button>
-                    {!selectedAula.is_reposicao && !selectedAula.is_remarcacao && (
-                      <button onClick={() => handleRemoverDaGrade(selectedAula.id)} className="w-full py-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold">
-                        Remover horário fixo
-                      </button>
+
+                    {!selectedAulaStatus && (
+                      <section className="rounded-xl border border-[#e6e1d7] bg-[#faf8f2] p-3.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#866b43]">Alterações da agenda</p>
+                        <div className="mt-3 space-y-2">
+                          <button onClick={handleDesmarcarAula} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-[#dfc394] bg-white text-[#76562e] text-xs font-semibold disabled:opacity-50">
+                            Cancelar apenas esta aula
+                          </button>
+                          <p className="px-1 text-[10px] leading-relaxed text-slate-500">O horário semanal continua normalmente nas próximas semanas.</p>
+                          {!selectedAula.is_reposicao && !selectedAula.is_remarcacao && (
+                            <>
+                              <button onClick={() => handleRemoverDaGrade(selectedAula.id)} className="w-full py-3 rounded-xl border border-rose-200 bg-white text-rose-700 text-xs font-semibold">
+                                Encerrar este horário recorrente
+                              </button>
+                              <p className="px-1 text-[10px] leading-relaxed text-slate-500">Remove somente as próximas ocorrências. O histórico já registrado será preservado.</p>
+                            </>
+                          )}
+                        </div>
+                      </section>
                     )}
                   </div>
                 </div>
