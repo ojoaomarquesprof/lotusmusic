@@ -426,3 +426,21 @@ export function isOpenCharge(charge: FinancialCharge) {
 export function isOverdueCharge(charge: FinancialCharge) {
   return ['Atrasado', 'Erro na emissão', 'Créditos em débito'].includes(charge.status)
 }
+
+export function summarizeFinancialDossier(charges: FinancialCharge[]) {
+  const considered = charges.filter(charge => charge.status !== 'Desconsiderada')
+  const open = considered.filter(isOpenCharge)
+  const overdue = open.filter(isOverdueCharge)
+  const paid = considered.filter(charge => charge.status === 'Pago')
+
+  return {
+    considered,
+    open,
+    overdue,
+    paid,
+    totalOpen: open.reduce((total, charge) => total + Number(charge.valor || 0), 0),
+    totalOverdue: overdue.reduce((total, charge) => total + Number(charge.valor || 0), 0),
+    totalPaid: paid.reduce((total, charge) => total + Number(charge.valor || 0), 0),
+    priorityCharge: open[0] || null,
+  }
+}

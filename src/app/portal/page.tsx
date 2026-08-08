@@ -7,6 +7,7 @@ import { useStyles } from '../../lib/useStyles'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrencyBR, getBillingModel, getBillingModelLabel, isBillableClass, isConfirmedPayment } from '../../lib/billing'
 import { downloadReceiptHistoryPdf, downloadReceiptPdf, type ReceiptPdfData } from '../../lib/receiptPdf'
+import { buildFinancialDossier, FinancialCharge, summarizeFinancialDossier } from '../../lib/financialDossier'
 import {
   AlertCircle,
   ArrowLeft,
@@ -62,10 +63,10 @@ export default function PortalAluno() {
   const [materiais, setMateriais] = useState<any[]>([])
   const [historico, setHistorico] = useState<any[]>([])
   const [todasReposicoes, setTodasReposicoes] = useState<any[]>([]) 
-  const [statusMensalidade, setStatusMensalidade] = useState({ pago: false, diasRestantes: 0, dataVencimentoStr: '' })
   const [historicoPagamentos, setHistoricoPagamentos] = useState<any[]>([])
   const [pagamentosInformados, setPagamentosInformados] = useState<any[]>([])
   const [faturaAtual, setFaturaAtual] = useState<any>(null)
+  const [cobrancasFinanceiras, setCobrancasFinanceiras] = useState<FinancialCharge[]>([])
   const [apuracaoMes, setApuracaoMes] = useState({ aulas: 0, valor: 0 })
   
   const [isPayHistoryModalOpen, setIsPayHistoryModalOpen] = useState(false)
@@ -88,6 +89,7 @@ export default function PortalAluno() {
   const [reportedValue, setReportedValue] = useState('')
   const [reportedDate, setReportedDate] = useState(new Date().toISOString().slice(0, 10))
   const [reportedMethod, setReportedMethod] = useState('PIX')
+  const [reportedChargeId, setReportedChargeId] = useState('')
   const [reportedInvoiceId, setReportedInvoiceId] = useState('')
   const [reportedCompetence, setReportedCompetence] = useState(new Date().toISOString().slice(0, 7))
   const [reportedNotes, setReportedNotes] = useState('')
@@ -335,7 +337,6 @@ export default function PortalAluno() {
       .eq('aluno_id', session.user.id)
       .neq('status', 'CANCELADO')
       .order('data_emissao', { ascending: false })
-      .limit(1)
     setFaturaAtual(invoices?.[0] || null)
 
     const { data: allPgs } = await supabase
@@ -346,6 +347,18 @@ export default function PortalAluno() {
     const pagamentosConfirmados = (allPgs || []).filter(isConfirmedPayment)
     setHistoricoPagamentos(pagamentosConfirmados)
 
+    const { data: ajustes } = await supabase
+      .from('ajustes_cobranca')
+      .select('*')
+      .eq('aluno_id', session.user.id)
+    setCobrancasFinanceiras(buildFinancialDossier({
+      alunos: perfil ? [perfil] : [],
+      pagamentos: allPgs || [],
+      faturas: invoices || [],
+      ajustes: ajustes || [],
+      historicoMes: (histAll || []).filter(aula => String(aula.data_aula).startsWith(prefixoMes)),
+    }))
+
     const { data: reportedPayments } = await supabase
       .from('pagamentos_informados')
       .select('*, fatura:faturas(numero, valor_total, status)')
@@ -353,15 +366,6 @@ export default function PortalAluno() {
       .order('criado_em', { ascending: false })
     setPagamentosInformados(reportedPayments || [])
 
-    const diaVenc = info?.data_vencimento || 10
-    const hoje = new Date(); const ano = hoje.getFullYear(); const mes = hoje.getMonth()
-    const getDataVenc = (a: number, m: number, d: number) => { const ultimo = new Date(a, m + 1, 0).getDate(); return new Date(a, m, Math.min(d, ultimo)) }
-    const prefixoPagamentoMes = `${ano}-${String(mes + 1).padStart(2, '0')}`
-    const pago = pagamentosConfirmados.some(pagamento => String(pagamento.data_pagamento).startsWith(prefixoPagamentoMes))
-    const hojeSoDia = new Date(ano, mes, hoje.getDate())
-    const vencAlvo = pago ? getDataVenc(ano, mes + 1, diaVenc) : getDataVenc(ano, mes, diaVenc)
-    const diff = Math.ceil((vencAlvo.getTime() - hojeSoDia.getTime()) / (1000 * 60 * 60 * 24))
-    setStatusMensalidade({ pago, diasRestantes: diff, dataVencimentoStr: vencAlvo.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) })
     setLoading(false)
   }
 
@@ -380,6 +384,7 @@ export default function PortalAluno() {
     setReportedValue('')
     setReportedDate(new Date().toISOString().slice(0, 10))
     setReportedMethod('PIX')
+    setReportedChargeId('')
     setReportedInvoiceId('')
     setReportedCompetence(new Date().toISOString().slice(0, 7))
     setReportedNotes('')
@@ -594,8 +599,9 @@ export default function PortalAluno() {
   const notificacoesExibidas = notificacaoTab === 'NaoLidas' ? notificacoesNaoLidas : notificacoesLidas
   const saldoCreditosFaturamento = Number(infoFinanceira?.saldo_creditos_faturamento || 0)
   const faturaEmAberto = faturaAtual && ['PENDENTE', 'VENCIDO', 'ERRO'].includes(faturaAtual.status)
+  const resumoFinanceiroPortal = summarizeFinancialDossier(cobrancasFinanceiras)
   const podeCopiarPix =
-    (modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && !statusMensalidade.pago) ||
+    (modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && resumoFinanceiroPortal.open.length > 0) ||
     (modeloFaturamentoPortal === 'CREDITOS' && saldoCreditosFaturamento <= 0) ||
     (modeloFaturamentoPortal === 'MENSAL_FECHADO' && faturaEmAberto && !faturaAtual?.invoice_url)
 
@@ -645,19 +651,20 @@ export default function PortalAluno() {
   const valorResumoFinanceiro =
     modeloFaturamentoPortal === 'MENSAL_FECHADO'
       ? (faturaEmAberto ? Number(faturaAtual?.valor_total || 0) : apuracaoMes.valor)
-      : Number(infoFinanceira?.valor_mensalidade || 0)
+      : modeloFaturamentoPortal === 'VENCIMENTO_FIXO'
+        ? resumoFinanceiroPortal.totalOpen
+        : Number(infoFinanceira?.valor_mensalidade || 0)
   const pagamentoInformadoPendente = pagamentosInformados.find(pagamento => pagamento.status === 'PENDENTE')
 
   const abrirPrestacaoDeContas = () => {
-    const faturaPendente = faturaAtual && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status)
-      ? faturaAtual
-      : null
-    setReportedInvoiceId(faturaPendente?.id || '')
-    setReportedValue(String(faturaPendente?.valor_total || valorResumoFinanceiro || ''))
+    const cobrancaPendente = resumoFinanceiroPortal.priorityCharge
+    setReportedChargeId(cobrancaPendente?.id || '')
+    setReportedInvoiceId(cobrancaPendente?.invoiceId || '')
+    setReportedValue(String(cobrancaPendente?.valor || valorResumoFinanceiro || ''))
     setReportedDate(new Date().toISOString().slice(0, 10))
     setReportedCompetence(
-      faturaPendente?.competencia
-        ? String(faturaPendente.competencia).slice(0, 7)
+      cobrancaPendente?.competencia
+        ? String(cobrancaPendente.competencia).slice(0, 7)
         : new Date().toISOString().slice(0, 7),
     )
     setReportedMethod('PIX')
@@ -1021,7 +1028,7 @@ export default function PortalAluno() {
                       ? 'Saldo disponível'
                       : modeloFaturamentoPortal === 'MENSAL_FECHADO'
                         ? (faturaEmAberto ? 'Fatura atual' : 'Parcial do mês')
-                        : (statusMensalidade.pago ? 'Mensalidade em dia' : 'Mensalidade')}
+                        : (resumoFinanceiroPortal.open.length === 0 ? 'Financeiro em dia' : 'Total em aberto')}
                   </p>
                   <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[#17241f]">
                     {modeloFaturamentoPortal === 'CREDITOS' ? `${saldoCreditosFaturamento} crédito${saldoCreditosFaturamento === 1 ? '' : 's'}` : formatCurrencyBR(valorResumoFinanceiro)}
@@ -1031,7 +1038,7 @@ export default function PortalAluno() {
                       ? (saldoCreditosFaturamento > 0 ? 'Você paga novamente quando os créditos acabarem.' : 'Seu pacote precisa ser renovado.')
                       : modeloFaturamentoPortal === 'MENSAL_FECHADO'
                         ? (faturaEmAberto ? `${faturaAtual.quantidade_aulas || 0} aula(s) incluída(s) nesta fatura.` : `${apuracaoMes.aulas} aula(s) realizada(s) neste mês.`)
-                        : (statusMensalidade.pago ? `Próximo vencimento em ${statusMensalidade.dataVencimentoStr}.` : `Vencimento em ${statusMensalidade.dataVencimentoStr}.`)}
+                        : (resumoFinanceiroPortal.open.length === 0 ? 'Nenhuma mensalidade pendente.' : `${resumoFinanceiroPortal.open.length} mensalidade(s) aguardando pagamento.`)}
                   </p>
                 </div>
                 <span className="mt-6 flex items-center gap-1 text-sm font-bold text-[#1d5143]">
@@ -1224,7 +1231,7 @@ export default function PortalAluno() {
                       ? 'Créditos disponíveis'
                       : modeloFaturamentoPortal === 'MENSAL_FECHADO'
                         ? (faturaEmAberto ? 'Valor da fatura' : 'Parcial do mês')
-                        : 'Valor da mensalidade'}
+                        : 'Total em aberto'}
                   </p>
                   <p className="mt-1 text-4xl font-semibold tracking-[-0.05em] md:text-5xl">
                     {modeloFaturamentoPortal === 'CREDITOS' ? saldoCreditosFaturamento : formatCurrencyBR(valorResumoFinanceiro)}
@@ -1239,7 +1246,11 @@ export default function PortalAluno() {
                     <p>{faturaEmAberto ? `Esta fatura reúne ${faturaAtual.quantidade_aulas || 0} aula(s) realizadas. Confira o detalhamento antes de pagar.` : `Você realizou ${apuracaoMes.aulas} aula(s) neste mês. A fatura é fechada no último dia e vence 7 dias depois.`}</p>
                   )}
                   {modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && (
-                    <p>{statusMensalidade.pago ? `Mensalidade em dia. O próximo vencimento será em ${statusMensalidade.dataVencimentoStr}.` : statusMensalidade.diasRestantes < 0 ? `Mensalidade vencida em ${statusMensalidade.dataVencimentoStr}.` : `Vencimento em ${statusMensalidade.dataVencimentoStr}, daqui a ${statusMensalidade.diasRestantes} dia(s).`}</p>
+                    <p>{resumoFinanceiroPortal.open.length === 0
+                      ? 'Todas as mensalidades estão em dia.'
+                      : resumoFinanceiroPortal.overdue.length > 0
+                        ? `${resumoFinanceiroPortal.open.length} mensalidade(s) em aberto, sendo ${resumoFinanceiroPortal.overdue.length} vencida(s).`
+                        : `${resumoFinanceiroPortal.open.length} mensalidade(s) aguardando pagamento.`}</p>
                   )}
                 </div>
               </div>
@@ -1267,7 +1278,7 @@ export default function PortalAluno() {
                 <div className="grid grid-cols-2 divide-x divide-white/10 border-t border-white/10">
                   <div className="px-5 py-4 md:px-8">
                     <p className="text-xs text-white/55">Situação</p>
-                    <p className="mt-1 text-lg font-bold">{statusMensalidade.pago ? 'Em dia' : statusMensalidade.diasRestantes < 0 ? 'Em atraso' : 'A vencer'}</p>
+                    <p className="mt-1 text-lg font-bold">{resumoFinanceiroPortal.open.length === 0 ? 'Em dia' : resumoFinanceiroPortal.overdue.length > 0 ? 'Em atraso' : 'A vencer'}</p>
                   </div>
                   <div className="px-5 py-4 md:px-8">
                     <p className="text-xs text-white/55">Reposições válidas</p>
@@ -1276,6 +1287,34 @@ export default function PortalAluno() {
                 </div>
               )}
             </section>
+
+            {modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && resumoFinanceiroPortal.open.length > 0 && (
+              <section className="overflow-hidden rounded-[24px] border border-[#d9d5ca] bg-[#fbfaf6]">
+                <div className="border-b border-[#e4e0d7] px-5 py-5 md:px-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="font-bold">Mensalidades em aberto</h2>
+                      <p className="mt-1 text-sm text-[#748079]">Histórico unificado com a secretaria da escola.</p>
+                    </div>
+                    <span className="rounded-full bg-[#fff1ce] px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#86601f]">{resumoFinanceiroPortal.open.length}</span>
+                  </div>
+                </div>
+                <div className="divide-y divide-[#e8e4dc]">
+                  {resumoFinanceiroPortal.open.map(cobranca => (
+                    <div key={cobranca.id} className="grid gap-3 px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center md:px-6">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-bold text-[#263a32]">{cobranca.competenciaLabel}</p>
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${cobranca.status === 'Atrasado' ? 'bg-[#fde9e7] text-[#a8493c]' : 'bg-[#fff1ce] text-[#86601f]'}`}>{cobranca.status}</span>
+                        </div>
+                        <p className="mt-1 text-sm text-[#748079]">Vencimento: {cobranca.vencimento}{cobranca.diasAtraso > 0 ? ` · ${cobranca.diasAtraso} dia(s) em atraso` : ''}</p>
+                      </div>
+                      <p className="text-lg font-bold text-[#1d5143]">{formatCurrencyBR(cobranca.valor)}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {modeloFaturamentoPortal === 'VENCIMENTO_FIXO' && creditos > 0 && (
               <section className="flex flex-col justify-between gap-4 rounded-[24px] border border-[#dfc896] bg-[#fff8e7] p-5 sm:flex-row sm:items-center">
@@ -1392,23 +1431,31 @@ export default function PortalAluno() {
                         </label>
                         <label className="text-xs font-bold text-[#53635c]">
                           Competência
-                          <input required type="month" value={reportedCompetence} onChange={event => setReportedCompetence(event.target.value)} className="mt-2 h-12 w-full rounded-xl border border-[#d4d0c5] bg-white px-3 text-sm outline-none focus:border-[#1d5143]" />
+                          <input required type="month" value={reportedCompetence} onChange={event => {
+                            setReportedCompetence(event.target.value)
+                            setReportedChargeId('')
+                            setReportedInvoiceId('')
+                          }} className="mt-2 h-12 w-full rounded-xl border border-[#d4d0c5] bg-white px-3 text-sm outline-none focus:border-[#1d5143]" />
                         </label>
                       </div>
 
-                      {faturaAtual && ['PENDENTE', 'VENCIDO'].includes(faturaAtual.status) && (
+                      {resumoFinanceiroPortal.open.length > 0 && (
                         <label className="mt-4 block text-xs font-bold text-[#53635c]">
-                          Referência
-                          <select value={reportedInvoiceId} onChange={event => {
-                            const invoiceId = event.target.value
-                            setReportedInvoiceId(invoiceId)
-                            if (invoiceId) {
-                              setReportedValue(String(faturaAtual.valor_total || ''))
-                              setReportedCompetence(String(faturaAtual.competencia).slice(0, 7))
+                          Mensalidade paga
+                          <select value={reportedChargeId} onChange={event => {
+                            const chargeId = event.target.value
+                            const charge = resumoFinanceiroPortal.open.find(item => item.id === chargeId)
+                            setReportedChargeId(chargeId)
+                            setReportedInvoiceId(charge?.invoiceId || '')
+                            if (charge) {
+                              setReportedValue(String(charge.valor || ''))
+                              setReportedCompetence(String(charge.competencia).slice(0, 7))
                             }
                           }} className="mt-2 h-12 w-full rounded-xl border border-[#d4d0c5] bg-white px-3 text-sm outline-none focus:border-[#1d5143]">
-                            <option value="">Pagamento sem fatura vinculada</option>
-                            <option value={faturaAtual.id}>FAT-{String(faturaAtual.numero || '').padStart(6, '0')} · {formatCurrencyBR(faturaAtual.valor_total)}</option>
+                            <option value="">Pagamento sem competência vinculada</option>
+                            {resumoFinanceiroPortal.open.map(cobranca => (
+                              <option key={cobranca.id} value={cobranca.id}>{cobranca.competenciaLabel} · {formatCurrencyBR(cobranca.valor)}</option>
+                            ))}
                           </select>
                         </label>
                       )}
