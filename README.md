@@ -143,6 +143,7 @@ Para habilitar o cadastro rápido, a presença e a conversão de aulas experimen
 
 ```text
 supabase/migrations/202608100001_aulas_experimentais.sql
+supabase/migrations/202608100002_matricula_antecipada_experimental.sql
 ```
 
 A rotina de fechamento roda diariamente pela Vercel e processa o mês anterior logo após a virada para o primeiro dia. Assim, inclui todas as aulas do último dia; a fatura mantém a data de emissão do mês encerrado e vence 7 dias depois. A rotina é protegida por `CRON_SECRET` e não duplica faturas em reexecuções.

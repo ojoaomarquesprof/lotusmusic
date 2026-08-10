@@ -329,11 +329,82 @@ export default function Dashboard() {
     setIsSubmitting(true);
 
     if (aulaParaDarBaixa?.is_experimental) {
+      const experimental = aulaParaDarBaixa.experimental_record || {}
+      const alunoId = aulaParaDarBaixa.aluno_id || experimental.aluno_id || null
+      const compareceu = status === 'Realizada'
+      const observacoes = obsBaixa.trim() || (compareceu
+        ? 'Interessado compareceu à aula experimental.'
+        : 'Interessado não compareceu à aula experimental.')
+      let historicoAulaId = experimental.historico_aula_id || null
+      let avisoFaturamento = ''
+
+      if (
+        compareceu
+        && alunoId
+        && experimental.cobrar_na_matricula
+        && !historicoAulaId
+        && Number(experimental.valor_cobranca) > 0
+      ) {
+        const { data: historicoExperimental, error: historicoError } = await supabase
+          .from('historico_aulas')
+          .insert({
+            aluno_id: alunoId,
+            data_aula: aulaParaDarBaixa.data_selecionada,
+            horario_inicio: aulaParaDarBaixa.horario_inicio || null,
+            horario_fim: aulaParaDarBaixa.horario_fim || null,
+            status: 'Realizada',
+            observacoes,
+            professor_id: aulaParaDarBaixa.professor_id || null,
+            modalidade: aulaParaDarBaixa.instrumento_aula || 'Aula experimental',
+            valor_aula_faturado: Number(experimental.valor_cobranca),
+          })
+          .select('id')
+          .single()
+
+        if (historicoError || !historicoExperimental) {
+          setIsSubmitting(false)
+          return alert(`Não foi possível registrar a aula experimental no histórico: ${historicoError?.message || 'registro não retornado'}`)
+        }
+
+        historicoAulaId = String(historicoExperimental.id)
+        const { data: { session } } = await supabase.auth.getSession()
+        const vencimentoPadrao = new Date()
+        vencimentoPadrao.setDate(vencimentoPadrao.getDate() + 7)
+
+        if (!session) {
+          avisoFaturamento = 'A presença foi registrada, mas a fatura ficou pendente para emissão manual.'
+        } else {
+          try {
+            const invoiceResponse = await fetch('/api/faturamento/faturas', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                alunoId,
+                historicoAulaIds: [historicoAulaId],
+                dataVencimento: experimental.vencimento_cobranca || localISODate(vencimentoPadrao),
+                valorUnitario: Number(experimental.valor_cobranca),
+                observacoes: 'Fatura da aula experimental confirmada após a matrícula.',
+              }),
+            })
+
+            if (!invoiceResponse.ok) {
+              avisoFaturamento = 'A presença foi registrada, mas a fatura ficou pendente para emissão manual.'
+            }
+          } catch {
+            avisoFaturamento = 'A presença foi registrada, mas a fatura ficou pendente para emissão manual.'
+          }
+        }
+      }
+
       const { error } = await supabase
         .from('aulas_experimentais')
         .update({
-          status: status === 'Realizada' ? 'REALIZADA' : 'FALTOU',
-          observacoes: obsBaixa.trim() || (status === 'Realizada' ? 'Interessado compareceu à aula experimental.' : 'Interessado não compareceu à aula experimental.'),
+          status: compareceu ? (alunoId ? 'MATRICULADA' : 'REALIZADA') : 'FALTOU',
+          observacoes,
+          historico_aula_id: historicoAulaId,
           atualizado_em: new Date().toISOString(),
         })
         .eq('id', aulaParaDarBaixa.experimental_id)
@@ -342,6 +413,7 @@ export default function Dashboard() {
       setAulaParaDarBaixa(null)
       setObsBaixa('')
       await carregarDados()
+      if (avisoFaturamento) alert(avisoFaturamento)
       return
     }
 
@@ -929,10 +1001,17 @@ export default function Dashboard() {
                       </section>
                     )}
 
-                    {selectedAula.is_experimental && selectedAula.experimental_status === 'REALIZADA' && !selectedAula.aluno_id && (
+                    {selectedAula.is_experimental
+                      && !selectedAula.aluno_id
+                      && !['CANCELADA', 'MATRICULADA'].includes(selectedAula.experimental_status)
+                      && (
                       <section className="rounded-xl border border-[#d7c39d] bg-[#fbf5e9] p-3.5">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#866b43]">Próximo passo</p>
-                        <p className="mt-1 text-xs leading-relaxed text-slate-600">O interessado compareceu. Complete a ficha para transformá-lo em aluno efetivo.</p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                          {selectedAula.experimental_status === 'REALIZADA'
+                            ? 'O interessado compareceu. Complete a ficha para transformá-lo em aluno efetivo.'
+                            : 'Você pode completar a matrícula agora, sem esperar o início da aula experimental. A presença continuará pendente.'}
+                        </p>
                         <button
                           onClick={() => {
                             window.dispatchEvent(new CustomEvent('lotus:matricular-experimental', { detail: selectedAula.experimental_record }))

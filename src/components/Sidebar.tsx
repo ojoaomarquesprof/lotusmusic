@@ -220,6 +220,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const handleMatricular = async (e: React.FormEvent) => {
     e.preventDefault(); 
     const experimentalParaConverter = experimentalOrigem
+    const experimentalJaRealizada = experimentalParaConverter?.status === 'REALIZADA'
     const dataNascimentoISO = tipoCadastro === 'PF' ? dateInputToISO(dataNascimento) : null;
     if (tipoCadastro === 'PF' && !dataNascimentoISO) {
       return alert("Informe uma data de nascimento válida no formato DD/MM/AAAA.")
@@ -355,7 +356,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     let avisoConversao = ''
     let historicoExperimentalId: string | null = null
 
-    if (experimentalParaConverter && cobrarExperimental) {
+    if (experimentalParaConverter && cobrarExperimental && experimentalJaRealizada) {
       const { data: historicoExperimental, error: historicoError } = await supabase
         .from('historico_aulas')
         .insert({
@@ -410,9 +411,11 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       const { error: conversionError } = await supabase
         .from('aulas_experimentais')
         .update({
-          status: 'MATRICULADA',
+          status: experimentalJaRealizada ? 'MATRICULADA' : experimentalParaConverter.status,
           aluno_id: alunoId,
           cobrar_na_matricula: cobrarExperimental,
+          valor_cobranca: cobrarExperimental ? Number(valorExperimental) : null,
+          vencimento_cobranca: cobrarExperimental ? vencimentoExperimental : null,
           historico_aula_id: historicoExperimentalId,
           matriculada_em: new Date().toISOString(),
           atualizado_em: new Date().toISOString(),
@@ -801,7 +804,11 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                       <label className="flex cursor-pointer items-start justify-between gap-4">
                         <span>
                           <span className="block text-sm font-semibold text-slate-900">Incluir a aula experimental na fatura?</span>
-                          <span className="mt-1 block text-xs leading-5 text-slate-600">Se ativado, o sistema cria uma fatura avulsa e mantém a aula detalhada no histórico do aluno.</span>
+                          <span className="mt-1 block text-xs leading-5 text-slate-600">
+                            {experimentalOrigem.status === 'REALIZADA'
+                              ? 'Se ativado, o sistema cria uma fatura avulsa e mantém a aula detalhada no histórico do aluno.'
+                              : 'Se ativado, a cobrança ficará preparada e a fatura será emitida quando você confirmar que o aluno compareceu.'}
+                          </span>
                         </span>
                         <input
                           type="checkbox"

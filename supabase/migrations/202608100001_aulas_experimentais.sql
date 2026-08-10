@@ -15,6 +15,8 @@ create table if not exists public.aulas_experimentais (
   status text not null default 'AGENDADA',
   aluno_id uuid references public.profiles(id) on delete set null,
   cobrar_na_matricula boolean,
+  valor_cobranca numeric(12, 2),
+  vencimento_cobranca date,
   historico_aula_id text,
   matriculada_em timestamptz,
   criado_em timestamptz not null default now(),
@@ -22,6 +24,7 @@ create table if not exists public.aulas_experimentais (
   constraint aulas_experimentais_nome_check check (length(trim(nome)) >= 2),
   constraint aulas_experimentais_telefone_check check (length(regexp_replace(telefone, '\D', '', 'g')) >= 10),
   constraint aulas_experimentais_horario_check check (horario_fim > horario_inicio),
+  constraint aulas_experimentais_valor_cobranca_check check (valor_cobranca is null or valor_cobranca > 0),
   constraint aulas_experimentais_status_check check (
     status in ('AGENDADA', 'REALIZADA', 'FALTOU', 'CANCELADA', 'MATRICULADA')
   )
