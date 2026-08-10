@@ -408,16 +408,12 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
             <button aria-label="Fechar menu" className="xl:hidden absolute -right-1 top-0 p-2 text-white/50 hover:text-white transition-colors" onClick={() => setMenuAberto(false)}>
               <X size={20} />
             </button>
-            {configEscola?.logo_url ? (
-              <div className="w-full rounded-2xl bg-white px-4 py-3 border border-white/10">
-                <motion.img whileHover={{ scale: 1.02 }} src={configEscola.logo_url} alt="Logo" className="h-14 w-full max-w-[190px] object-contain cursor-pointer" />
-              </div>
-            ) : (
-              <div className="py-3">
-                <p className="text-[9px] font-bold uppercase tracking-[0.24em] text-[#c7a46d] mb-1">Gestão musical</p>
-                <h1 className="text-2xl font-semibold tracking-[-0.04em] text-white">{configEscola?.nome_escola || 'Lótus Music'}</h1>
-              </div>
-            )}
+            <motion.img
+              whileHover={{ scale: 1.02 }}
+              src="/logo-horizontal-verde.png"
+              alt="Lótus Music — Escola de Música"
+              className="h-[92px] w-full object-contain cursor-pointer drop-shadow-[0_10px_18px_rgba(0,0,0,0.16)]"
+            />
           </div>
           <NavLinks />
         </div>
@@ -444,7 +440,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
             <motion.button aria-label="Abrir menu" whileTap={{ scale: 0.94 }} onClick={() => setMenuAberto(true)} className="p-2 rounded-xl bg-white/[0.07] text-white hover:bg-white/[0.12] transition-colors flex justify-center items-center w-10 h-10">
               <Menu size={20} strokeWidth={1.8} />
             </motion.button>
-            <div className="flex-1 flex justify-center px-4">{configEscola?.logo_url ? (<div className="bg-white rounded-lg px-3 py-1"><img src={configEscola.logo_url} alt="Logo" className="h-7 max-w-[140px] object-contain" /></div>) : (<h1 className="text-base font-semibold text-white truncate max-w-[170px]">{configEscola?.nome_escola || 'Lótus Music'}</h1>)}</div>
+            <div className="flex-1 flex justify-center px-4"><img src="/logo-horizontal-verde.png" alt="Lótus Music — Escola de Música" className="h-11 w-[156px] object-contain" /></div>
             <div className="w-10"></div>
         </header>
         
