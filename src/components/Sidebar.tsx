@@ -7,9 +7,11 @@ import { useStyles } from '../lib/useStyles'
 import { motion, AnimatePresence } from 'framer-motion'
 import Cropper from 'react-easy-crop'
 import { BILLING_MODELS, BillingModel } from '../lib/billing'
+import { ExperimentalClassModal } from './ExperimentalClassModal'
 import {
   CalendarDays,
   Camera,
+  FlaskConical,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -54,6 +56,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   // --- ESTADOS DA MATRÍCULA ---
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isExperimentalModalOpen, setIsExperimentalModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [professoresList, setProfessoresList] = useState<any[]>([])
   const [salasList, setSalasList] = useState<any[]>([])
@@ -77,6 +80,14 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [registrarPagamentoInicial, setRegistrarPagamentoInicial] = useState(false);
   const [dataPrimeiroPagamento, setDataPrimeiroPagamento] = useState(new Date().toISOString().split('T')[0]);
   const [agendamentoCadastro, setAgendamentoCadastro] = useState<'AGORA' | 'DEPOIS'>('AGORA')
+  const [experimentalOrigem, setExperimentalOrigem] = useState<any>(null)
+  const [cobrarExperimental, setCobrarExperimental] = useState(false)
+  const [valorExperimental, setValorExperimental] = useState('')
+  const [vencimentoExperimental, setVencimentoExperimental] = useState(() => {
+    const date = new Date()
+    date.setDate(date.getDate() + 7)
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+  })
   
   const [fotoArquivo, setFotoArquivo] = useState<File | null>(null); const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   
@@ -159,9 +170,31 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     }
   }
 
+  useEffect(() => {
+    const handleExperimentalEnrollment = (event: Event) => {
+      const experimental = (event as CustomEvent).detail
+      if (!experimental) return
+
+      setExperimentalOrigem(experimental)
+      setNomeAluno(experimental.nome || '')
+      setTelAluno(formatBrazilianPhone(experimental.telefone || ''))
+      setAgendamentoCadastro('DEPOIS')
+      setInicioFaturamento(String(experimental.data_aula || new Date().toISOString()).slice(0, 7))
+      setCobrarExperimental(false)
+      setValorExperimental('')
+      const dueDate = new Date()
+      dueDate.setDate(dueDate.getDate() + 7)
+      setVencimentoExperimental(new Date(dueDate.getTime() - dueDate.getTimezoneOffset() * 60000).toISOString().slice(0, 10))
+      abrirModalMatricula()
+    }
+
+    window.addEventListener('lotus:matricular-experimental', handleExperimentalEnrollment)
+    return () => window.removeEventListener('lotus:matricular-experimental', handleExperimentalEnrollment)
+  }, [professoresList.length])
+
   const fecharModalMatricula = () => { 
     setIsModalOpen(false); setTipoCadastro('PF'); setNomeAluno(''); setEmailAluno(''); setSenhaAluno(''); setTelAluno(''); setDocumento(''); setDataNascimento(''); setCep(''); setEndereco(''); setNumero(''); setComplemento(''); setBairro(''); setCidade(''); setEstado(''); 
-    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setModeloFaturamento('VENCIMENTO_FIXO'); setValorPorAula('62.50'); setInicioFaturamento(new Date().toISOString().slice(0, 7)); setRegistrarPagamentoInicial(false); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]); setAgendamentoCadastro('AGORA');
+    setComoConheceu(''); setIndicacaoNome(''); setValorMensalidade('250'); setVencimento('10'); setModeloFaturamento('VENCIMENTO_FIXO'); setValorPorAula('62.50'); setInicioFaturamento(new Date().toISOString().slice(0, 7)); setRegistrarPagamentoInicial(false); setDataPrimeiroPagamento(new Date().toISOString().split('T')[0]); setAgendamentoCadastro('AGORA'); setExperimentalOrigem(null); setCobrarExperimental(false); setValorExperimental('');
     setFotoArquivo(null); setFotoPreview(null); 
     setAgendas([{ id: 'new_1', dia: 'Segunda', horario_inicio: '08:00', horario_fim: '09:00', professor_id: '', sala_id: '', instrumento_aula: '' }])
   }
@@ -186,12 +219,16 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const handleMatricular = async (e: React.FormEvent) => {
     e.preventDefault(); 
+    const experimentalParaConverter = experimentalOrigem
     const dataNascimentoISO = tipoCadastro === 'PF' ? dateInputToISO(dataNascimento) : null;
     if (tipoCadastro === 'PF' && !dataNascimentoISO) {
       return alert("Informe uma data de nascimento válida no formato DD/MM/AAAA.")
     }
     if (modeloFaturamento === 'MENSAL_FECHADO' && Number(valorPorAula) <= 0) {
       return alert("Informe o valor cobrado por aula.")
+    }
+    if (experimentalParaConverter && cobrarExperimental && (Number(valorExperimental) <= 0 || !vencimentoExperimental)) {
+      return alert("Informe o valor e o vencimento da aula experimental.")
     }
     const documentoNumeros = documento.replace(/\D/g, '');
     if (tipoCadastro === 'PF' && documentoNumeros.length !== 11) {
@@ -315,6 +352,79 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       if (errPg) console.error("Erro ao registrar pagamento inicial:", errPg);
     }
 
+    let avisoConversao = ''
+    let historicoExperimentalId: string | null = null
+
+    if (experimentalParaConverter && cobrarExperimental) {
+      const { data: historicoExperimental, error: historicoError } = await supabase
+        .from('historico_aulas')
+        .insert({
+          aluno_id: alunoId,
+          data_aula: experimentalParaConverter.data_aula,
+          horario_inicio: experimentalParaConverter.horario_inicio,
+          horario_fim: experimentalParaConverter.horario_fim,
+          status: 'Realizada',
+          observacoes: 'Aula experimental incluída na matrícula.',
+          professor_id: experimentalParaConverter.professor_id || null,
+          modalidade: experimentalParaConverter.modalidade || 'Aula experimental',
+          valor_aula_faturado: Number(valorExperimental),
+        })
+        .select('id')
+        .single()
+
+      if (historicoError || !historicoExperimental) {
+        avisoConversao = 'A matrícula foi criada, mas a aula experimental não pôde ser preparada para faturamento.'
+      } else {
+        historicoExperimentalId = String(historicoExperimental.id)
+        const { data: { session } } = await supabase.auth.getSession()
+
+        if (!session) {
+          avisoConversao = 'A aula experimental ficou pendente no perfil para emissão manual da fatura.'
+        } else {
+          try {
+            const invoiceResponse = await fetch('/api/faturamento/faturas', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                alunoId,
+                historicoAulaIds: [historicoExperimentalId],
+                dataVencimento: vencimentoExperimental,
+                valorUnitario: Number(valorExperimental),
+                observacoes: 'Fatura da aula experimental confirmada na matrícula.',
+              }),
+            })
+            if (!invoiceResponse.ok) {
+              avisoConversao = 'A aula experimental ficou pendente no perfil para emissão manual da fatura.'
+            }
+          } catch {
+            avisoConversao = 'A aula experimental ficou pendente no perfil para emissão manual da fatura.'
+          }
+        }
+      }
+    }
+
+    if (experimentalParaConverter) {
+      const { error: conversionError } = await supabase
+        .from('aulas_experimentais')
+        .update({
+          status: 'MATRICULADA',
+          aluno_id: alunoId,
+          cobrar_na_matricula: cobrarExperimental,
+          historico_aula_id: historicoExperimentalId,
+          matriculada_em: new Date().toISOString(),
+          atualizado_em: new Date().toISOString(),
+        })
+        .eq('id', experimentalParaConverter.id)
+      if (conversionError) {
+        avisoConversao = `${avisoConversao} O vínculo com a agenda experimental precisa ser revisado.`.trim()
+      }
+    }
+
+    if (avisoConversao) alert(avisoConversao)
+
     setIsSubmitting(false); fecharModalMatricula(); alert("🎉 Matrícula realizada com sucesso!"); window.location.reload();
   }
 
@@ -360,6 +470,15 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         className="flex items-center justify-center gap-2.5 px-4 py-3.5 rounded-xl text-[#173229] font-bold text-[13px] transition-all shadow-[0_10px_25px_rgba(0,0,0,0.16)] bg-[#c7a46d] hover:bg-[#d2b27f] mb-4"
       >
         <UserPlus size={17} strokeWidth={2} /> Nova matrícula
+      </motion.button>
+
+      <motion.button
+        whileHover={{ y: -1 }}
+        whileTap={{ scale: 0.98 }}
+        onClick={() => setIsExperimentalModalOpen(true)}
+        className="mb-4 -mt-2 flex items-center justify-center gap-2.5 rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 py-3 text-[12px] font-semibold text-white/85 transition hover:bg-white/[0.1] hover:text-white"
+      >
+        <FlaskConical size={16} strokeWidth={1.9} /> Aula experimental
       </motion.button>
 
       <NavButton rota="/" icone={LayoutDashboard} texto="Visão geral" />
@@ -469,6 +588,17 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
               <form onSubmit={handleMatricular} className="flex min-h-0 flex-1 flex-col">
                 <div className="premium-scrollarea min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 md:px-7">
+                {experimentalOrigem && (
+                  <section className="rounded-2xl border border-[#d7c39d] bg-[#fbf5e9] p-5">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#efe0c6] text-[#8a642e]"><FlaskConical size={19} /></span>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Convertendo aula experimental em matrícula</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">{experimentalOrigem.nome} · {new Date(experimentalOrigem.data_aula).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} às {String(experimentalOrigem.horario_inicio).slice(0, 5)}. Complete a ficha e decida abaixo se essa aula será cobrada.</p>
+                      </div>
+                    </div>
+                  </section>
+                )}
                 <section className={formSectionClass}>
                   <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-3">
@@ -666,6 +796,38 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
                     )}
                   </div>
 
+                  {experimentalOrigem && (
+                    <div className="mt-5 rounded-2xl border border-[#d7c39d] bg-[#fbf5e9] p-4 md:p-5">
+                      <label className="flex cursor-pointer items-start justify-between gap-4">
+                        <span>
+                          <span className="block text-sm font-semibold text-slate-900">Incluir a aula experimental na fatura?</span>
+                          <span className="mt-1 block text-xs leading-5 text-slate-600">Se ativado, o sistema cria uma fatura avulsa e mantém a aula detalhada no histórico do aluno.</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={cobrarExperimental}
+                          onChange={(event) => {
+                            const checked = event.target.checked
+                            setCobrarExperimental(checked)
+                            if (checked && !valorExperimental) {
+                              const suggestedValue = modeloFaturamento === 'MENSAL_FECHADO'
+                                ? Number(valorPorAula || 0)
+                                : Number(valorMensalidade || 0) / 4
+                              setValorExperimental(suggestedValue > 0 ? suggestedValue.toFixed(2) : '')
+                            }
+                          }}
+                          className="mt-0.5 h-5 w-5 accent-emerald-800"
+                        />
+                      </label>
+                      {cobrarExperimental && (
+                        <div className="mt-4 grid gap-4 border-t border-[#e5d5b8] pt-4 sm:grid-cols-2">
+                          <div><label className={labelClass}>Valor da aula experimental (R$)</label><input type="number" min="0.01" step="0.01" required value={valorExperimental} onChange={(event) => setValorExperimental(event.target.value)} className={inputClass} /></div>
+                          <div><label className={labelClass}>Vencimento da fatura</label><input type="date" required value={vencimentoExperimental} onChange={(event) => setVencimentoExperimental(event.target.value)} className={inputClass} /></div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                     <div>
                       <label className={labelClass}>Como conheceu a escola?</label>
@@ -790,6 +952,12 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ExperimentalClassModal
+        isOpen={isExperimentalModalOpen}
+        onClose={() => setIsExperimentalModalOpen(false)}
+        onSaved={() => window.dispatchEvent(new Event('lotus:aula-experimental-salva'))}
+      />
 
       <AnimatePresence>
         {showCropModal && imageToCrop && (

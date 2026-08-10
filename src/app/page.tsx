@@ -29,6 +29,10 @@ import {
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }
 const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }
 
+function localISODate(date: Date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+}
+
 export default function Dashboard() {
   const { s } = useStyles()
   const router = useRouter()
@@ -105,9 +109,17 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solicitacoes_reagendamento' }, () => { carregarDados(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_aulas' }, () => { carregarDados(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'turma_aulas' }, () => { carregarDados(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'aulas_experimentais' }, () => { carregarDados(); })
       .subscribe();
     return () => { supabase.removeChannel(channel); }
   }, [isMounted]);
+
+  useEffect(() => {
+    if (!isMounted) return
+    const refreshExperimentalClasses = () => carregarDados()
+    window.addEventListener('lotus:aula-experimental-salva', refreshExperimentalClasses)
+    return () => window.removeEventListener('lotus:aula-experimental-salva', refreshExperimentalClasses)
+  }, [isMounted, dataReferencia])
 
   async function carregarDados() {
     setLoading(true) 
@@ -120,8 +132,13 @@ export default function Dashboard() {
 
     const inicioDaSemana = diasVisuais[0].dataStr
     const fimDaSemana = diasVisuais[5].dataStr
+    const inicioPendenciasDate = new Date()
+    inicioPendenciasDate.setDate(inicioPendenciasDate.getDate() - 35)
+    const inicioPendencias = localISODate(inicioPendenciasDate)
+    const inicioConsulta = inicioDaSemana < inicioPendencias ? inicioDaSemana : inicioPendencias
+    const fimConsulta = fimDaSemana > hojeDataStr ? fimDaSemana : hojeDataStr
 
-    const { data: agenda } = await supabase.from('agenda').select(`*, aluno:profiles!aluno_id(id, nome_completo, avatar_url, alunos_info(status, data_inativacao)), sala:salas(nome)`).order('horario_inicio')
+    const { data: agenda } = await supabase.from('agenda').select(`*, aluno:profiles!aluno_id(id, nome_completo, avatar_url, created_at, alunos_info(status, data_inativacao)), sala:salas(nome)`).order('horario_inicio')
     const { data: turmasAtivas } = await supabase
       .from('turmas')
       .select('*, professor:profiles!professor_id(nome_completo), turma_alunos(id, status)')
@@ -145,13 +162,43 @@ export default function Dashboard() {
       sala: { nome: turma.endereco },
       instrumento_aula: turma.modalidade,
       participantes: (turma.turma_alunos || []).filter((item: any) => item.status === 'ATIVO').length,
+      criado_em: turma.criado_em,
+    }))
+
+    const { data: experimentalRows } = await supabase
+      .from('aulas_experimentais')
+      .select('*')
+      .gte('data_aula', inicioConsulta)
+      .lte('data_aula', fimConsulta)
+      .order('horario_inicio')
+    const { data: experimentalRooms } = await supabase.from('salas').select('id, nome')
+
+    const aulasExperimentais = (experimentalRows || []).map((experimental: any) => ({
+      id: `experimental_${experimental.id}`,
+      experimental_id: experimental.id,
+      is_experimental: true,
+      experimental_status: experimental.status,
+      experimental_record: experimental,
+      data_selecionada: String(experimental.data_aula).slice(0, 10),
+      horario_inicio: experimental.horario_inicio,
+      horario_fim: experimental.horario_fim,
+      professor_id: experimental.professor_id,
+      aluno_id: experimental.aluno_id || null,
+      aluno: {
+        id: experimental.aluno_id || null,
+        nome_completo: experimental.nome,
+        avatar_url: null,
+        alunos_info: { status: 'Ativo' },
+      },
+      sala: experimentalRooms?.find((room: any) => String(room.id) === String(experimental.sala_id)) || { nome: 'Local a definir' },
+      instrumento_aula: experimental.modalidade || 'Aula experimental',
     }))
     
     const { data: reposicoesAprovadas } = await supabase.from('solicitacoes_reagendamento')
       .select(`*, aluno:profiles!aluno_id(id, nome_completo, avatar_url, alunos_info(status, data_inativacao))`)
       .eq('status', 'Aprovada')
-      .gte('nova_data', inicioDaSemana)
-      .lte('nova_data', fimDaSemana);
+      .gte('nova_data', inicioConsulta)
+      .lte('nova_data', fimConsulta);
 
     const aulasReposicao = (reposicoesAprovadas || []).filter((r: any) => r.tipo_mudanca !== 'Fixa').map((r: any) => {
       const aulaOriginal = (agenda || []).find((a: any) => String(a.id) === String(r.agenda_original_id))
@@ -173,13 +220,13 @@ export default function Dashboard() {
       }
     });
 
-    const { data: ev } = await supabase.from('eventos_calendario').select('*').gte('data_evento', inicioDaSemana).lte('data_evento', fimDaSemana)
-    const { data: hist } = await supabase.from('historico_aulas').select('aluno_id, data_aula, status').gte('data_aula', inicioDaSemana).lte('data_aula', fimDaSemana + 'T23:59:59')
+    const { data: ev } = await supabase.from('eventos_calendario').select('*').gte('data_evento', inicioConsulta).lte('data_evento', fimConsulta)
+    const { data: hist } = await supabase.from('historico_aulas').select('aluno_id, data_aula, horario_inicio, status').gte('data_aula', inicioConsulta).lte('data_aula', fimConsulta + 'T23:59:59')
     const { data: turmaHist } = await supabase
       .from('turma_aulas')
       .select('id, turma_id, data_aula, status')
-      .gte('data_aula', inicioDaSemana)
-      .lte('data_aula', fimDaSemana)
+      .gte('data_aula', inicioConsulta)
+      .lte('data_aula', fimConsulta)
 
     // 🔥 BUSCA BLINDADA DE SOLICITAÇÕES (Aceita maiúsculas, minúsculas e evita falhas de ID nulo)
     const { data: sol } = await supabase.from('solicitacoes_reagendamento').select('*').in('status', ['Pendente', 'pendente', 'PENDENTE'])
@@ -203,16 +250,32 @@ export default function Dashboard() {
 
     const pendentesParaLancar: any[] = [];
     const agora = new Date();
+    const diasParaPendencias: Array<{ nome: string; dataStr: string }> = []
+    const cursorPendencias = new Date(`${inicioPendencias}T12:00:00`)
+    const limitePendencias = new Date(`${hojeDataStr}T12:00:00`)
+    while (cursorPendencias <= limitePendencias) {
+      const weekday = cursorPendencias.getDay()
+      if (weekday >= 1 && weekday <= 6) {
+        diasParaPendencias.push({
+          nome: nomesDias[weekday],
+          dataStr: localISODate(cursorPendencias),
+        })
+      }
+      cursorPendencias.setDate(cursorPendencias.getDate() + 1)
+    }
 
-    diasVisuais.forEach(diaVisual => {
+    diasParaPendencias.forEach(diaVisual => {
       const isFeriado = (ev || []).some(e => e.data_evento === diaVisual.dataStr && (e.tipo === 'Feriado' || e.tipo === 'Recesso'));
       if (isFeriado) return;
 
       const aulasDoDia = [...(agenda || []), ...aulasTurma].filter(a => a.dia === diaVisual.nome);
       const reposicoesDoDia = aulasReposicao.filter(r => r.data_selecionada === diaVisual.dataStr);
-      const todasAsAulasDoDia = [...aulasDoDia, ...reposicoesDoDia];
+      const experimentaisDoDia = aulasExperimentais.filter(a => a.data_selecionada === diaVisual.dataStr)
+      const todasAsAulasDoDia = [...aulasDoDia, ...reposicoesDoDia, ...experimentaisDoDia];
 
       todasAsAulasDoDia.forEach(aula => {
+        const inicioDoVinculo = String(aula.criado_em || aula.created_at || aula.aluno?.created_at || '').slice(0, 10)
+        if (inicioDoVinculo && diaVisual.dataStr < inicioDoVinculo) return
         const info = Array.isArray(aula.aluno?.alunos_info) ? aula.aluno?.alunos_info[0] : aula.aluno?.alunos_info;
         if (info?.status === 'Inativo' && info?.data_inativacao && diaVisual.dataStr > info.data_inativacao) return;
 
@@ -223,9 +286,17 @@ export default function Dashboard() {
           const endDateTime = new Date(ano, mes - 1, dia, h, m);
 
           if (agora > endDateTime) {
-            const jaTemHistorico = aula.is_turma
+            const jaTemHistorico = aula.is_experimental
+              ? aula.experimental_status !== 'AGENDADA'
+              : aula.is_turma
               ? (turmaHist || []).some((item: any) => item.turma_id === aula.turma_id && String(item.data_aula).startsWith(diaVisual.dataStr))
-              : (hist || []).some(hItem => String(hItem.aluno_id) === String(aula.aluno_id) && String(hItem.data_aula).startsWith(diaVisual.dataStr));
+              : (hist || []).some(hItem => {
+                  const sameStudentAndDate = String(hItem.aluno_id) === String(aula.aluno_id)
+                    && String(hItem.data_aula).startsWith(diaVisual.dataStr)
+                  const historyTime = String(hItem.horario_inicio || '').slice(0, 5)
+                  const classTime = String(aula.horario_inicio || '').slice(0, 5)
+                  return sameStudentAndDate && (!historyTime || !classTime || historyTime === classTime)
+                });
             if (!jaTemHistorico) {
               pendentesParaLancar.push({ ...aula, data_selecionada: diaVisual.dataStr });
             }
@@ -249,13 +320,30 @@ export default function Dashboard() {
     setEventosSemana(ev || []); 
     setHistoricoSemana(hist || []); 
     setTurmaAulasSemana(turmaHist || [])
-    setAulas([...(agenda || []), ...aulasReposicao, ...aulasTurma]);
+    setAulas([...(agenda || []), ...aulasReposicao, ...aulasTurma, ...aulasExperimentais]);
     
     setLoading(false)
   }
 
   const handleDarBaixa = async (status: 'Realizada' | 'Falta Justificada' | 'Falta Injustificada') => {
     setIsSubmitting(true);
+
+    if (aulaParaDarBaixa?.is_experimental) {
+      const { error } = await supabase
+        .from('aulas_experimentais')
+        .update({
+          status: status === 'Realizada' ? 'REALIZADA' : 'FALTOU',
+          observacoes: obsBaixa.trim() || (status === 'Realizada' ? 'Interessado compareceu à aula experimental.' : 'Interessado não compareceu à aula experimental.'),
+          atualizado_em: new Date().toISOString(),
+        })
+        .eq('id', aulaParaDarBaixa.experimental_id)
+      setIsSubmitting(false)
+      if (error) return alert(`Não foi possível registrar a aula experimental: ${error.message}`)
+      setAulaParaDarBaixa(null)
+      setObsBaixa('')
+      await carregarDados()
+      return
+    }
 
     if (aulaParaDarBaixa?.is_turma) {
       if (status !== 'Realizada') {
@@ -414,6 +502,18 @@ export default function Dashboard() {
 
     setIsSubmitting(true);
     const dataParaDesmarcar = selectedAula.data_selecionada || hojeDataStr;
+
+    if (selectedAula.is_experimental) {
+      const { error } = await supabase
+        .from('aulas_experimentais')
+        .update({ status: 'CANCELADA', observacoes: motivo || 'Aula experimental cancelada.', atualizado_em: new Date().toISOString() })
+        .eq('id', selectedAula.experimental_id)
+      setIsSubmitting(false)
+      if (error) return alert(`Não foi possível cancelar a aula experimental: ${error.message}`)
+      setSelectedAula(null)
+      await carregarDados()
+      return
+    }
     
     setHistoricoSemana(prev => [...prev, { aluno_id: selectedAula.aluno.id, data_aula: dataParaDesmarcar, status: 'Desmarcada' }]);
     await supabase.from('historico_aulas').delete().eq('aluno_id', selectedAula.aluno.id).eq('data_aula', dataParaDesmarcar);
@@ -473,6 +573,12 @@ export default function Dashboard() {
   }
 
   const getAulaStatus = (aula: any, dateStr: string) => {
+    if (aula?.is_experimental) {
+      if (aula.experimental_status === 'REALIZADA' || aula.experimental_status === 'MATRICULADA') return 'Realizada'
+      if (aula.experimental_status === 'FALTOU') return 'Falta Injustificada'
+      if (aula.experimental_status === 'CANCELADA') return 'Desmarcada'
+      return null
+    }
     if (aula?.is_turma) {
       const groupLesson = turmaAulasSemana.find(
         (item) => item.turma_id === aula.turma_id && String(item.data_aula).startsWith(dateStr),
@@ -485,6 +591,11 @@ export default function Dashboard() {
   }
 
   const abrirEntidadeAula = (aula: any) => {
+    if (aula?.is_experimental) {
+      if (aula.aluno_id) router.push(`/alunos/${aula.aluno_id}`)
+      else setSelectedAula({ ...aula, data_selecionada: aula.data_selecionada })
+      return
+    }
     router.push(aula?.is_turma ? '/turmas' : `/alunos/${aula.aluno.id}`)
   }
 
@@ -503,6 +614,7 @@ export default function Dashboard() {
 
   // 🔥 ORDENAÇÃO APLICADA AQUI
   const aulasDeHoje = aulas.filter(aula => {
+    if (aula.is_experimental) return aula.data_selecionada === hojeDataStr
     if (aula.is_reposicao || aula.is_remarcacao) return aula.data_selecionada === hojeDataStr;
     return aula.dia === nomeDiaHoje;
   }).filter(aula => {
@@ -529,6 +641,7 @@ export default function Dashboard() {
     const eventosDoDia = eventosSemana.filter(e => e.data_evento === dia.dataStr)
     const eventoEspecial = eventosDoDia.find(e => e.tipo === 'Feriado' || e.tipo === 'Recesso')
     const aulasDoDia = aulas.filter(aula => {
+      if (aula.is_experimental) return aula.data_selecionada === dia.dataStr
       if (aula.is_reposicao || aula.is_remarcacao) return aula.data_selecionada === dia.dataStr
       return aula.dia === dia.nome
     }).filter(aula => {
@@ -688,6 +801,7 @@ export default function Dashboard() {
                                 {aula.is_reposicao && <span className="font-semibold text-[#76562e]">Reposição</span>}
                                 {aula.is_remarcacao && <span className="font-semibold text-[#1f4a3a]">Horário aprovado</span>}
                                 {aula.is_turma && <span className="font-semibold text-[#1f4a3a]">{aula.participantes} participantes</span>}
+                                {aula.is_experimental && <span className="font-semibold text-[#8a642e]">Experimental</span>}
                               </div>
                             </div>
                           </div>
@@ -756,16 +870,21 @@ export default function Dashboard() {
                   />
                   <div className="space-y-2 mt-4">
                     <button onClick={() => handleDarBaixa('Realizada')} disabled={isSubmitting} className="w-full py-3 rounded-xl bg-[#1f4a3a] text-white text-xs font-semibold flex items-center justify-center gap-2 hover:bg-[#17382c] disabled:opacity-50">
-                      <Check size={16} /> Presente · aula realizada
+                      <Check size={16} /> {aulaParaDarBaixa?.is_experimental ? 'Compareceu' : 'Presente · aula realizada'}
                     </button>
-                    <button onClick={() => handleDarBaixa('Falta Justificada')} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-[#dfc394] bg-[#fbf5e9] text-[#76562e] text-xs font-semibold flex items-center justify-center gap-2 hover:bg-[#f4eadc] disabled:opacity-50">
-                      <RotateCcw size={15} /> Faltou com justificativa
-                    </button>
+                    {!aulaParaDarBaixa?.is_experimental && (
+                      <button onClick={() => handleDarBaixa('Falta Justificada')} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-[#dfc394] bg-[#fbf5e9] text-[#76562e] text-xs font-semibold flex items-center justify-center gap-2 hover:bg-[#f4eadc] disabled:opacity-50">
+                        <RotateCcw size={15} /> Faltou com justificativa
+                      </button>
+                    )}
                     <button onClick={() => handleDarBaixa('Falta Injustificada')} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold flex items-center justify-center gap-2 hover:bg-rose-100 disabled:opacity-50">
-                      <XCircle size={15} /> Faltou sem justificativa
+                      <XCircle size={15} /> {aulaParaDarBaixa?.is_experimental ? 'Não compareceu' : 'Faltou sem justificativa'}
                     </button>
                   </div>
-                  {!aulaParaDarBaixa?.is_turma && (
+                  {aulaParaDarBaixa?.is_experimental && (
+                    <p className="mt-3 text-[11px] leading-relaxed text-slate-500">Ao registrar presença, a opção de concluir a matrícula ficará disponível nos detalhes desta aula.</p>
+                  )}
+                  {!aulaParaDarBaixa?.is_turma && !aulaParaDarBaixa?.is_experimental && (
                     <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
                       No vencimento fixo, a falta justificada gera reposição; a falta sem justificativa apenas registra a ausência.
                     </p>
@@ -796,7 +915,7 @@ export default function Dashboard() {
                   <dl className="py-4 space-y-3 text-sm">
                     <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Modalidade</dt><dd className="font-medium text-slate-800">{selectedAula.instrumento_aula}</dd></div>
                     <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Sala</dt><dd className="font-medium text-slate-800">{selectedAula.sala?.nome}</dd></div>
-                    <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Tipo</dt><dd className="font-medium text-slate-800">{selectedAula.is_reposicao ? 'Reposição' : selectedAula.is_remarcacao ? 'Mudança aprovada' : 'Horário fixo'}</dd></div>
+                    <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Tipo</dt><dd className="font-medium text-slate-800">{selectedAula.is_experimental ? 'Aula experimental' : selectedAula.is_reposicao ? 'Reposição' : selectedAula.is_remarcacao ? 'Mudança aprovada' : 'Horário fixo'}</dd></div>
                     {selectedAulaStatus && <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">Resultado</dt><dd className={`rounded-lg border px-2.5 py-1 text-[10px] font-semibold uppercase ${getStatusColor(selectedAulaStatus)}`}>{selectedAulaStatus}</dd></div>}
                   </dl>
                   <div className="space-y-4 pt-2">
@@ -810,19 +929,37 @@ export default function Dashboard() {
                       </section>
                     )}
 
-                    <button onClick={() => router.push(`/alunos/${selectedAula.aluno.id}`)} className="w-full py-3 rounded-xl border border-[#d8ddd8] bg-white text-[#1f4a3a] text-xs font-semibold flex items-center justify-center gap-2">
-                      <UserRound size={15} /> Abrir perfil do aluno
-                    </button>
+                    {selectedAula.is_experimental && selectedAula.experimental_status === 'REALIZADA' && !selectedAula.aluno_id && (
+                      <section className="rounded-xl border border-[#d7c39d] bg-[#fbf5e9] p-3.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#866b43]">Próximo passo</p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">O interessado compareceu. Complete a ficha para transformá-lo em aluno efetivo.</p>
+                        <button
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('lotus:matricular-experimental', { detail: selectedAula.experimental_record }))
+                            setSelectedAula(null)
+                          }}
+                          className="mt-3 w-full rounded-xl bg-[#1f4a3a] py-3 text-xs font-semibold text-white"
+                        >
+                          Fazer matrícula completa
+                        </button>
+                      </section>
+                    )}
+
+                    {selectedAula.aluno?.id && (
+                      <button onClick={() => router.push(`/alunos/${selectedAula.aluno.id}`)} className="w-full py-3 rounded-xl border border-[#d8ddd8] bg-white text-[#1f4a3a] text-xs font-semibold flex items-center justify-center gap-2">
+                        <UserRound size={15} /> Abrir perfil do aluno
+                      </button>
+                    )}
 
                     {!selectedAulaStatus && (
                       <section className="rounded-xl border border-[#e6e1d7] bg-[#faf8f2] p-3.5">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#866b43]">Alterações da agenda</p>
                         <div className="mt-3 space-y-2">
                           <button onClick={handleDesmarcarAula} disabled={isSubmitting} className="w-full py-3 rounded-xl border border-[#dfc394] bg-white text-[#76562e] text-xs font-semibold disabled:opacity-50">
-                            Cancelar apenas esta aula
+                            {selectedAula.is_experimental ? 'Cancelar aula experimental' : 'Cancelar apenas esta aula'}
                           </button>
-                          <p className="px-1 text-[10px] leading-relaxed text-slate-500">O horário semanal continua normalmente nas próximas semanas.</p>
-                          {!selectedAula.is_reposicao && !selectedAula.is_remarcacao && (
+                          {!selectedAula.is_experimental && <p className="px-1 text-[10px] leading-relaxed text-slate-500">O horário semanal continua normalmente nas próximas semanas.</p>}
+                          {!selectedAula.is_experimental && !selectedAula.is_reposicao && !selectedAula.is_remarcacao && (
                             <>
                               <button onClick={() => handleRemoverDaGrade(selectedAula.id)} className="w-full py-3 rounded-xl border border-rose-200 bg-white text-rose-700 text-xs font-semibold">
                                 Encerrar este horário recorrente
@@ -1031,7 +1168,7 @@ export default function Dashboard() {
                                   <button onClick={() => abrirEntidadeAula(aula)} className="min-w-0 flex-1 text-left">
                                     <p className="text-xs font-semibold text-slate-900 truncate">{aula.aluno?.nome_completo}</p>
                                     <p className="text-[11px] text-slate-600 mt-0.5">{aula.horario_inicio?.slice(0, 5)}–{aula.horario_fim?.slice(0, 5)}</p>
-                                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">{aula.instrumento_aula}{aula.is_reposicao ? ' · Reposição' : aula.is_remarcacao ? ' · Mudança aprovada' : ''}</p>
+                                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">{aula.instrumento_aula}{aula.is_experimental ? ' · Experimental' : aula.is_reposicao ? ' · Reposição' : aula.is_remarcacao ? ' · Mudança aprovada' : ''}</p>
                                   </button>
                                   <button aria-label="Ver detalhes da aula" onClick={() => { abrirDetalhesAula(aula, dia.dataStr); setViewMode('dia') }} className="h-6 w-6 rounded-md text-slate-500 hover:bg-white flex items-center justify-center shrink-0">
                                     <MoreHorizontal size={14} />
@@ -1112,7 +1249,7 @@ export default function Dashboard() {
                               </div>
                               <button onClick={() => abrirEntidadeAula(aula)} className="min-w-0 flex-1 text-left">
                                 <p className="font-semibold text-sm text-slate-900 truncate">{aula.aluno?.nome_completo}</p>
-                                <p className="text-[11px] text-slate-500 mt-0.5">{aula.instrumento_aula} · {aula.sala?.nome}{aula.is_reposicao ? ' · Reposição' : aula.is_remarcacao ? ' · Mudança aprovada' : ''}</p>
+                                <p className="text-[11px] text-slate-500 mt-0.5">{aula.instrumento_aula} · {aula.sala?.nome}{aula.is_experimental ? ' · Experimental' : aula.is_reposicao ? ' · Reposição' : aula.is_remarcacao ? ' · Mudança aprovada' : ''}</p>
                               </button>
                               <div className="flex items-center gap-2 shrink-0">
                                 {statusHistorico ? (
