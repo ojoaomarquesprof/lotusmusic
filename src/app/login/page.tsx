@@ -84,11 +84,11 @@ export default function Login() {
           </div>
 
           <div className="relative">
-            <div className="flex h-[92px] w-[178px] items-center justify-center rounded-2xl border border-white/10 bg-[#fbfaf6] p-3 shadow-[0_16px_35px_rgba(0,0,0,0.14)]">
-              <Image src="/logo.png" alt="Lótus Music — Escola de Música" width={158} height={76} className="h-full w-full object-contain" priority />
+            <div className="mx-auto flex h-[154px] w-[244px] items-center justify-center rounded-[24px] border border-white/10 bg-[#fbfaf6] shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+              <Image src="/logo.png" alt="Lótus Music — Escola de Música" width={138} height={138} className="h-[138px] w-[138px] object-contain" priority />
             </div>
 
-            <div className="mt-14 max-w-md">
+            <div className="mt-10 max-w-md">
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#d4b47e]">Gestão Lótus Music</p>
               <h1 className="mt-4 text-[42px] font-semibold leading-[1.08] tracking-[-0.045em] text-white">
                 A escola inteira,<br />em um só ritmo.
@@ -118,8 +118,8 @@ export default function Login() {
         <section className="flex min-h-[calc(100vh-2.5rem)] items-center px-5 py-9 sm:px-12 sm:py-12 min-[960px]:min-h-0 min-[960px]:px-14">
           <div className="mx-auto w-full max-w-[410px]">
             <div className="mb-9 flex items-center justify-between min-[960px]:hidden">
-              <div className="flex h-[76px] w-[146px] items-center justify-center rounded-2xl border border-[#e1dfd7] bg-white p-2.5 shadow-sm">
-                <Image src="/logo.png" alt="Lótus Music — Escola de Música" width={130} height={62} className="h-full w-full object-contain" priority />
+              <div className="flex h-[100px] w-[176px] items-center justify-center rounded-2xl border border-[#e1dfd7] bg-white shadow-sm">
+                <Image src="/logo.png" alt="Lótus Music — Escola de Música" width={88} height={88} className="h-[88px] w-[88px] object-contain" priority />
               </div>
               <span className="rounded-full border border-[#d8ddd8] bg-[#edf3ef] px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.14em] text-[#1f4a3a]">
                 Área segura
