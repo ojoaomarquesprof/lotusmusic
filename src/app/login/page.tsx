@@ -85,7 +85,7 @@ export default function Login() {
 
           <div className="relative">
             <div className="mx-auto flex h-[170px] w-full max-w-[430px] items-center justify-center">
-              <Image src="/logo-horizontal-verde.png" alt="Lótus Music — Escola de Música" width={430} height={173} className="h-auto w-full object-contain drop-shadow-[0_14px_24px_rgba(0,0,0,0.16)]" priority />
+              <Image src="/logo-horizontal-verde.png" alt="Lótus Music — Escola de Música" width={2221} height={878} className="h-auto w-full object-contain drop-shadow-[0_14px_24px_rgba(0,0,0,0.16)]" priority />
             </div>
 
             <div className="mt-7 max-w-md">
