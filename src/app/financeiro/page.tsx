@@ -142,6 +142,8 @@ export default function RelatorioFinanceiro() {
       { data: allTransacoes },
       { data: allFaturas },
       { data: alunos },
+      { data: agendasIndividuais },
+      { data: participacoesTurma },
       { data: historicoMes },
       { data: ajustesCobranca },
       { data: reportedPayments },
@@ -151,6 +153,8 @@ export default function RelatorioFinanceiro() {
       supabase.from('transacoes').select('*'),
       supabase.from('faturas').select('*').order('data_emissao', { ascending: false }),
       supabase.from('profiles').select('id, nome_completo, telefone, created_at, alunos_info(*)').eq('role', 'ALUNO'),
+      supabase.from('agenda').select('aluno_id'),
+      supabase.from('turma_alunos').select('aluno_id').eq('status', 'ATIVO'),
       supabase
         .from('historico_aulas')
         .select('aluno_id, data_aula, status, turma_id, valor_aula_faturado')
@@ -195,6 +199,8 @@ export default function RelatorioFinanceiro() {
       faturas,
       ajustes: ajustesCobranca || [],
       historicoMes: historicoMes || [],
+      agendas: agendasIndividuais || [],
+      participacoesTurma: participacoesTurma || [],
       hoje,
     })
     const emAberto = dossier.filter(isOpenCharge)

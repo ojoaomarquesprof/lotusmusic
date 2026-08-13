@@ -48,6 +48,10 @@ type DossierInput = {
   faturas: any[]
   ajustes?: any[]
   historicoMes?: any[]
+  /** Horarios individuais recorrentes, usados para separar apuracao de turma. */
+  agendas?: any[]
+  /** Participacoes ativas em turmas, usadas para evitar uma apuracao individual duplicada. */
+  participacoesTurma?: any[]
   hoje?: Date
 }
 
@@ -158,6 +162,8 @@ export function buildFinancialDossier({
   faturas,
   ajustes = [],
   historicoMes = [],
+  agendas,
+  participacoesTurma,
   hoje = new Date(),
 }: DossierInput) {
   const today = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
@@ -170,6 +176,12 @@ export function buildFinancialDossier({
       item,
     ]),
   )
+  const individualScheduleStudentIds = new Set(
+    (agendas || []).map(item => item.aluno_id).filter(Boolean),
+  )
+  const activeGroupStudentIds = new Set(
+    (participacoesTurma || []).map(item => item.aluno_id).filter(Boolean),
+  )
   const charges: FinancialCharge[] = []
 
   for (const aluno of alunos || []) {
@@ -177,6 +189,8 @@ export function buildFinancialDossier({
     if (!info || !Number(info.valor_mensalidade || info.valor_por_aula || 0)) continue
 
     const model = getBillingModel(info)
+    const isActiveGroupParticipant = activeGroupStudentIds.has(aluno.id)
+    const hasIndividualSchedule = individualScheduleStudentIds.has(aluno.id)
     const alunoPayments = confirmedPayments.filter(item => item.aluno_id === aluno.id)
     const allAlunoInvoices = (faturas || []).filter(item =>
       item.aluno_id === aluno.id
@@ -339,7 +353,12 @@ export function buildFinancialDossier({
       }
 
       const currentInvoice = alunoInvoices.some(item => monthKey(item.competencia) === monthKey(todayMonth))
-      if (info.status !== 'Inativo' && !currentInvoice) {
+      // Alunos que pertencem somente a uma turma ja possuem a apuracao
+      // coletiva acima. A apuracao individual so aparece quando existe
+      // tambem um horario recorrente reservado exclusivamente para o aluno.
+      const deveApurarIndividualmente =
+        !isActiveGroupParticipant || hasIndividualSchedule
+      if (info.status !== 'Inativo' && !currentInvoice && deveApurarIndividualmente) {
         const individualLessons = historicoMes.filter(
           item => item.aluno_id === aluno.id && !item.turma_id && isBillableClass(item.status),
         )

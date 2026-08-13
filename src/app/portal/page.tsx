@@ -205,7 +205,7 @@ export default function PortalAluno() {
     const { data: ag } = await supabase.from('agenda').select('*, sala:salas(nome)').eq('aluno_id', session.user.id)
     const { data: participacoesTurma } = await supabase
       .from('turma_alunos')
-      .select('turma:turmas(*)')
+      .select('aluno_id, turma_id, turma:turmas(*)')
       .eq('aluno_id', session.user.id)
       .eq('status', 'ATIVO')
     const agendasTurma = (participacoesTurma || [])
@@ -357,6 +357,8 @@ export default function PortalAluno() {
       faturas: invoices || [],
       ajustes: ajustes || [],
       historicoMes: (histAll || []).filter(aula => String(aula.data_aula).startsWith(prefixoMes)),
+      agendas: ag || [],
+      participacoesTurma: participacoesTurma || [],
     }))
 
     const { data: reportedPayments } = await supabase

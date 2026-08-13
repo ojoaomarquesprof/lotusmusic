@@ -87,7 +87,7 @@ export default function PerfilAluno() {
   
   const [isMounted, setIsMounted] = useState(false)
   
-  const [aluno, setAluno] = useState<any>(null); const [aulasFixas, setAulasFixas] = useState<any[]>([]); const [pagamentos, setPagamentos] = useState<any[]>([]); const [historicoAulas, setHistoricoAulas] = useState<any[]>([]); const [faturas, setFaturas] = useState<any[]>([])
+  const [aluno, setAluno] = useState<any>(null); const [aulasFixas, setAulasFixas] = useState<any[]>([]); const [participacoesTurma, setParticipacoesTurma] = useState<any[]>([]); const [pagamentos, setPagamentos] = useState<any[]>([]); const [historicoAulas, setHistoricoAulas] = useState<any[]>([]); const [faturas, setFaturas] = useState<any[]>([])
   const [ajustesCobranca, setAjustesCobranca] = useState<any[]>([])
   const [materiais, setMateriais] = useState<any[]>([])
   const [loading, setLoading] = useState(true); const [isSubmitting, setIsSubmitting] = useState(false); const [imgError, setImgError] = useState(false)
@@ -140,6 +140,7 @@ export default function PerfilAluno() {
   async function carregarDados() {
     const { data: profile } = await supabase.from('profiles').select('*, alunos_info(*)').eq('id', id).single()
     const { data: agenda } = await supabase.from('agenda').select(`*, professor:profiles!professor_id(nome_completo), sala:salas(nome)`).eq('aluno_id', id).order('dia')
+    const { data: participacoes } = await supabase.from('turma_alunos').select('aluno_id, turma_id, status').eq('aluno_id', id).eq('status', 'ATIVO')
     const { data: pgs } = await supabase.from('pagamentos').select('*').eq('aluno_id', id).order('data_pagamento', { ascending: false })
     const { data: hist } = await supabase.from('historico_aulas').select('*').eq('aluno_id', id).order('data_aula', { ascending: false })
     const { data: invoices } = await supabase.from('faturas').select('*').eq('aluno_id', id).order('data_emissao', { ascending: false })
@@ -173,7 +174,7 @@ export default function PerfilAluno() {
     const { data: mL } = await supabase.from('modalidades').select('nome').order('nome')
 
     setProfessoresList(pL || []); setSalasList(sL || []); setModalidadesLista(mL || [])
-    setAluno(profile); setAulasFixas(agenda || []); setPagamentos(pgs || []); setHistoricoAulas(hist || []); setFaturas(invoices || []); setMateriais(mats || []); setAjustesCobranca(ajustes || []); setLoading(false)
+    setAluno(profile); setAulasFixas(agenda || []); setParticipacoesTurma(participacoes || []); setPagamentos(pgs || []); setHistoricoAulas(hist || []); setFaturas(invoices || []); setMateriais(mats || []); setAjustesCobranca(ajustes || []); setLoading(false)
   }
 
   const infoMatricula = Array.isArray(aluno?.alunos_info) ? aluno?.alunos_info[0] : aluno?.alunos_info; const isAlunoInativo = infoMatricula?.status === 'Inativo'; const isEditingInativo = editStatus === 'Inativo'
@@ -657,6 +658,8 @@ export default function PerfilAluno() {
     faturas,
     ajustes: ajustesCobranca,
     historicoMes: historicoAulas.filter(aula => String(aula.data_aula).startsWith(prefixoMesAtual)),
+    agendas: aulasFixas,
+    participacoesTurma,
   })
   const resumoFinanceiroAluno = summarizeFinancialDossier(cobrancasAluno)
   const valorEmAberto = resumoFinanceiroAluno.totalOpen
