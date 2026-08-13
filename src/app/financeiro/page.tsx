@@ -122,6 +122,9 @@ export default function RelatorioFinanceiro() {
     const channel = supabase
       .channel('financeiro-pagamentos-informados')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pagamentos_informados' }, () => carregarDadosFinanceiros())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_aulas' }, () => carregarDadosFinanceiros())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'turma_aulas' }, () => carregarDadosFinanceiros())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alunos_info' }, () => carregarDadosFinanceiros())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [isMounted])

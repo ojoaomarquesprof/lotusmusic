@@ -74,6 +74,7 @@ export default function TurmasPage() {
   const [studentSearch, setStudentSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ATIVA' | 'INATIVA'>('ATIVA')
   const [lessonGroup, setLessonGroup] = useState<any>(null)
+  const [diaryGroup, setDiaryGroup] = useState<any>(null)
   const [lessonDate, setLessonDate] = useState(new Date().toISOString().slice(0, 10))
   const [lessonNotes, setLessonNotes] = useState('')
   const [lessonSaving, setLessonSaving] = useState(false)
@@ -97,6 +98,17 @@ export default function TurmasPage() {
             inicio_em,
             fim_em,
             aluno:profiles!aluno_id(id, nome_completo, email, telefone, avatar_url)
+          ),
+          turma_aulas(
+            id,
+            data_aula,
+            status,
+            observacoes,
+            valor_mensal_snapshot,
+            participantes_snapshot,
+            aulas_previstas_snapshot,
+            valor_aluno_aula,
+            criado_em
           )
         `)
         .order('nome'),
@@ -138,6 +150,9 @@ export default function TurmasPage() {
   }, [alunos, studentSearch])
 
   const filteredGroups = turmas.filter((turma) => turma.status === statusFilter)
+  const diaryLessons = (diaryGroup?.turma_aulas || []).slice().sort((a: any, b: any) =>
+    String(b.data_aula).localeCompare(String(a.data_aula)),
+  )
   const monthlyShare = selectedStudents.length > 0
     ? Number(form.valor_mensal_total || 0) / selectedStudents.length
     : 0
@@ -368,6 +383,7 @@ export default function TurmasPage() {
     if (error) return alert(`Não foi possível registrar a aula: ${error.message}`)
     setLessonGroup(null)
     setLessonNotes('')
+    await carregar()
     const participantes = Number(result?.participantes || 0)
     if (participantes > 0) {
       alert(`Aula registrada para ${participantes} participante${participantes === 1 ? '' : 's'}.`)
@@ -453,7 +469,7 @@ export default function TurmasPage() {
                     <p className="mt-1 text-[11px] text-slate-500">{turma.aulas_previstas_mes} aulas previstas</p>
                   </div>
                   <div className="flex justify-end gap-2">
-                    <button title="Registrar aula" onClick={() => { setLessonGroup(turma); setLessonDate(new Date().toISOString().slice(0, 10)); setLessonNotes('') }} className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#e6efe9] text-[#1f4a3a] hover:bg-[#d8e7dd]"><BookOpenCheck size={16} /></button>
+                    <button title="Abrir diário da turma" onClick={() => setDiaryGroup(turma)} className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#e6efe9] text-[#1f4a3a] hover:bg-[#d8e7dd]"><BookOpenCheck size={16} /></button>
                     <button title="Editar turma" onClick={() => abrirEdicao(turma)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#dfded7] bg-white text-slate-600 hover:text-[#1f4a3a]"><Pencil size={15} /></button>
                   </div>
                 </article>
@@ -582,6 +598,56 @@ export default function TurmasPage() {
                 </div>
               </form>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {diaryGroup && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[85] flex items-center justify-center bg-[#0d1d17]/55 p-4 backdrop-blur-sm">
+            <motion.section initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 18, opacity: 0 }} className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-[26px] border border-white/60 bg-[#f8f7f2] shadow-2xl">
+              <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[#dfded7] bg-[#fbfaf6] px-6 py-5">
+                <div>
+                  <div className="premium-kicker">Diário coletivo</div>
+                  <h2 className="mt-1 text-2xl font-semibold text-slate-900">{diaryGroup.nome}</h2>
+                  <p className="mt-1 text-sm text-slate-500">Aulas realizadas, valor por aluno e histórico da turma em um só lugar.</p>
+                </div>
+                <button type="button" aria-label="Fechar diário" onClick={() => setDiaryGroup(null)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#dfded7] bg-white text-slate-500 hover:text-[#1f4a3a]"><X size={18} /></button>
+              </header>
+
+              <div className="grid shrink-0 grid-cols-3 border-b border-[#dfded7] bg-white">
+                <div className="border-r border-[#e5e3dd] px-6 py-4"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Aulas realizadas</p><p className="mt-1 text-2xl font-semibold text-[#1f4a3a]">{diaryLessons.filter((aula: any) => aula.status === 'REALIZADA').length}</p></div>
+                <div className="border-r border-[#e5e3dd] px-6 py-4"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Participantes atuais</p><p className="mt-1 text-2xl font-semibold text-slate-900">{activeMembers(diaryGroup).length}</p></div>
+                <div className="px-6 py-4"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Valor por aluno/aula</p><p className="mt-1 text-2xl font-semibold text-slate-900">{currency(diaryLessons[0]?.valor_aluno_aula || (activeMembers(diaryGroup).length ? Number(diaryGroup.valor_mensal_total) / activeMembers(diaryGroup).length / Number(diaryGroup.aulas_previstas_mes || 4) : 0))}</p></div>
+              </div>
+
+              <div className="premium-scrollarea min-h-0 flex-1 overflow-y-auto p-5">
+                {diaryLessons.length === 0 ? (
+                  <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-[#cfd8d1] bg-white/60 px-6 text-center">
+                    <BookOpenCheck size={28} className="text-[#1f4a3a]" />
+                    <p className="mt-3 text-sm font-semibold text-slate-800">Diário ainda vazio</p>
+                    <p className="mt-1 max-w-md text-xs leading-5 text-slate-500">Registre uma aula realizada. O lançamento será refletido imediatamente no histórico financeiro de todos os participantes ativos.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-hidden rounded-2xl border border-[#dfded7] bg-white">
+                    <div className="hidden grid-cols-[120px_1fr_120px_120px] border-b border-[#dfded7] bg-[#f3f2ed] px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 sm:grid"><span>Data</span><span>Observações</span><span>Participantes</span><span className="text-right">Valor/aluno</span></div>
+                    {diaryLessons.map((aula: any) => (
+                      <div key={aula.id} className="grid gap-2 border-b border-[#ebe9e3] px-5 py-4 last:border-0 sm:grid-cols-[120px_1fr_120px_120px] sm:items-center">
+                        <div><p className="text-sm font-semibold text-slate-900">{new Date(`${String(aula.data_aula).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR')}</p><p className="mt-1 text-[11px] text-slate-500">{aula.status === 'REALIZADA' ? 'Realizada' : 'Cancelada'}</p></div>
+                        <p className="text-xs leading-5 text-slate-600">{aula.observacoes || 'Nenhuma observação registrada.'}</p>
+                        <p className="text-xs text-slate-600">{aula.participantes_snapshot || 0} aluno{Number(aula.participantes_snapshot || 0) === 1 ? '' : 's'}</p>
+                        <p className="text-right text-sm font-semibold text-[#1f4a3a]">{currency(aula.valor_aluno_aula)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-[#dfded7] bg-[#fbfaf6] px-6 py-4">
+                <p className="hidden text-xs text-slate-500 sm:block">Cada aula realizada gera um lançamento financeiro por participante ativo.</p>
+                <div className="ml-auto flex gap-3"><button type="button" onClick={() => setDiaryGroup(null)} className="h-11 rounded-xl border border-[#d9d7ce] bg-white px-5 text-sm font-semibold text-slate-600">Fechar</button><button type="button" onClick={() => { setLessonGroup(diaryGroup); setLessonDate(new Date().toISOString().slice(0, 10)); setLessonNotes(''); setDiaryGroup(null) }} className="flex h-11 items-center gap-2 rounded-xl bg-[#1f4a3a] px-5 text-sm font-semibold text-white"><Plus size={16} /> Registrar aula</button></div>
+              </footer>
+            </motion.section>
           </motion.div>
         )}
       </AnimatePresence>

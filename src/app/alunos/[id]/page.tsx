@@ -125,6 +125,16 @@ export default function PerfilAluno() {
 
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (isMounted) carregarDados() }, [id, isMounted])
+  useEffect(() => {
+    if (!isMounted || !id) return
+    const channel = supabase
+      .channel(`financeiro-aluno-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'historico_aulas', filter: `aluno_id=eq.${id}` }, () => carregarDados())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pagamentos', filter: `aluno_id=eq.${id}` }, () => carregarDados())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alunos_info', filter: `id=eq.${id}` }, () => carregarDados())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [id, isMounted])
   useEffect(() => { if (horaInicioAula) { const [h, m] = horaInicioAula.split(':').map(Number); const d = new Date(); d.setHours(h + 1, m); setHoraFimAula(d.toTimeString().slice(0, 5)) } }, [horaInicioAula])
 
   async function carregarDados() {
