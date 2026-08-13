@@ -190,7 +190,6 @@ export default function TurmasPage() {
 
   async function salvarTurma(event: React.FormEvent) {
     event.preventDefault()
-    if (selectedStudents.length === 0) return alert('Selecione pelo menos um participante.')
     if (Number(form.valor_mensal_total) <= 0) return alert('Informe o valor mensal total da turma.')
     if (form.horario_fim <= form.horario_inicio) return alert('O horário final precisa ser posterior ao inicial.')
 
@@ -298,9 +297,13 @@ export default function TurmasPage() {
       fim_em: null,
       atualizado_em: new Date().toISOString(),
     }))
-    const { error: memberError } = await supabase
-      .from('turma_alunos')
-      .upsert(membershipRows, { onConflict: 'turma_id,aluno_id' })
+    let memberError: any = null
+    if (membershipRows.length > 0) {
+      const result = await supabase
+        .from('turma_alunos')
+        .upsert(membershipRows, { onConflict: 'turma_id,aluno_id' })
+      memberError = result.error
+    }
 
     if (memberError) {
       setSaving(false)
@@ -310,6 +313,7 @@ export default function TurmasPage() {
     // Se um participante ainda tinha o antigo horário individual exatamente
     // neste período, a nova turma assume esse horário. Outros horários do
     // aluno permanecem intactos.
+    if (selectedStudents.length > 0) {
     const { error: migratedSchedulesError } = await supabase
       .from('agenda')
       .delete()
@@ -324,6 +328,8 @@ export default function TurmasPage() {
       return alert(`A turma foi salva, mas não foi possível liberar os horários individuais: ${migratedSchedulesError.message}`)
     }
 
+    }
+
     const removedIds = existing
       .filter((item: any) => item.status === 'ATIVO' && !selectedStudents.includes(item.aluno_id))
       .map((item: any) => item.id)
@@ -332,6 +338,16 @@ export default function TurmasPage() {
         .from('turma_alunos')
         .update({ status: 'INATIVO', fim_em: today, atualizado_em: new Date().toISOString() })
         .in('id', removedIds)
+    }
+
+    if (turmaId && selectedStudents.length > 0) {
+      const { error: syncError } = await supabase.rpc('sincronizar_aulas_turma_participantes', {
+        p_turma_id: turmaId,
+      })
+      if (syncError) {
+        setSaving(false)
+        return alert(`A turma foi salva, mas as aulas anteriores não puderam ser distribuídas: ${syncError.message}`)
+      }
     }
 
     setSaving(false)
@@ -343,7 +359,7 @@ export default function TurmasPage() {
     event.preventDefault()
     if (!lessonGroup) return
     setLessonSaving(true)
-    const { error } = await supabase.rpc('registrar_aula_turma', {
+    const { data: result, error } = await supabase.rpc('registrar_aula_turma', {
       p_turma_id: lessonGroup.id,
       p_data_aula: lessonDate,
       p_observacoes: lessonNotes.trim() || null,
@@ -352,7 +368,12 @@ export default function TurmasPage() {
     if (error) return alert(`Não foi possível registrar a aula: ${error.message}`)
     setLessonGroup(null)
     setLessonNotes('')
-    alert('Aula registrada para todos os participantes ativos.')
+    const participantes = Number(result?.participantes || 0)
+    if (participantes > 0) {
+      alert(`Aula registrada para ${participantes} participante${participantes === 1 ? '' : 's'}.`)
+    } else {
+      alert('Aula coletiva registrada. Ela será distribuída automaticamente quando os participantes forem cadastrados.')
+    }
   }
 
   if (loading) {
@@ -527,7 +548,7 @@ export default function TurmasPage() {
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e7efe9] text-xs font-bold text-[#1f4a3a]">3</span>
-                      <div><h3 className="text-sm font-semibold text-slate-900">Participantes</h3><p className="mt-0.5 text-xs text-slate-500">{selectedStudents.length} selecionado{selectedStudents.length === 1 ? '' : 's'} da base</p></div>
+                      <div><h3 className="text-sm font-semibold text-slate-900">Participantes</h3><p className="mt-0.5 text-xs text-slate-500">{selectedStudents.length} selecionado{selectedStudents.length === 1 ? '' : 's'} da base · opcional nesta etapa</p></div>
                     </div>
                     <span className="rounded-full bg-[#e7efe9] px-3 py-1.5 text-xs font-semibold text-[#1f4a3a]">{currency(monthlyShare)} cada</span>
                   </div>
@@ -553,7 +574,7 @@ export default function TurmasPage() {
                 </div>
 
                 <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-[#dfded7] bg-[#fbfaf6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-7">
-                  <p className="hidden text-xs text-slate-500 sm:block">{selectedStudents.length ? `${selectedStudents.length} participante${selectedStudents.length === 1 ? '' : 's'} · ${currency(monthlyShare)} por aluno/mês` : 'Selecione ao menos um participante'}</p>
+                  <p className="hidden text-xs text-slate-500 sm:block">{selectedStudents.length ? `${selectedStudents.length} participante${selectedStudents.length === 1 ? '' : 's'} · ${currency(monthlyShare)} por aluno/mês` : 'Você pode cadastrar os participantes depois'}</p>
                   <div className="flex flex-col-reverse gap-3 sm:flex-row">
                   <button type="button" onClick={() => setIsModalOpen(false)} className="h-11 rounded-xl border border-[#d9d7ce] bg-white px-5 text-sm font-semibold text-slate-600">Cancelar</button>
                   <button type="submit" disabled={saving} className="h-11 rounded-xl bg-[#1f4a3a] px-6 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Salvando...' : editingId ? 'Salvar alterações' : 'Criar turma'}</button>
@@ -570,11 +591,13 @@ export default function TurmasPage() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[90] flex items-center justify-center bg-[#0d1d17]/55 p-4 backdrop-blur-sm">
             <motion.form onSubmit={registrarAula} initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 18, opacity: 0 }} className="w-full max-w-lg rounded-[26px] border border-white/60 bg-[#f8f7f2] p-6 shadow-2xl">
               <div className="flex items-start justify-between gap-4">
-                <div><div className="premium-kicker">Diário coletivo</div><h2 className="mt-1 text-2xl font-semibold text-slate-900">{lessonGroup.nome}</h2><p className="mt-1 text-sm text-slate-500">A aula será lançada para {activeMembers(lessonGroup).length} participante{activeMembers(lessonGroup).length === 1 ? '' : 's'}.</p></div>
+                <div><div className="premium-kicker">Diário coletivo</div><h2 className="mt-1 text-2xl font-semibold text-slate-900">{lessonGroup.nome}</h2><p className="mt-1 text-sm text-slate-500">{activeMembers(lessonGroup).length > 0 ? `A aula será lançada para ${activeMembers(lessonGroup).length} participante${activeMembers(lessonGroup).length === 1 ? '' : 's'}.` : 'Nenhum participante cadastrado ainda. A aula ficará pronta para distribuição quando você adicionar os alunos.'}</p></div>
                 <button type="button" onClick={() => setLessonGroup(null)} className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dfded7] bg-white text-slate-500"><X size={18} /></button>
               </div>
               <div className="mt-6 rounded-2xl border border-[#d7e1da] bg-[#edf4ef] p-4 text-sm text-[#315949]">
-                Cada participante receberá uma aula realizada no próprio histórico, com o valor congelado desta divisão.
+                {activeMembers(lessonGroup).length > 0
+                  ? 'Cada participante receberá uma aula realizada no próprio histórico, com o valor congelado desta divisão.'
+                  : 'A aula será salva na turma mesmo sem alunos cadastrados. Ao adicionar os participantes depois, ela será distribuída automaticamente no histórico deles.'}
               </div>
               <label className="mt-5 block text-xs font-semibold text-slate-600">Data da aula
                 <input required type="date" value={lessonDate} onChange={(e) => setLessonDate(e.target.value)} className="mt-1.5 w-full rounded-xl border border-[#d9d7ce] bg-white px-4 py-3 text-sm outline-none focus:border-[#1f4a3a]" />

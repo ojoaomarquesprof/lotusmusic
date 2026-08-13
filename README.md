@@ -144,7 +144,10 @@ Para habilitar o cadastro rápido, a presença e a conversão de aulas experimen
 ```text
 supabase/migrations/202608100001_aulas_experimentais.sql
 supabase/migrations/202608100002_matricula_antecipada_experimental.sql
+supabase/migrations/202608130001_aulas_turma_sem_participantes.sql
 ```
+
+Turmas podem ser criadas sem participantes e aulas anteriores podem ser registradas no diário coletivo. Quando os alunos forem adicionados depois, as aulas coletivas salvas sem participantes são distribuídas automaticamente no histórico financeiro de cada participante.
 
 A rotina de fechamento roda diariamente pela Vercel e processa o mês anterior logo após a virada para o primeiro dia. Assim, inclui todas as aulas do último dia; a fatura mantém a data de emissão do mês encerrado e vence 7 dias depois. A rotina é protegida por `CRON_SECRET` e não duplica faturas em reexecuções.
 
