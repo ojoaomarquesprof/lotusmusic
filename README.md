@@ -148,6 +148,7 @@ supabase/migrations/202608130001_aulas_turma_sem_participantes.sql
 supabase/migrations/202608130002_corrige_saldo_creditos.sql
 supabase/migrations/202608130003_backfill_turmas_historicas.sql
 supabase/migrations/202608130004_corrige_creditos_negativos.sql
+supabase/migrations/202608130005_alinha_creditos_com_diario.sql
 ```
 
 Turmas podem ser criadas sem participantes e aulas anteriores podem ser registradas no diário coletivo. Quando os alunos forem adicionados depois, as aulas coletivas salvas sem participantes são distribuídas automaticamente no histórico financeiro de cada participante.
