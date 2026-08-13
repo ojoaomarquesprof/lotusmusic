@@ -321,7 +321,11 @@ export default function PerfilAluno() {
       const idsAtuais = agendasParaSalvar.filter(a => !String(a.id).startsWith('new_')).map(a => a.id);
       const deletados = aulasFixas.filter(a => !idsAtuais.includes(a.id));
       for (let del of deletados) {
-          await supabase.from('agenda').delete().eq('id', del.id);
+          const { error: deleteAgendaError } = await supabase.from('agenda').delete().eq('id', del.id);
+          if (deleteAgendaError) {
+            setIsSubmitting(false);
+            return alert("Não foi possível liberar um dos horários antigos: " + deleteAgendaError.message);
+          }
       }
 
       for (let ag of agendasParaSalvar) {

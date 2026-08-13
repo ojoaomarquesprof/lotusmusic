@@ -195,9 +195,9 @@ export default function TurmasPage() {
     if (form.horario_fim <= form.horario_inicio) return alert('O horário final precisa ser posterior ao inicial.')
 
     setSaving(true)
-    const { data: individualConflicts, error: conflictError } = await supabase
+    const { data: individualConflictRows, error: conflictError } = await supabase
       .from('agenda')
-      .select('id')
+      .select('id, aluno_id')
       .eq('dia', form.dia)
       .eq('professor_id', form.professor_id)
       .lt('horario_inicio', form.horario_fim)
@@ -207,6 +207,34 @@ export default function TurmasPage() {
       setSaving(false)
       return alert(`Não foi possível validar a agenda: ${conflictError.message}`)
     }
+
+    const conflictRows = individualConflictRows || []
+    const conflictStudentIds = Array.from(new Set(
+      conflictRows.map((row: any) => row.aluno_id).filter(Boolean),
+    ))
+    let activeConflictStudentIds = new Set<string>()
+    if (conflictStudentIds.length > 0) {
+      const { data: conflictStudents, error: conflictStudentsError } = await supabase
+        .from('alunos_info')
+        .select('id, status')
+        .in('id', conflictStudentIds)
+
+      if (conflictStudentsError) {
+        setSaving(false)
+        return alert(`Não foi possível validar os alunos do horário: ${conflictStudentsError.message}`)
+      }
+
+      activeConflictStudentIds = new Set(
+        (conflictStudents || [])
+          .filter((student: any) => student.status !== 'Inativo')
+          .map((student: any) => String(student.id)),
+      )
+    }
+
+    const individualConflicts = conflictRows.filter((row: any) => {
+      const studentId = String(row.aluno_id || '')
+      return activeConflictStudentIds.has(studentId) && !selectedStudents.includes(studentId)
+    })
 
     let groupConflictQuery = supabase
       .from('turmas')
@@ -277,6 +305,23 @@ export default function TurmasPage() {
     if (memberError) {
       setSaving(false)
       return alert(`A turma foi salva, mas os participantes não: ${memberError.message}`)
+    }
+
+    // Se um participante ainda tinha o antigo horário individual exatamente
+    // neste período, a nova turma assume esse horário. Outros horários do
+    // aluno permanecem intactos.
+    const { error: migratedSchedulesError } = await supabase
+      .from('agenda')
+      .delete()
+      .in('aluno_id', selectedStudents)
+      .eq('dia', form.dia)
+      .eq('professor_id', form.professor_id)
+      .lt('horario_inicio', form.horario_fim)
+      .gt('horario_fim', form.horario_inicio)
+
+    if (migratedSchedulesError) {
+      setSaving(false)
+      return alert(`A turma foi salva, mas não foi possível liberar os horários individuais: ${migratedSchedulesError.message}`)
     }
 
     const removedIds = existing

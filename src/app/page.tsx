@@ -609,7 +609,13 @@ export default function Dashboard() {
     setSelectedAula(null); carregarDados(); setIsSubmitting(false);
   }
 
-  const handleRemoverDaGrade = async (id: string) => { if (!confirm("Encerrar este horário recorrente? As próximas aulas deixarão de aparecer na agenda, mas todo o histórico já registrado será preservado.")) return; await supabase.from('agenda').delete().eq('id', id); setSelectedAula(null); carregarDados() }
+  const handleRemoverDaGrade = async (id: string) => {
+    if (!confirm("Encerrar este horário recorrente? As próximas aulas deixarão de aparecer na agenda, mas todo o histórico já registrado será preservado.")) return
+    const { error } = await supabase.from('agenda').delete().eq('id', id)
+    if (error) return alert(`Não foi possível liberar o horário: ${error.message}`)
+    setSelectedAula(null)
+    await carregarDados()
+  }
 
   const checkIfClassPast = (dateStr: string, endTimeStr: string) => {
     try {
