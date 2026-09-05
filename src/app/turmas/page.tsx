@@ -556,7 +556,7 @@ export default function TurmasPage() {
                       <div className="p-4"><p className="text-[10px] font-bold uppercase tracking-wide text-[#587066]">Por aluno/mês</p><p className="mt-1 text-lg font-semibold text-[#1f4a3a]">{currency(monthlyShare)}</p></div>
                       <div className="border-l border-[#d7e1da] p-4"><p className="text-[10px] font-bold uppercase tracking-wide text-[#587066]">Por aula/aluno</p><p className="mt-1 text-lg font-semibold text-[#1f4a3a]">{currency(classShare)}</p></div>
                     </div>
-                    <p className="mt-3 text-[11px] leading-5 text-slate-500">A divisão é recalculada para as próximas aulas. As aulas já realizadas mantêm o preço e a quantidade de participantes daquele dia.</p>
+                    <p className="mt-3 text-[11px] leading-5 text-slate-500">A divisão é recalculada nas aulas ainda não faturadas sempre que os participantes ativos mudam, mesmo que tenham entrado depois. Cobranças já emitidas permanecem intactas.</p>
                   </section>
                   </div>
 
@@ -662,7 +662,7 @@ export default function TurmasPage() {
               </div>
               <div className="mt-6 rounded-2xl border border-[#d7e1da] bg-[#edf4ef] p-4 text-sm text-[#315949]">
                 {activeMembers(lessonGroup).length > 0
-                  ? 'Cada participante receberá uma aula realizada no próprio histórico, com o valor congelado desta divisão.'
+                  ? 'Cada participante ativo receberá a aula no próprio histórico. Enquanto ela não for faturada, o valor acompanha a divisão atual da turma.'
                   : 'A aula será salva na turma mesmo sem alunos cadastrados. Ao adicionar os participantes depois, ela será distribuída automaticamente no histórico deles.'}
               </div>
               <label className="mt-5 block text-xs font-semibold text-slate-600">Data da aula
