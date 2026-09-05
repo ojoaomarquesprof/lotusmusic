@@ -4,10 +4,38 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { useStyles } from '../../lib/useStyles'
+import { isConfirmedPayment } from '../../lib/billing'
+import { formatCPFOrCNPJ } from '../../lib/formatters'
 import Cropper from 'react-easy-crop'
 import { motion, AnimatePresence } from 'framer-motion'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import {
+  BarChart3,
+  BadgeCheck,
+  Building2,
+  CalendarClock,
+  Clock3,
+  Download,
+  DoorOpen,
+  GraduationCap,
+  ImageIcon,
+  Landmark,
+  Mail,
+  MapPin,
+  Music2,
+  Pencil,
+  Phone,
+  Plus,
+  Save,
+  Search,
+  Settings2,
+  Trash2,
+  UserCheck,
+  UserRound,
+  UserX,
+  UsersRound,
+} from 'lucide-react'
 
 // --- FUNÇÕES DE MÁSCARA E CROPPER ---
 const formatPhone = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/g, '($1) $2').replace(/(\d)(\d{4})$/, '$1-$2').slice(0, 15)
@@ -27,8 +55,8 @@ export default function Gerencia() {
   const [isMounted, setIsMounted] = useState(false)
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [activeSection, setActiveSection] = useState<'identidade' | 'estrutura' | 'equipe' | 'horarios' | 'relatorios'>('identidade')
 
-  const [activeTab, setActiveTab] = useState('Escola')
   const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
   // --- ESTADOS: ESCOLA ---
@@ -51,9 +79,10 @@ export default function Gerencia() {
   const [selectedProfId, setSelectedProfId] = useState('')
   const [disponibilidades, setDisponibilidades] = useState<any[]>([])
   const [matriculasProf, setMatriculasProf] = useState<any[]>([]) 
+  const [diasDispSelecionados, setDiasDispSelecionados] = useState<string[]>(['Segunda'])
   const [dispDia, setDispDia] = useState('Segunda')
   const [dispInicio, setDispInicio] = useState('08:00')
-  const [dispFim, setDispFim] = useState('22:00')
+  const [dispFim, setDispFim] = useState('12:00')
   const [temAlmoco, setTemAlmoco] = useState(true)
   const [almocoInicio, setAlmocoInicio] = useState('12:00')
   const [almocoFim, setAlmocoFim] = useState('14:00')
@@ -68,6 +97,7 @@ export default function Gerencia() {
     modalidades: [] as string[]
   })
   const [showCropModalProf, setShowCropModalProf] = useState(false)
+  const [buscaEquipe, setBuscaEquipe] = useState('')
   const [imageToCropProf, setImageToCropProf] = useState<string | null>(null)
   const [cropProf, setCropProf] = useState({ x: 0, y: 0 })
   const [zoomProf, setZoomProf] = useState(1)
@@ -202,38 +232,70 @@ export default function Gerencia() {
 
   const handleGerarDisponibilidade = async () => {
     if (!selectedProfId) return alert("Selecione um professor primeiro.")
+    if (diasDispSelecionados.length === 0) return alert("Selecione pelo menos um dia da semana.")
     setIsSubmitting(true)
 
     const startMin = parseInt(dispInicio.split(':')[0]) * 60 + parseInt(dispInicio.split(':')[1])
     const endMin = parseInt(dispFim.split(':')[0]) * 60 + parseInt(dispFim.split(':')[1])
-    const lunchStartMin = temAlmoco ? parseInt(almocoInicio.split(':')[0]) * 60 + parseInt(almocoInicio.split(':')[1]) : 0
-    const lunchEndMin = temAlmoco ? parseInt(almocoFim.split(':')[0]) * 60 + parseInt(almocoFim.split(':')[1]) : 0
+    if (endMin <= startMin) {
+      setIsSubmitting(false)
+      return alert("O horário final precisa ser depois do horário inicial.")
+    }
 
     const slotsToInsert = []
-    let currentMin = startMin
-
-    while (currentMin + 60 <= endMin) { 
-      const slotStart = currentMin
-      const slotEnd = currentMin + 60
-      let isLunch = false
-      if (temAlmoco && ((slotStart >= lunchStartMin && slotStart < lunchEndMin) || (slotEnd > lunchStartMin && slotEnd <= lunchEndMin))) isLunch = true
-
-      if (!isLunch) {
+    for (const dia of diasDispSelecionados) {
+      let currentMin = startMin
+      while (currentMin + 60 <= endMin) {
+        const slotStart = currentMin
+        const slotEnd = currentMin + 60
         const hStart = String(Math.floor(slotStart / 60)).padStart(2, '0') + ':' + String(slotStart % 60).padStart(2, '0')
         const hEnd = String(Math.floor(slotEnd / 60)).padStart(2, '0') + ':' + String(slotEnd % 60).padStart(2, '0')
-        const exists = disponibilidades.some(d => d.dia_semana === dispDia && d.hora_inicio === hStart)
-        if (!exists) slotsToInsert.push({ professor_id: selectedProfId, dia_semana: dispDia, hora_inicio: hStart, hora_fim: hEnd })
+        const exists = disponibilidades.some(d => d.dia_semana === dia && String(d.hora_inicio).slice(0, 5) === hStart)
+        if (!exists) slotsToInsert.push({ professor_id: selectedProfId, dia_semana: dia, hora_inicio: hStart, hora_fim: hEnd })
+        currentMin += 60
       }
-      currentMin += 60 
     }
 
     if (slotsToInsert.length > 0) {
       await supabase.from('disponibilidade_professor').insert(slotsToInsert)
-      alert(`✅ ${slotsToInsert.length} horários criados na grade!`)
+      alert(`✅ ${slotsToInsert.length} horários adicionados à semana!`)
       carregarDisponibilidadeProf(selectedProfId)
     } else {
-      alert("⚠️ Nenhum horário gerado. Verifique os horários e se já não existem.")
+      alert("Esses horários já fazem parte da disponibilidade.")
     }
+    setIsSubmitting(false)
+  }
+
+  const toggleDiaDisponibilidade = (dia: string) => {
+    setDiasDispSelecionados(prev => prev.includes(dia) ? prev.filter(item => item !== dia) : [...prev, dia])
+  }
+
+  const handleToggleDisponibilidade = async (dia: string, horaInicio: string) => {
+    if (!selectedProfId || isSubmitting) return
+    const existente = disponibilidades.find(d => d.dia_semana === dia && String(d.hora_inicio).slice(0, 5) === horaInicio)
+
+    if (existente) {
+      if (getOcupante(existente)) {
+        return alert("Este horário possui uma aula fixa. Altere primeiro a matrícula na agenda.")
+      }
+      setIsSubmitting(true)
+      await supabase.from('disponibilidade_professor').delete().eq('id', existente.id)
+      await carregarDisponibilidadeProf(selectedProfId)
+      setIsSubmitting(false)
+      return
+    }
+
+    const inicioMin = parseInt(horaInicio.slice(0, 2)) * 60 + parseInt(horaInicio.slice(3, 5))
+    const fimMin = inicioMin + 60
+    const horaFim = `${String(Math.floor(fimMin / 60)).padStart(2, '0')}:${String(fimMin % 60).padStart(2, '0')}`
+    setIsSubmitting(true)
+    await supabase.from('disponibilidade_professor').insert([{
+      professor_id: selectedProfId,
+      dia_semana: dia,
+      hora_inicio: horaInicio,
+      hora_fim: horaFim,
+    }])
+    await carregarDisponibilidadeProf(selectedProfId)
     setIsSubmitting(false)
   }
 
@@ -249,10 +311,12 @@ export default function Gerencia() {
   }
 
   const handleLimparDia = async (dia: string) => { 
-    if (!confirm(`🚨 Apagar TODOS os horários de ${dia}? As vagas que já estão com matrículas cadastradas vão ficar órfãs se você prosseguir.`)) return; 
-    setIsSubmitting(true); 
-    await supabase.from('disponibilidade_professor').delete().eq('professor_id', selectedProfId).eq('dia_semana', dia); 
-    carregarDisponibilidadeProf(selectedProfId); 
+    const livres = disponibilidades.filter(d => d.dia_semana === dia && !getOcupante(d))
+    if (livres.length === 0) return alert(`Não há horários livres para remover em ${dia}.`)
+    if (!confirm(`Remover ${livres.length} horário(s) livre(s) de ${dia}? Aulas já ocupadas serão preservadas.`)) return;
+    setIsSubmitting(true);
+    await supabase.from('disponibilidade_professor').delete().in('id', livres.map(d => d.id));
+    await carregarDisponibilidadeProf(selectedProfId);
     setIsSubmitting(false) 
   }
 
@@ -384,7 +448,7 @@ export default function Gerencia() {
         .lte('data_transacao', dataFimStr)
 
       const extrato = [
-        ...(pagamentos || []).map(p => ({ data: p.data_pagamento, descricao: `Mensalidade: ${p.aluno?.nome_completo || 'Aluno'}`, valor: p.valor, tipo: 'Entrada' })),
+        ...(pagamentos || []).filter(isConfirmedPayment).map(p => ({ data: p.data_pagamento, descricao: `Mensalidade: ${p.aluno?.nome_completo || 'Aluno'}`, valor: p.valor, tipo: 'Entrada' })),
         ...(transacoes || []).map(t => ({ data: t.data_transacao, descricao: t.descricao || t.categoria, valor: t.valor, tipo: t.tipo }))
       ].sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
 
@@ -536,7 +600,23 @@ export default function Gerencia() {
     setGerandoRelatorio(false)
   }
 
-  const inputClass = "w-full p-3.5 rounded-xl bg-white/50 border border-white/60 text-slate-800 font-medium focus:bg-white/80 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none shadow-inner placeholder:text-slate-400 mt-1";
+  const inputClass = "w-full px-4 py-3.5 rounded-xl bg-white border border-[#deddd6] text-slate-800 font-medium focus:border-[#1f4a3a] focus:ring-4 focus:ring-[#1f4a3a]/10 transition-all outline-none placeholder:text-slate-400 mt-1";
+  const equipeFiltrada = professores.filter(prof => {
+    const termo = buscaEquipe.trim().toLowerCase()
+    if (!termo) return true
+    return [prof.nome_completo, prof.email, prof.telefone, ...(prof.modalidades || [])]
+      .filter(Boolean)
+      .some(valor => String(valor).toLowerCase().includes(termo))
+  })
+  const professorSelecionado = professores.find(prof => prof.id === selectedProfId)
+  const gradeHoras = Array.from({ length: 17 }, (_, index) => `${String(index + 6).padStart(2, '0')}:00`)
+  const horariosLivres = disponibilidades.filter(d => !getOcupante(d)).length
+  const horariosOcupados = disponibilidades.filter(d => getOcupante(d)).length
+
+  const abrirDisponibilidadeProfessor = (professorId: string) => {
+    setSelectedProfId(professorId)
+    setActiveSection('horarios')
+  }
 
   if (!isMounted) return null;
   if (loading) return <div className="flex justify-center items-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
@@ -544,38 +624,395 @@ export default function Gerencia() {
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="pb-12 w-full relative">
       
-      {/* CABEÇALHO */}
-      <motion.div variants={itemVariants} className="mb-8">
-        <h2 className="text-3xl font-bold tracking-tight text-slate-800">Gerência e Setup</h2>
-        <p className={`text-slate-500 text-sm mt-1`}>Configurações Avançadas do Sistema</p>
+      <motion.div variants={itemVariants} className="mb-7">
+        <div className="premium-kicker mb-3">Administração</div>
+        <div className="flex items-start gap-4">
+          <div className="hidden sm:flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e7efe9] text-[#1f4a3a]">
+            <Settings2 size={23} strokeWidth={1.7} />
+          </div>
+          <div>
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-slate-900">Central de gestão</h2>
+            <p className="text-slate-500 text-sm md:text-base mt-1.5 max-w-2xl">
+              Dados da escola, estrutura, equipe, disponibilidade e relatórios em um único lugar.
+            </p>
+          </div>
+        </div>
       </motion.div>
 
-      {/* ABAS COM EFEITO DE VIDRO/LINHA */}
-      <motion.div variants={itemVariants} className="flex gap-8 border-b border-slate-200/50 mb-8 overflow-x-auto custom-scrollbar">
-        {[
-          { id: 'Escola', icon: '🏫', label: 'Dados da Escola' },
-          { id: 'Estrutura', icon: '📍', label: 'Salas & Cursos' },
-          { id: 'Equipe', icon: '🧑‍🏫', label: 'Equipe & Profs' },
-          { id: 'Horarios', icon: '⏰', label: 'Motor de Horários' },
-          { id: 'Relatorios', icon: '📊', label: 'Relatórios' }
-        ].map(tab => (
-          <button 
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)} 
-            className={`pb-4 text-sm font-bold tracking-tight transition-all border-b-2 whitespace-nowrap ${activeTab === tab.id ? 'border-indigo-500 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-          >
-            {tab.icon} {tab.label}
-          </button>
-        ))}
-      </motion.div>
+      <motion.nav
+        variants={itemVariants}
+        aria-label="Seções da central de gestão"
+        role="tablist"
+        className="sticky top-3 z-20 premium-panel !rounded-2xl p-2 mb-8 overflow-x-auto custom-scrollbar"
+      >
+        <div className="flex min-w-max gap-1">
+          {[
+            { id: 'identidade', icon: Building2, label: 'Escola' },
+            { id: 'estrutura', icon: MapPin, label: 'Estrutura' },
+            { id: 'equipe', icon: UsersRound, label: 'Equipe' },
+            { id: 'horarios', icon: CalendarClock, label: 'Disponibilidade' },
+            { id: 'relatorios', icon: BarChart3, label: 'Relatórios' },
+          ].map((item) => {
+            const Icon = item.icon
+            const isActive = activeSection === item.id
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id as typeof activeSection)}
+                role="tab"
+                aria-selected={isActive}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${isActive ? 'bg-[#1f4a3a] text-white shadow-sm' : 'text-slate-600 hover:bg-[#e7efe9] hover:text-[#1f4a3a]'}`}
+              >
+                <Icon size={15} strokeWidth={1.8} />
+                {item.label}
+              </button>
+            )
+          })}
+        </div>
+      </motion.nav>
 
-      <div>
-        
-        {/* ABA ESCOLA */}
-        <AnimatePresence mode="wait">
-          {activeTab === 'Escola' && (
-            <motion.div key="Escola" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-              <form onSubmit={handleSalvarConfig} className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+      <div className="space-y-8">
+        {activeSection === 'identidade' && (
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+            <form onSubmit={handleSalvarConfig} className="space-y-5">
+              <div className="premium-panel overflow-hidden">
+                <div className="px-5 md:px-6 py-5 border-b border-[#e5e3dc] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center">
+                      <Building2 size={19} strokeWidth={1.8} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">Perfil da escola</h3>
+                      <p className="text-sm text-slate-500 mt-0.5">Identidade usada no aplicativo, nas faturas e nos documentos.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#1f4a3a]">
+                    <BadgeCheck size={15} />
+                    Dados centralizados
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-[330px_minmax(0,1fr)]">
+                  <aside className="p-5 md:p-6 bg-[#faf9f6] border-b xl:border-b-0 xl:border-r border-[#e5e3dc]">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-4">Marca</p>
+                    <label className="block cursor-pointer group">
+                      <div className="h-36 rounded-2xl border border-dashed border-[#cfd6d0] bg-white flex items-center justify-center overflow-hidden relative">
+                        {logoPreview ? (
+                          <img src={logoPreview} alt="Logo atual da escola" className="max-h-full max-w-full object-contain p-4" />
+                        ) : (
+                          <div className="text-center text-slate-400">
+                            <ImageIcon size={25} strokeWidth={1.5} className="mx-auto mb-2" />
+                            <span className="text-xs font-medium">Adicionar logotipo</span>
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-[#153b2f]/85 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs font-semibold">Alterar logotipo</div>
+                      </div>
+                      <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setLogoFile(e.target.files[0]); setLogoPreview(URL.createObjectURL(e.target.files[0])) } }} />
+                    </label>
+                    <p className="text-xs leading-relaxed text-slate-500 mt-3">Prefira uma imagem PNG com fundo transparente e boa leitura em fundo claro.</p>
+
+                    <div className="mt-6 pt-5 border-t border-[#e5e3dc] flex items-center gap-4">
+                      <label className="cursor-pointer group shrink-0">
+                        <div className="h-16 w-16 rounded-2xl border border-dashed border-[#cfd6d0] bg-white flex items-center justify-center overflow-hidden">
+                          {faviconPreview ? <img src={faviconPreview} alt="Ícone atual da escola" className="h-full w-full object-contain p-2" /> : <ImageIcon size={19} className="text-slate-400" />}
+                        </div>
+                        <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setFaviconFile(e.target.files[0]); setFaviconPreview(URL.createObjectURL(e.target.files[0])) } }} />
+                      </label>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">Ícone do aplicativo</p>
+                        <p className="text-xs text-slate-500 mt-1">Formato quadrado, idealmente 512 × 512 px.</p>
+                      </div>
+                    </div>
+                  </aside>
+
+                  <div className="p-5 md:p-7">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-semibold text-slate-600">Nome da escola</label>
+                        <input value={config.nome_escola || ''} onChange={e => setConfig({...config, nome_escola: e.target.value})} placeholder="Nome exibido no sistema" className={inputClass} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-600">CNPJ</label>
+                        <input value={config.cnpj || ''} onChange={e => setConfig({...config, cnpj: formatCPFOrCNPJ(e.target.value)})} placeholder="00.000.000/0000-00" className={inputClass} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-600">Telefone ou WhatsApp</label>
+                        <input value={config.telefone || ''} onChange={e => setConfig({...config, telefone: formatPhone(e.target.value)})} placeholder="(00) 00000-0000" className={inputClass} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-semibold text-slate-600">Chave PIX</label>
+                        <input value={config.chave_pix || ''} onChange={e => setConfig({...config, chave_pix: e.target.value})} placeholder="Chave usada nas cobranças" className={inputClass} />
+                        <p className="text-xs text-slate-500 mt-1.5">Esta informação aparece nas faturas quando não há cobrança integrada.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="premium-panel overflow-hidden">
+                <div className="px-5 md:px-6 py-4 border-b border-[#e5e3dc] flex items-center gap-3">
+                  <MapPin size={18} className="text-[#1f4a3a]" />
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Endereço principal</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Usado em documentos, contratos e faturas.</p>
+                  </div>
+                </div>
+                <div className="p-5 md:p-6 grid grid-cols-2 md:grid-cols-12 gap-x-4 gap-y-4">
+                  <div className="col-span-2 md:col-span-3"><label className="text-xs font-semibold text-slate-600">CEP</label><input value={config.cep || ''} onChange={handleCepChange} maxLength={9} className={inputClass} /></div>
+                  <div className="col-span-2 md:col-span-6"><label className="text-xs font-semibold text-slate-600">Rua</label><input value={config.endereco || ''} onChange={e => setConfig({...config, endereco: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-1 md:col-span-3"><label className="text-xs font-semibold text-slate-600">Número</label><input id="escola-numero" value={config.numero || ''} onChange={e => setConfig({...config, numero: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-1 md:col-span-3"><label className="text-xs font-semibold text-slate-600">Complemento</label><input value={config.complemento || ''} onChange={e => setConfig({...config, complemento: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-2 md:col-span-3"><label className="text-xs font-semibold text-slate-600">Bairro</label><input value={config.bairro || ''} onChange={e => setConfig({...config, bairro: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-2 md:col-span-4"><label className="text-xs font-semibold text-slate-600">Cidade</label><input value={config.cidade || ''} onChange={e => setConfig({...config, cidade: e.target.value})} className={inputClass} /></div>
+                  <div className="col-span-1 md:col-span-2"><label className="text-xs font-semibold text-slate-600">UF</label><input value={config.estado || ''} onChange={e => setConfig({...config, estado: e.target.value.toUpperCase()})} maxLength={2} className={inputClass} /></div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button type="submit" disabled={isSubmitting} className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#1f4a3a] text-white text-sm font-semibold flex items-center justify-center gap-2 hover:bg-[#173c2e] disabled:opacity-50">
+                  <Save size={16} /> {isSubmitting ? 'Salvando...' : 'Salvar dados da escola'}
+                </button>
+              </div>
+            </form>
+          </motion.section>
+        )}
+
+        {activeSection === 'estrutura' && (
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="premium-panel p-5 flex items-center gap-4">
+                <div className="h-10 w-10 rounded-xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center"><DoorOpen size={19} /></div>
+                <div><p className="text-2xl font-semibold text-slate-900">{salas.length}</p><p className="text-xs uppercase tracking-wider text-slate-500">Salas cadastradas</p></div>
+              </div>
+              <div className="premium-panel p-5 flex items-center gap-4">
+                <div className="h-10 w-10 rounded-xl bg-[#f3ecdf] text-[#8b6538] flex items-center justify-center"><Music2 size={19} /></div>
+                <div><p className="text-2xl font-semibold text-slate-900">{modalidades.length}</p><p className="text-xs uppercase tracking-wider text-slate-500">Modalidades ativas</p></div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+              <div className="premium-panel overflow-hidden">
+                <div className="px-5 py-4 border-b border-[#e5e3dc]">
+                  <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><DoorOpen size={18} className="text-[#1f4a3a]" /> Salas e espaços</h3>
+                  <p className="text-sm text-slate-500 mt-1">Ambientes disponíveis para agendamento.</p>
+                </div>
+                <form onSubmit={handleAddSala} className="p-4 border-b border-[#ebe9e3] flex gap-2">
+                  <input value={novaSala} onChange={e => setNovaSala(e.target.value)} placeholder="Ex.: Sala de Piano" aria-label="Nome da nova sala" className={`${inputClass} !mt-0 !py-3`} />
+                  <button type="submit" className="h-12 px-4 rounded-xl bg-[#1f4a3a] text-white text-sm font-semibold flex items-center gap-2 shrink-0"><Plus size={15} /> Adicionar</button>
+                </form>
+                <div className="divide-y divide-[#ebe9e3] max-h-[430px] overflow-y-auto custom-scrollbar">
+                  {salas.map(sl => (
+                    <div key={sl.id} className="px-5 py-3.5 flex items-center gap-3 hover:bg-[#faf9f6]">
+                      <div className="h-8 w-8 rounded-lg bg-[#f1f3ef] text-slate-500 flex items-center justify-center"><DoorOpen size={15} /></div>
+                      <span className="text-sm font-semibold text-slate-800 flex-1">{sl.nome}</span>
+                      <button onClick={() => handleDelSala(sl.id)} aria-label={`Excluir ${sl.nome}`} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                  {salas.length === 0 && <div className="py-14 px-6 text-center text-sm text-slate-500">Nenhuma sala cadastrada.</div>}
+                </div>
+              </div>
+
+              <div className="premium-panel overflow-hidden">
+                <div className="px-5 py-4 border-b border-[#e5e3dc]">
+                  <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><GraduationCap size={19} className="text-[#1f4a3a]" /> Modalidades e cursos</h3>
+                  <p className="text-sm text-slate-500 mt-1">Opções oferecidas nos cadastros e na agenda.</p>
+                </div>
+                <form onSubmit={handleAddModalidade} className="p-4 border-b border-[#ebe9e3] flex gap-2">
+                  <input value={novaModalidade} onChange={e => setNovaModalidade(e.target.value)} placeholder="Ex.: Violão" aria-label="Nome da nova modalidade" className={`${inputClass} !mt-0 !py-3`} />
+                  <button type="submit" className="h-12 px-4 rounded-xl bg-[#1f4a3a] text-white text-sm font-semibold flex items-center gap-2 shrink-0"><Plus size={15} /> Adicionar</button>
+                </form>
+                <div className="divide-y divide-[#ebe9e3] max-h-[430px] overflow-y-auto custom-scrollbar">
+                  {modalidades.map(modalidade => (
+                    <div key={modalidade.id} className="px-5 py-3.5 flex items-center gap-3 hover:bg-[#faf9f6]">
+                      <div className="h-8 w-8 rounded-lg bg-[#f3ecdf] text-[#8b6538] flex items-center justify-center"><Music2 size={15} /></div>
+                      <span className="text-sm font-semibold text-slate-800 flex-1">{modalidade.nome}</span>
+                      <button onClick={() => handleDelModalidade(modalidade.id)} aria-label={`Excluir ${modalidade.nome}`} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                  {modalidades.length === 0 && <div className="py-14 px-6 text-center text-sm text-slate-500">Nenhuma modalidade cadastrada.</div>}
+                </div>
+              </div>
+            </div>
+          </motion.section>
+        )}
+
+        {activeSection === 'equipe' && (
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="premium-panel overflow-hidden">
+            <div className="px-5 md:px-6 py-5 border-b border-[#e5e3dc] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><UsersRound size={19} className="text-[#1f4a3a]" /> Pessoas e acessos</h3>
+                <p className="text-sm text-slate-500 mt-1">{professores.filter(p => p.role === 'PROFESSOR').length} professor(es) · {professores.filter(p => p.role === 'ADMIN').length} administrador(es)</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+                <label className="relative flex-1 lg:w-72">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input value={buscaEquipe} onChange={e => setBuscaEquipe(e.target.value)} placeholder="Buscar na equipe" className="h-11 w-full pl-10 pr-4 rounded-xl border border-[#deddd6] bg-white text-sm outline-none focus:border-[#1f4a3a] focus:ring-4 focus:ring-[#1f4a3a]/10" />
+                </label>
+                <button onClick={() => abrirModalEquipe()} className="h-11 px-4 rounded-xl bg-[#1f4a3a] text-white text-sm font-semibold flex items-center justify-center gap-2"><Plus size={15} /> Novo membro</button>
+              </div>
+            </div>
+
+            <div className="hidden md:grid grid-cols-[minmax(240px,1.2fr)_130px_minmax(180px,1fr)_150px] gap-4 px-6 py-3 bg-[#faf9f6] border-b border-[#ebe9e3] text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              <span>Profissional</span><span>Acesso</span><span>Modalidades</span><span className="text-right">Ações</span>
+            </div>
+            <div className="divide-y divide-[#ebe9e3]">
+              {equipeFiltrada.map(prof => (
+                <div key={prof.id} className="px-5 md:px-6 py-4 grid grid-cols-1 md:grid-cols-[minmax(240px,1.2fr)_130px_minmax(180px,1fr)_150px] gap-4 md:items-center hover:bg-[#faf9f6] transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-11 w-11 rounded-full bg-[#dce8df] text-[#1f4a3a] flex items-center justify-center font-semibold overflow-hidden shrink-0">
+                      {prof.avatar_url ? <img src={prof.avatar_url} alt="" className="h-full w-full object-cover" /> : prof.nome_completo?.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{prof.nome_completo}</p>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                        {prof.email && <span className="text-xs text-slate-500 flex items-center gap-1"><Mail size={12} /> {prof.email}</span>}
+                        {prof.telefone && <span className="text-xs text-slate-500 flex items-center gap-1"><Phone size={12} /> {prof.telefone}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <span className={`inline-flex px-2.5 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wide ${prof.role === 'ADMIN' ? 'bg-[#f3ecdf] text-[#7c5b33]' : 'bg-[#e7efe9] text-[#1f4a3a]'}`}>{prof.role === 'ADMIN' ? 'Administrador' : 'Professor'}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(prof.modalidades || []).slice(0, 3).map((modalidade: string) => <span key={modalidade} className="px-2.5 py-1.5 rounded-md bg-slate-100 text-[11px] font-medium text-slate-600">{modalidade}</span>)}
+                    {(prof.modalidades || []).length > 3 && <span className="px-2.5 py-1.5 rounded-md bg-slate-100 text-[11px] font-medium text-slate-500">+{prof.modalidades.length - 3}</span>}
+                    {(!prof.modalidades || prof.modalidades.length === 0) && <span className="text-xs text-slate-500">Não informadas</span>}
+                  </div>
+                  <div className="flex md:justify-end gap-1.5">
+                    <button onClick={() => abrirDisponibilidadeProfessor(prof.id)} title="Gerenciar disponibilidade" className="h-10 px-3 rounded-lg border border-[#d7e3da] bg-[#f3f7f4] text-[#1f4a3a] text-xs font-semibold flex items-center gap-1.5"><CalendarClock size={14} /> Horários</button>
+                    <button onClick={() => abrirModalEquipe(prof)} title="Editar ficha" className="h-9 w-9 rounded-lg border border-[#deddd6] bg-white text-slate-500 flex items-center justify-center hover:text-[#1f4a3a]"><Pencil size={14} /></button>
+                  </div>
+                </div>
+              ))}
+              {equipeFiltrada.length === 0 && <div className="py-16 px-6 text-center text-sm text-slate-500">Nenhum membro encontrado.</div>}
+            </div>
+          </motion.section>
+        )}
+
+        {activeSection === 'horarios' && (
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
+            <div className="premium-panel overflow-hidden">
+              <div className="px-5 md:px-6 py-5 border-b border-[#e5e3dc] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2.5"><CalendarClock size={19} className="text-[#1f4a3a]" /> Semana disponível</h3>
+                  <p className="text-sm text-slate-500 mt-1">Clique na grade ou aplique um período a vários dias de uma vez.</p>
+                </div>
+                <label className="w-full lg:w-80">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Professor</span>
+                  <select value={selectedProfId} onChange={e => setSelectedProfId(e.target.value)} className="mt-1.5 h-11 w-full px-3.5 rounded-xl border border-[#deddd6] bg-white text-sm font-semibold text-slate-800 outline-none focus:border-[#1f4a3a]">
+                    <option value="">Selecione um professor</option>
+                    {professores.map(prof => <option key={prof.id} value={prof.id}>{prof.nome_completo}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              {!selectedProfId ? (
+                <div className="py-20 px-6 text-center">
+                  <div className="h-12 w-12 rounded-2xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center mx-auto mb-4"><UserRound size={22} /></div>
+                  <p className="text-sm font-semibold text-slate-800">Escolha um professor</p>
+                  <p className="text-sm text-slate-500 mt-1">A semana de disponibilidade aparecerá aqui.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="p-5 md:p-6 border-b border-[#e5e3dc] bg-[#faf9f6]">
+                    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-5 xl:items-end">
+                      <div>
+                        <div className="flex items-center justify-between gap-3 mb-2.5">
+                          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-600">Aplicar aos dias</p>
+                          <button type="button" onClick={() => setDiasDispSelecionados(dias)} className="text-xs font-semibold text-[#1f4a3a]">Selecionar todos</button>
+                        </div>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                          {dias.map(dia => {
+                            const selecionado = diasDispSelecionados.includes(dia)
+                            return <button key={dia} type="button" onClick={() => toggleDiaDisponibilidade(dia)} className={`h-11 rounded-lg border text-xs font-semibold transition-colors ${selecionado ? 'bg-[#1f4a3a] border-[#1f4a3a] text-white' : 'bg-white border-[#deddd6] text-slate-600 hover:border-[#9fb4a7]'}`}>{dia.slice(0, 3)}</button>
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+                        <label className="flex-1 sm:w-32"><span className="text-xs font-semibold text-slate-600">Das</span><input type="time" value={dispInicio} onChange={e => setDispInicio(e.target.value)} className="mt-1 h-11 w-full px-3 rounded-lg border border-[#deddd6] bg-white text-sm font-semibold" /></label>
+                        <label className="flex-1 sm:w-32"><span className="text-xs font-semibold text-slate-600">Até</span><input type="time" value={dispFim} onChange={e => setDispFim(e.target.value)} className="mt-1 h-11 w-full px-3 rounded-lg border border-[#deddd6] bg-white text-sm font-semibold" /></label>
+                        <button onClick={handleGerarDisponibilidade} disabled={isSubmitting} className="h-11 px-4 rounded-lg bg-[#1f4a3a] text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><Plus size={15} /> Aplicar período</button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-3">Para criar uma pausa, aplique dois períodos no mesmo dia — por exemplo, 08h–12h e 14h–20h.</p>
+                  </div>
+
+                  <div className="px-5 md:px-6 py-4 border-b border-[#e5e3dc] flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="h-9 w-9 rounded-full bg-[#dce8df] text-[#1f4a3a] flex items-center justify-center font-semibold shrink-0">{professorSelecionado?.nome_completo?.charAt(0)}</div>
+                      <div className="min-w-0"><p className="text-base font-semibold text-slate-900 truncate">{professorSelecionado?.nome_completo}</p><p className="text-xs text-slate-500">Disponibilidade semanal recorrente</p></div>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-sm border border-[#cdd4cf] bg-white" /> Indisponível</span>
+                      <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-sm bg-[#dcebdd]" /> Livre</span>
+                      <span className="flex items-center gap-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-sm bg-[#1f4a3a]" /> Com aula</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 border-b border-[#e5e3dc]">
+                    <div className="px-4 py-3.5 text-center"><p className="text-xl font-semibold text-slate-900">{disponibilidades.length}</p><p className="text-xs uppercase tracking-wider text-slate-500">Disponíveis</p></div>
+                    <div className="px-4 py-3.5 text-center border-x border-[#e5e3dc]"><p className="text-xl font-semibold text-emerald-700">{horariosLivres}</p><p className="text-xs uppercase tracking-wider text-slate-500">Livres</p></div>
+                    <div className="px-4 py-3.5 text-center"><p className="text-xl font-semibold text-[#1f4a3a]">{horariosOcupados}</p><p className="text-xs uppercase tracking-wider text-slate-500">Com aula</p></div>
+                  </div>
+
+                  <div className="overflow-auto custom-scrollbar max-h-[620px]">
+                    <div className="min-w-[760px]">
+                      <div className="sticky top-0 z-10 grid grid-cols-[72px_repeat(6,minmax(105px,1fr))] bg-[#faf9f6] border-b border-[#e5e3dc]">
+                        <div className="px-3 py-3 text-[11px] font-semibold uppercase text-slate-500">Hora</div>
+                        {dias.map(dia => (
+                          <div key={dia} className="px-2 py-3 text-center border-l border-[#ebe9e3]">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">{dia}</p>
+                            {disponibilidades.some(d => d.dia_semana === dia) && <button onClick={() => handleLimparDia(dia)} className="text-[10px] font-medium text-rose-600 mt-1 hover:underline">Limpar livres</button>}
+                          </div>
+                        ))}
+                      </div>
+                      {gradeHoras.map(hora => (
+                        <div key={hora} className="grid grid-cols-[72px_repeat(6,minmax(105px,1fr))] border-b border-[#ebe9e3]">
+                          <div className="px-3 py-3 text-xs font-semibold text-slate-600 flex items-center gap-1.5"><Clock3 size={13} /> {hora}</div>
+                          {dias.map(dia => {
+                            const disponibilidade = disponibilidades.find(d => d.dia_semana === dia && String(d.hora_inicio).slice(0, 5) === hora)
+                            const ocupante = disponibilidade ? getOcupante(disponibilidade) : null
+                            const ocupado = !!ocupante
+                            return (
+                              <button
+                                key={`${dia}-${hora}`}
+                                onClick={() => handleToggleDisponibilidade(dia, hora)}
+                                disabled={isSubmitting || ocupado}
+                                title={ocupado ? `Aula de ${ocupante?.aluno?.nome_completo || 'aluno'}` : disponibilidade ? 'Clique para marcar como indisponível' : 'Clique para disponibilizar'}
+                                className={`min-h-12 px-2 py-2 border-l border-[#ebe9e3] text-left transition-colors disabled:cursor-wait ${ocupado ? 'bg-[#1f4a3a] text-white cursor-not-allowed' : disponibilidade ? 'bg-[#e4efe5] hover:bg-[#d5e6d7] text-[#1f4a3a]' : 'bg-white hover:bg-[#f7f8f5] text-slate-300'}`}
+                              >
+                                {ocupado ? (
+                                  <><span className="block text-[11px] font-semibold truncate">{ocupante?.aluno?.nome_completo?.split(' ')[0] || 'Ocupado'}</span><span className="text-[10px] text-white/70">aula fixa</span></>
+                                ) : disponibilidade ? (
+                                  <span className="text-[11px] font-semibold">Disponível</span>
+                                ) : (
+                                  <span className="text-[11px]">—</span>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </motion.section>
+        )}
+
+        {false && (<>
+        <motion.section id="identidade" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <form onSubmit={handleSalvarConfig} className="premium-panel p-6 md:p-9">
+                <div className="flex items-center gap-3 mb-9 pb-5 border-b border-[#e5e3dc]">
+                  <div className="h-10 w-10 rounded-xl bg-[#e7efe9] text-[#1f4a3a] flex items-center justify-center">
+                    <Building2 size={19} strokeWidth={1.8} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold">Dados e identidade da escola</h3>
+                    <p className="text-sm text-slate-500 mt-0.5">Informações usadas no aplicativo, documentos e faturas.</p>
+                  </div>
+                </div>
                 
                 <div className="flex flex-col xl:flex-row gap-12 mb-10">
                   <div className="flex flex-col gap-6 shrink-0">
@@ -623,20 +1060,17 @@ export default function Gerencia() {
                 </div>
 
                 <div className="pt-6 border-t border-white/60 flex justify-end">
-                  <motion.button whileTap={{ scale: 0.98 }} type="submit" disabled={isSubmitting} className="px-10 py-4 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white rounded-2xl font-bold text-sm shadow-md hover:shadow-lg transition-all disabled:opacity-50">
-                    {isSubmitting ? 'Salvando...' : '💾 Salvar Configurações da Escola'}
+                   <motion.button whileTap={{ scale: 0.98 }} type="submit" disabled={isSubmitting} className="px-8 py-3.5 bg-[#1f4a3a] text-white rounded-xl font-semibold text-sm shadow-[0_10px_24px_rgba(31,74,58,0.2)] hover:bg-[#173c2e] transition-all disabled:opacity-50">
+                    {isSubmitting ? 'Salvando...' : 'Salvar alterações'}
                   </motion.button>
                 </div>
               </form>
-            </motion.div>
-          )}
+        </motion.section>
 
-          {/* ABA ESTRUTURA */}
-          {activeTab === 'Estrutura' && (
-            <motion.div key="Estrutura" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <motion.section id="estrutura" className="premium-section-anchor grid grid-cols-1 lg:grid-cols-2 gap-8" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
               
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
-                <h3 className="text-xl font-bold tracking-tight text-slate-800 mb-8 flex items-center gap-3"><span className="text-rose-500 drop-shadow-sm">📍</span> Salas Físicas</h3>
+              <div className="premium-panel p-6 md:p-8">
+                <h3 className="text-xl font-semibold text-slate-800 mb-7 flex items-center gap-3"><MapPin size={20} className="text-[#1f4a3a]" strokeWidth={1.8} /> Salas físicas</h3>
                 <form onSubmit={handleAddSala} className="flex gap-4 mb-8">
                   <input value={novaSala} onChange={e => setNovaSala(e.target.value)} placeholder="Nova Sala (Ex: Sala 01)" className={`flex-1 ${inputClass} !mt-0`} />
                   <motion.button whileTap={{ scale: 0.9 }} type="submit" className="bg-rose-500 text-white px-8 rounded-xl font-bold text-xl shadow-md hover:bg-rose-600 transition-colors">+</motion.button>
@@ -651,8 +1085,8 @@ export default function Gerencia() {
                 </div>
               </div>
 
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
-                <h3 className="text-xl font-bold tracking-tight text-slate-800 mb-8 flex items-center gap-3"><span className="text-emerald-500 drop-shadow-sm">🎸</span> Modalidades / Cursos</h3>
+              <div className="premium-panel p-6 md:p-8">
+                <h3 className="text-xl font-semibold text-slate-800 mb-7 flex items-center gap-3"><GraduationCap size={21} className="text-[#1f4a3a]" strokeWidth={1.8} /> Modalidades e cursos</h3>
                 <form onSubmit={handleAddModalidade} className="flex gap-4 mb-8">
                   <input value={novaModalidade} onChange={e => setNovaModalidade(e.target.value)} placeholder="Novo Curso (Ex: Piano)" className={`flex-1 ${inputClass} !mt-0`} />
                   <motion.button whileTap={{ scale: 0.9 }} type="submit" className="bg-emerald-500 text-white px-8 rounded-xl font-bold text-xl shadow-md hover:bg-emerald-600 transition-colors">+</motion.button>
@@ -667,21 +1101,18 @@ export default function Gerencia() {
                 </div>
               </div>
 
-            </motion.div>
-          )}
+        </motion.section>
 
-          {/* ABA EQUIPE E PROFS */}
-          {activeTab === 'Equipe' && (
-            <motion.div key="Equipe" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+        <motion.section id="equipe" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <div className="premium-panel p-6 md:p-9">
                 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-white/60 pb-6">
                   <div>
-                    <h3 className="text-2xl font-bold tracking-tight text-slate-800 flex items-center gap-3"><span className="text-indigo-500 drop-shadow-sm">🧑‍🏫</span> Equipe Lótus</h3>
-                    <p className={`text-slate-500 text-sm mt-1`}>Gerencie os dados, fotos e acessos de Professores e Administradores.</p>
+                    <h3 className="text-2xl font-semibold text-slate-800 flex items-center gap-3"><UsersRound size={23} className="text-[#1f4a3a]" strokeWidth={1.8} /> Equipe</h3>
+                    <p className="text-slate-500 text-sm mt-1">Gerencie dados, acessos e modalidades de professores e administradores.</p>
                   </div>
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => abrirModalEquipe()} className="bg-gradient-to-r from-indigo-600 to-cyan-600 text-white px-6 py-4 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all whitespace-nowrap">
-                    + Adicionar Novo Membro
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => abrirModalEquipe()} className="bg-[#1f4a3a] text-white px-5 py-3.5 rounded-xl font-semibold text-sm shadow-[0_10px_24px_rgba(31,74,58,0.18)] hover:bg-[#173c2e] transition-all whitespace-nowrap">
+                    Adicionar membro
                   </motion.button>
                 </div>
 
@@ -718,17 +1149,14 @@ export default function Gerencia() {
                 </div>
 
               </div>
-            </motion.div>
-          )}
+        </motion.section>
 
-          {/* ABA HORÁRIOS */}
-          {activeTab === 'Horarios' && (
-            <motion.div key="Horarios" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] border-t-8 border-t-amber-500 shadow-[0_8px_32px_rgba(0,0,0,0.04)] flex flex-col`}>
+        <motion.section id="horarios" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <div className="premium-panel p-6 md:p-9 flex flex-col">
                 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6 border-b border-white/60 pb-6">
                   <div>
-                    <h3 className="text-2xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><span className="text-amber-500 drop-shadow-sm">⏰</span> Motor de Disponibilidade</h3>
+                    <h3 className="text-2xl font-semibold text-slate-800 flex items-center gap-3"><CalendarClock size={23} className="text-[#1f4a3a]" strokeWidth={1.8} /> Disponibilidade da equipe</h3>
                     <p className={`text-slate-500 text-sm mt-2 max-w-2xl`}>Gere múltiplos horários de uma vez. O aplicativo cruza essas "vagas" com as matrículas ativas para mostrar o que está livre ou preenchido.</p>
                   </div>
                   <div className="w-full md:w-80">
@@ -863,22 +1291,21 @@ export default function Gerencia() {
                   </div>
                 )}
               </div>
-            </motion.div>
-          )}
+        </motion.section>
+        </>)}
 
-          {/* ABA RELATÓRIOS (NOVA) */}
-          {activeTab === 'Relatorios' && (
-            <motion.div key="Relatorios" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}>
-              <div className={`bg-white/40 backdrop-blur-2xl border border-white/60 p-8 md:p-10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.04)]`}>
+        {activeSection === 'relatorios' && (
+        <motion.section id="relatorios" className="premium-section-anchor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <div className="premium-panel p-6 md:p-9">
                 
-                <h3 className="text-2xl font-bold tracking-tight text-slate-800 mb-8 flex items-center gap-3"><span className="text-indigo-500 drop-shadow-sm">📊</span> Emissão de Relatórios (PDF)</h3>
+                <h3 className="text-2xl font-semibold text-slate-800 mb-8 flex items-center gap-3"><BarChart3 size={23} className="text-[#1f4a3a]" strokeWidth={1.8} /> Relatórios e exportações</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                   
                   {/* CARD RELATÓRIO FINANCEIRO */}
                   <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-6 rounded-[2rem] shadow-sm flex flex-col justify-between">
                     <div>
-                      <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl mb-4 shadow-inner border border-indigo-200">💰</div>
+                      <div className="w-11 h-11 bg-[#e7efe9] text-[#1f4a3a] rounded-xl flex items-center justify-center mb-4 border border-[#d7e3da]"><Landmark size={20} strokeWidth={1.8} /></div>
                       <h4 className="font-bold text-lg text-slate-800 mb-2">Relatório Financeiro</h4>
                       <p className="text-xs text-slate-500 mb-6">Gera um PDF contendo entradas de mensalidades, saídas manuais e o saldo detalhado do caixa.</p>
 
@@ -906,16 +1333,17 @@ export default function Gerencia() {
                       whileTap={{ scale: 0.95 }} 
                       onClick={handleGerarRelatorioFinanceiro} 
                       disabled={gerandoRelatorio}
-                      className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 transition-all disabled:opacity-50 mt-4"
+                      className="w-full py-3.5 bg-[#1f4a3a] text-white rounded-xl font-semibold text-sm shadow-sm hover:bg-[#173c2e] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-2"
                     >
-                      {gerandoRelatorio ? 'Gerando PDF...' : '⬇️ Baixar Relatório'}
+                      {!gerandoRelatorio && <Download size={16} />}
+                      {gerandoRelatorio ? 'Gerando PDF...' : 'Baixar relatório'}
                     </motion.button>
                   </div>
 
                   {/* CARD ALUNOS ATIVOS */}
                   <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-6 rounded-[2rem] shadow-sm flex flex-col justify-between">
                     <div>
-                      <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl mb-4 shadow-inner border border-emerald-200">✅</div>
+                      <div className="w-11 h-11 bg-emerald-50 text-emerald-700 rounded-xl flex items-center justify-center mb-4 border border-emerald-100"><UserCheck size={20} strokeWidth={1.8} /></div>
                       <h4 className="font-bold text-lg text-slate-800 mb-2">Alunos Ativos</h4>
                       <p className="text-xs text-slate-500 mb-6">Lista completa com nome, telefone, curso, data da matrícula e valor da mensalidade de todos os alunos que estão ativos na escola.</p>
                     </div>
@@ -924,16 +1352,17 @@ export default function Gerencia() {
                       whileTap={{ scale: 0.95 }} 
                       onClick={() => handleGerarRelatorioAlunos('Ativo')} 
                       disabled={gerandoRelatorio}
-                      className="w-full py-4 bg-emerald-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-emerald-600 transition-all disabled:opacity-50 mt-4"
+                      className="w-full py-3.5 bg-[#1f4a3a] text-white rounded-xl font-semibold text-sm shadow-sm hover:bg-[#173c2e] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-2"
                     >
-                      {gerandoRelatorio ? 'Gerando PDF...' : '⬇️ Baixar Relatório'}
+                      {!gerandoRelatorio && <Download size={16} />}
+                      {gerandoRelatorio ? 'Gerando PDF...' : 'Baixar relatório'}
                     </motion.button>
                   </div>
 
                   {/* CARD ALUNOS INATIVOS */}
                   <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-6 rounded-[2rem] shadow-sm flex flex-col justify-between">
                     <div>
-                      <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center text-2xl mb-4 shadow-inner border border-rose-200">❌</div>
+                      <div className="w-11 h-11 bg-rose-50 text-rose-700 rounded-xl flex items-center justify-center mb-4 border border-rose-100"><UserX size={20} strokeWidth={1.8} /></div>
                       <h4 className="font-bold text-lg text-slate-800 mb-2">Alunos Inativos</h4>
                       <p className="text-xs text-slate-500 mb-6">Lista dos alunos que cancelaram ou foram trancados, informando os dados básicos e a exata data da inativação.</p>
                     </div>
@@ -942,19 +1371,18 @@ export default function Gerencia() {
                       whileTap={{ scale: 0.95 }} 
                       onClick={() => handleGerarRelatorioAlunos('Inativo')} 
                       disabled={gerandoRelatorio}
-                      className="w-full py-4 bg-rose-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-rose-600 transition-all disabled:opacity-50 mt-4"
+                      className="w-full py-3.5 bg-[#1f4a3a] text-white rounded-xl font-semibold text-sm shadow-sm hover:bg-[#173c2e] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-2"
                     >
-                      {gerandoRelatorio ? 'Gerando PDF...' : '⬇️ Baixar Relatório'}
+                      {!gerandoRelatorio && <Download size={16} />}
+                      {gerandoRelatorio ? 'Gerando PDF...' : 'Baixar relatório'}
                     </motion.button>
                   </div>
 
                 </div>
 
               </div>
-            </motion.div>
-          )}
-
-        </AnimatePresence>
+        </motion.section>
+        )}
 
       </div>
 

@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc; /* Slate-50 muito limpo */
-  --foreground: #0f172a; /* Slate-900 para contraste */
+  --background: #f4f3ef;
+  --foreground: #17231e;
+  --surface: #fffefa;
+  --surface-muted: #ecebe5;
+  --line: #dfded7;
+  --muted: #69736e;
+  --brand: #1f4a3a;
+  --brand-strong: #132f25;
+  --brand-soft: #e7efe9;
+  --accent: #b98b4f;
+  --accent-soft: #f4eadc;
+  --danger: #a24a4a;
 }
 
 @theme inline {
@@ -15,7 +25,356 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-  /* Transição suave global */
-  transition: background-color 0.5s ease;
+  font-family: inherit;
+  transition: background-color 0.25s ease;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(31, 74, 58, 0.18);
+}
+
+.app-backdrop {
+  background:
+    radial-gradient(circle at 78% -10%, rgba(185, 139, 79, 0.1), transparent 30rem),
+    linear-gradient(135deg, #f8f7f3 0%, #f1f0eb 52%, #f7f5f0 100%);
+}
+
+.lotus-admin {
+  --tw-ring-color: rgba(31, 74, 58, 0.16);
+}
+
+.lotus-admin h1,
+.lotus-admin h2,
+.lotus-admin h3,
+.lotus-admin h4 {
+  color: var(--foreground);
+  letter-spacing: -0.025em;
+}
+
+.lotus-admin .font-black {
+  font-weight: 700 !important;
+}
+
+.lotus-admin .animate-bounce {
+  animation: none !important;
+}
+
+.lotus-admin .drop-shadow-sm {
+  filter: none !important;
+}
+
+.lotus-admin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.lotus-admin select,
+.lotus-admin textarea {
+  background: #fff !important;
+  border-color: var(--line) !important;
+  box-shadow: none !important;
+  color: var(--foreground) !important;
+  font-weight: 500 !important;
+}
+
+.lotus-admin input:focus,
+.lotus-admin select:focus,
+.lotus-admin textarea:focus {
+  border-color: var(--brand) !important;
+  box-shadow: 0 0 0 4px rgba(31, 74, 58, 0.09) !important;
+}
+
+.lotus-admin [class*="bg-white/40"],
+.lotus-admin [class*="bg-white/50"],
+.lotus-admin [class*="bg-white/60"],
+.lotus-admin [class*="bg-white/70"],
+.lotus-admin [class*="bg-white/80"],
+.lotus-admin [class*="bg-white/90"] {
+  background-color: var(--surface) !important;
+  border-color: var(--line) !important;
+}
+
+.lotus-admin [class*="rounded-[2.5rem]"] {
+  border-radius: 1.5rem !important;
+}
+
+.lotus-admin [class*="rounded-[2rem]"] {
+  border-radius: 1.25rem !important;
+}
+
+.lotus-admin [class*="from-indigo"],
+.lotus-admin [class*="from-cyan"],
+.lotus-admin [class*="from-purple"] {
+  background-image: none !important;
+  background-color: var(--brand) !important;
+}
+
+.lotus-admin .bg-indigo-600,
+.lotus-admin .bg-indigo-500,
+.lotus-admin .bg-cyan-600,
+.lotus-admin .bg-cyan-500,
+.lotus-admin .bg-purple-600,
+.lotus-admin .bg-purple-500 {
+  background-color: var(--brand) !important;
+}
+
+.lotus-admin .bg-indigo-50,
+.lotus-admin .bg-indigo-100,
+.lotus-admin .bg-cyan-50,
+.lotus-admin .bg-cyan-100,
+.lotus-admin .bg-purple-50,
+.lotus-admin .bg-purple-100 {
+  background-color: var(--brand-soft) !important;
+}
+
+.lotus-admin .text-indigo-400,
+.lotus-admin .text-indigo-500,
+.lotus-admin .text-indigo-600,
+.lotus-admin .text-indigo-700,
+.lotus-admin .text-cyan-500,
+.lotus-admin .text-cyan-600,
+.lotus-admin .text-purple-500,
+.lotus-admin .text-purple-600 {
+  color: var(--brand) !important;
+}
+
+.lotus-admin .border-indigo-100,
+.lotus-admin .border-indigo-200,
+.lotus-admin .border-indigo-300,
+.lotus-admin .border-indigo-500,
+.lotus-admin .border-cyan-200,
+.lotus-admin .border-cyan-500 {
+  border-color: #cbdad0 !important;
+}
+
+.premium-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1.5rem;
+  box-shadow: 0 14px 36px rgba(20, 39, 31, 0.055);
+}
+
+.premium-kicker {
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.premium-section-anchor {
+  scroll-margin-top: 6rem;
+}
+
+.premium-scrollarea {
+  scrollbar-color: #aeb9b2 transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.premium-scrollarea::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.premium-scrollarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.premium-scrollarea::-webkit-scrollbar-thumb {
+  background: #bdc5c0;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.premium-scrollarea::-webkit-scrollbar-thumb:hover {
+  background: #8f9d95;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.premium-form-control {
+  min-height: 3rem;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.75rem 0.875rem;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.premium-form-control::placeholder {
+  color: #9aa49f;
+  font-weight: 450;
+}
+
+.premium-form-control:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(31, 74, 58, 0.09);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 7mm;
+}
+
+@media print {
+  html,
+  body {
+    width: 210mm;
+    min-height: 0 !important;
+    background: #ffffff !important;
+  }
+
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .invoice-page {
+    width: 196mm !important;
+    max-width: 196mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
+  .invoice-sheet {
+    width: 100% !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    font-size: 10px !important;
+  }
+
+  .invoice-header {
+    padding: 5mm 6mm !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .invoice-header > div {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    gap: 6mm !important;
+  }
+
+  .invoice-header h1 {
+    margin-top: 1.5mm !important;
+    font-size: 20px !important;
+    line-height: 1.1 !important;
+  }
+
+  .invoice-header p {
+    margin-top: 1mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .invoice-content {
+    padding: 5mm 6mm !important;
+  }
+
+  .invoice-recipient {
+    grid-template-columns: 1.15fr 0.85fr !important;
+    gap: 5mm !important;
+    padding-bottom: 4mm !important;
+  }
+
+  .invoice-recipient p,
+  .invoice-recipient dt,
+  .invoice-recipient dd {
+    margin-top: 1mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .invoice-recipient .text-xl {
+    font-size: 14px !important;
+  }
+
+  .invoice-cancelled {
+    margin-top: 3mm !important;
+    padding: 3mm !important;
+    font-size: 9.5px !important;
+  }
+
+  .invoice-lessons {
+    padding: 4mm 0 !important;
+  }
+
+  .invoice-lessons h2 {
+    margin-bottom: 2mm !important;
+    font-size: 14px !important;
+  }
+
+  .invoice-table th,
+  .invoice-table td {
+    padding: 2mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.15 !important;
+  }
+
+  .invoice-table tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .invoice-summary {
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    gap: 5mm !important;
+    padding-top: 4mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .invoice-summary p {
+    margin-top: 1mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .invoice-summary .invoice-total-amount {
+    font-size: 26px !important;
+    line-height: 1 !important;
+  }
+
+  .invoice-density-medium .invoice-table th,
+  .invoice-density-medium .invoice-table td {
+    padding: 1.4mm 2mm !important;
+    font-size: 8.5px !important;
+  }
+
+  .invoice-density-high .invoice-header {
+    padding-top: 3.5mm !important;
+    padding-bottom: 3.5mm !important;
+  }
+
+  .invoice-density-high .invoice-content {
+    padding-top: 3.5mm !important;
+    padding-bottom: 3.5mm !important;
+  }
+
+  .invoice-density-high .invoice-lessons {
+    padding: 2.5mm 0 !important;
+  }
+
+  .invoice-density-high .invoice-table th,
+  .invoice-density-high .invoice-table td {
+    padding: 0.9mm 1.5mm !important;
+    font-size: 7.5px !important;
+  }
 }
